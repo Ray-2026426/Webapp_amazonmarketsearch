@@ -155,6 +155,7 @@ export default function App() {
 
   const [activeView, setActiveView] = useState<'market' | 'insights' | 'keywords' | 'profit'>('market');
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [isReportHidden, setIsReportHidden] = useState(false);
   const [isMarketHistoryOpen, setIsMarketHistoryOpen] = useState(false);
   /** 与当前数据指纹一致时复用，避免重复请求 AI */
   const [marketReportCache, setMarketReportCache] = useState<{ fingerprint: string; body: string } | null>(null);
@@ -168,6 +169,20 @@ export default function App() {
   const handlePersistMarketReport = useCallback((body: string) => {
     setMarketReportCache({ fingerprint: reportDataFingerprint, body });
   }, [reportDataFingerprint]);
+
+  const openMarketReport = useCallback(() => {
+    setIsReportOpen(true);
+    setIsReportHidden(false);
+  }, []);
+
+  const hideMarketReport = useCallback(() => {
+    setIsReportHidden(true);
+  }, []);
+
+  const closeMarketReport = useCallback(() => {
+    setIsReportOpen(false);
+    setIsReportHidden(false);
+  }, []);
 
   // User Insights State
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -351,7 +366,7 @@ export default function App() {
     
     // 4. Reset UI states
     setActiveView('market');
-    setIsReportOpen(false);
+    closeMarketReport();
     setIsSegmentationOpen(false);
     
     // 5. Reset settings if it's a full reset
@@ -373,7 +388,7 @@ export default function App() {
     
     // 8. Visual feedback
     toast.info(fullReset ? "应用已完全重置" : "数据已清除，您可以重新上传数据。");
-  }, []);
+  }, [closeMarketReport]);
 
   const executeReupload = () => {
     const isFullReset = confirmAction?.action === 'reset';
@@ -1045,7 +1060,7 @@ export default function App() {
                     <div className="flex items-center gap-4">
                       {segments.length > 0 && (
                         <button 
-                          onClick={() => setIsReportOpen(true)}
+                          onClick={openMarketReport}
                           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 animate-in fade-in zoom-in duration-500"
                         >
                           <Sparkles className="w-4 h-4" />
@@ -1227,7 +1242,7 @@ export default function App() {
             onUpdateSegments={setSegments}
             onUpdateAsinToSegment={setAsinToSegment}
             onUpdateSegmentDescriptions={setSegmentDescriptions}
-            onGenerateReport={() => setIsReportOpen(true)}
+            onGenerateReport={openMarketReport}
             onAiRunningChange={setIsSegAiRunning}
             onClose={handleCloseSegmentation}
           />
@@ -1277,6 +1292,16 @@ export default function App() {
         />
       )}
 
+      {isReportOpen && isReportHidden && (
+        <button
+          type="button"
+          onClick={openMarketReport}
+          className="fixed right-6 bottom-6 z-[65] px-4 py-3 rounded-2xl bg-indigo-600 text-white text-sm font-semibold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-colors"
+        >
+          查看后台报告
+        </button>
+      )}
+
       {isReportOpen && (
         <MarketAnalysisReport 
           products={products}
@@ -1289,7 +1314,9 @@ export default function App() {
             marketReportCache?.fingerprint === reportDataFingerprint ? marketReportCache.body : null
           }
           onPersistReport={handlePersistMarketReport}
-          onClose={() => setIsReportOpen(false)}
+          hidden={isReportHidden}
+          onHide={hideMarketReport}
+          onClose={closeMarketReport}
         />
       )}
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Sparkles, Loader2, FileText, TrendingUp, Users, Info, ShieldAlert, Edit3, Save, RotateCcw } from 'lucide-react';
+import { X, Sparkles, Loader2, FileText, TrendingUp, Users, Info, ShieldAlert, Edit3, Save, RotateCcw, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { Product, HistoryRecord } from '../utils/parser';
@@ -19,6 +19,8 @@ interface MarketAnalysisReportProps {
   cachedReportMarkdown: string | null;
   /** 生成成功或用户保存编辑后写入父级与本地存储 */
   onPersistReport: (markdown: string) => void;
+  hidden?: boolean;
+  onHide?: () => void;
   onClose: () => void;
 }
 
@@ -31,6 +33,8 @@ export const MarketAnalysisReport: React.FC<MarketAnalysisReportProps> = ({
   segmentDescriptions,
   cachedReportMarkdown,
   onPersistReport,
+  hidden = false,
+  onHide,
   onClose 
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -139,6 +143,10 @@ ${products.slice(0, 20).map(p => `- ${p.title} (价格: $${p.price}, 评分: ${p
     </div>
   );
 
+  if (hidden) {
+    return null;
+  }
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 md:p-8">
       <Card className="w-full max-w-5xl h-[90vh] flex flex-col shadow-2xl rounded-[32px] overflow-hidden border-none">
@@ -153,6 +161,23 @@ ${products.slice(0, 20).map(p => `- ${p.title} (价格: $${p.price}, 评分: ${p
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (isGenerating && onHide) {
+                  onHide();
+                  toast.info('报告已隐藏，AI 会在后台继续生成。');
+                } else if (!isGenerating && onHide) {
+                  onHide();
+                }
+              }}
+              className="px-3 py-2 text-xs font-semibold rounded-xl bg-black/5 text-[#424245] hover:bg-black/10 transition-colors"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <EyeOff className="w-4 h-4" />
+                {isGenerating ? '隐藏（后台继续）' : '隐藏'}
+              </span>
+            </button>
             <button onClick={onClose} className="p-2.5 hover:bg-black/5 rounded-full transition-colors text-[#86868b]">
               <X className="w-6 h-6" />
             </button>

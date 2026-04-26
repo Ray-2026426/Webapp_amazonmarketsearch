@@ -109,6 +109,41 @@ export interface GenerateOptions {
   signal?: AbortSignal;
 }
 
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shortenErrorMessage(msg: string, maxLen = 240): string {
+  const clean = String(msg || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  return clean.length > maxLen ? `${clean.slice(0, maxLen)}...` : clean;
+}
+
+function shouldRetry(status: number, message: string, attempt: number, maxAttempts: number): boolean {
+  if (attempt >= maxAttempts) return false;
+  const hint = String(message || '');
+  return RETRYABLE_STATUSES.has(status) || /ROUTER_EXTERNAL_TARGET_ERROR/i.test(hint);
+}
+
+function normalizeAiError(providerName: string, status: number, rawMessage: string): string {
+  const detail = shortenErrorMessage(rawMessage);
+  if (status === 401 || status === 403) {
+    return `${providerName} 鉴权失败（${status}），请检查 API Key 是否正确或是否有权限。${detail ? ` 原始信息：${detail}` : ''}`;
+  }
+  if (status === 429) {
+    return `${providerName} 请求过于频繁（429），请稍等 30-60 秒后重试，或切换到其他模型。${detail ? ` 原始信息：${detail}` : ''}`;
+  }
+  if (status === 502 || /ROUTER_EXTERNAL_TARGET_ERROR/i.test(detail)) {
+    return `${providerName} 服务暂时不可用（网关 502）。通常是上游服务波动，请稍后重试或切换模型/供应商。${detail ? ` 原始信息：${detail}` : ''}`;
+  }
+  if (status >= 500) {
+    return `${providerName} 服务暂时异常（${status}），建议稍后重试。${detail ? ` 原始信息：${detail}` : ''}`;
+  }
+  return `${providerName} API Error ${status}: ${detail || '请求失败'}`;
+}
+
 /**
  * Auto-select a sensible default model for each provider.
  */
@@ -146,24 +181,34 @@ async function callGemini(
     body.generationConfig = { responseMimeType: 'application/json' };
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
 
-  if (!res.ok) {
+    if (res.ok) {
+      const data = await res.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    }
+
     const text = await res.text();
     let errMsg = text;
     try {
       const errJson = JSON.parse(text);
       errMsg = errJson?.error?.message || errJson?.error?.status || text;
     } catch {}
-    throw new Error(`Gemini ${res.status}: ${errMsg}`);
+
+    if (shouldRetry(res.status, errMsg, attempt, maxAttempts)) {
+      await sleep(1200 * attempt);
+      continue;
+    }
+    throw new Error(normalizeAiError('Gemini', res.status, errMsg));
   }
 
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  throw new Error('Gemini 请求失败，请稍后重试。');
 }
 
 // \u2500\u2500\u2500 OpenAI-Compatible (OpenAI / DeepSeek / Qwen / Moonshot / Zhipu) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -202,24 +247,35 @@ async function callOpenAICompat(
     delete headers['Authorization'];
   }
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
+  const providerName = cfg.name || 'AI';
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
 
-  if (!res.ok) {
+    if (res.ok) {
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content ?? '';
+    }
+
     const text = await res.text();
     let errMsg = text;
     try {
       const errJson = JSON.parse(text);
       errMsg = errJson?.error?.message || errJson?.message || text;
     } catch {}
-    throw new Error(`AI API Error ${res.status}: ${errMsg}`);
+
+    if (shouldRetry(res.status, errMsg, attempt, maxAttempts)) {
+      await sleep(1200 * attempt);
+      continue;
+    }
+    throw new Error(normalizeAiError(providerName, res.status, errMsg));
   }
 
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? '';
+  throw new Error(`${providerName} 请求失败，请稍后重试。`);
 }
 
 // \u2500\u2500\u2500 Streaming (OpenAI-compatible only, for chatbot) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
