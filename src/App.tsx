@@ -1185,17 +1185,21 @@ export default function App() {
               </div>
               }
 
-              {activeView === 'insights' &&
-                <div className="max-w-7xl mx-auto" data-annotate-anchor="insights-root">
-                  <UserInsights 
+              {/* 保持挂载：打标等长任务在后台继续，切换「关键词/利润」等 tab 时不应卸载 UserInsights */}
+              {isDataLoaded && (
+                <div
+                  className={activeView === 'insights' ? 'max-w-7xl mx-auto' : 'hidden'}
+                  data-annotate-anchor="insights-root"
+                >
+                  <UserInsights
                     products={products}
-                    reviews={reviews} 
-                    setReviews={setReviews} 
-                    persona={persona} 
-                    setPersona={setPersona} 
+                    reviews={reviews}
+                    setReviews={setReviews}
+                    persona={persona}
+                    setPersona={setPersona}
                   />
                 </div>
-              }
+              )}
 
               {activeView === 'keywords' &&
                 <div className="max-w-7xl mx-auto" data-annotate-anchor="keywords-root">
