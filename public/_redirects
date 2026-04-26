@@ -1,0 +1,8 @@
+# Netlify / Cloudflare Pages：把浏览器同源请求转发到各 AI 官方域名（与本地 Vite 代理一致）
+/api-proxy/gemini/* https://generativelanguage.googleapis.com/:splat 200
+/api-proxy/openai/* https://api.openai.com/:splat 200
+/api-proxy/deepseek/* https://api.deepseek.com/:splat 200
+/api-proxy/claude/* https://api.anthropic.com/:splat 200
+/api-proxy/qwen/* https://dashscope.aliyuncs.com/:splat 200
+/api-proxy/moonshot/* https://api.moonshot.cn/:splat 200
+/api-proxy/zhipu/* https://open.bigmodel.cn/:splat 200

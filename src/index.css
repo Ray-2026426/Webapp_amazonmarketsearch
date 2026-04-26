@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f5f5f7;
+  color: #1d1d1f;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.markdown-body {
+  @apply text-[#1d1d1f] leading-relaxed;
+}
+
+.markdown-body h1 {
+  @apply text-3xl font-bold mt-12 mb-6 pb-4 border-b border-black/5;
+}
+
+.markdown-body h2 {
+  @apply text-2xl font-bold mt-10 mb-4 flex items-center gap-2;
+}
+
+.markdown-body h3 {
+  @apply text-xl font-bold mt-8 mb-3;
+}
+
+.markdown-body p {
+  @apply mb-4 text-[16px] text-[#424245];
+}
+
+.markdown-body ul, .markdown-body ol {
+  @apply mb-6 pl-6 space-y-2;
+}
+
+.markdown-body ul {
+  @apply list-disc;
+}
+
+.markdown-body ol {
+  @apply list-decimal;
+}
+
+.markdown-body li {
+  @apply text-[16px] text-[#424245];
+}
+
+.markdown-body blockquote {
+  @apply border-l-4 border-indigo-500 bg-indigo-50/50 p-6 rounded-r-2xl my-8 italic text-indigo-900;
+}
+
+.markdown-body strong {
+  @apply font-bold text-[#1d1d1f];
+}
+
+.markdown-body hr {
+  @apply my-12 border-black/5;
+}
+
+.markdown-body table {
+  @apply w-full border-collapse mb-8 rounded-2xl overflow-hidden border border-black/5;
+}
+
+.markdown-body th {
+  @apply bg-[#f5f5f7] p-4 text-left font-bold text-sm uppercase tracking-wider border-b border-black/5;
+}
+
+.markdown-body td {
+  @apply p-4 text-sm border-b border-black/5;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  .markdown-body {
+    font-size: 12pt;
+  }
+
+  /* 应用内「存为 PDF」：仅在有标记时隐藏侧栏与工具条，并展开主栏使图表、表格全部进入纸面 */
+  @page {
+    margin: 10mm;
+  }
+
+  body.app-print-export {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: #fff !important;
+  }
+
+  body.app-print-export aside {
+    display: none !important;
+  }
+
+  body.app-print-export [data-print-hidden] {
+    display: none !important;
+  }
+
+  body.app-print-export .min-h-screen.flex {
+    display: block !important;
+    min-height: 0 !important;
+  }
+
+  body.app-print-export main {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.app-print-export main > .overflow-y-auto,
+  body.app-print-export main .flex-1.overflow-y-auto {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    flex: none !important;
+  }
+
+  body.app-print-export .h-screen {
+    height: auto !important;
+  }
+
+  body.app-print-export header {
+    position: relative !important;
+    break-inside: avoid;
+  }
+
+  body.app-print-export svg {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  body.app-print-export table {
+    break-inside: auto;
+  }
+
+  body.app-print-export tbody tr {
+    break-inside: avoid;
+  }
+}
+
+/* 拖放批注时让命中测试穿过气泡，落到下层锚点区域 */
+body.annotation-pin-pass-through [data-annotation-pin] {
+  pointer-events: none !important;
+}
+
+/* 从侧栏「定位」时短暂高亮锚点模块 */
+.annotate-anchor-flash {
+  outline: 2px solid rgb(245 158 11);
+  outline-offset: 3px;
+  border-radius: 12px;
+  transition: outline-color 0.2s ease;
+}

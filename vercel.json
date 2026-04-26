@@ -1,0 +1,32 @@
+{
+  "rewrites": [
+    {
+      "source": "/api-proxy/gemini/(.*)",
+      "destination": "https://generativelanguage.googleapis.com/$1"
+    },
+    {
+      "source": "/api-proxy/openai/(.*)",
+      "destination": "https://api.openai.com/$1"
+    },
+    {
+      "source": "/api-proxy/deepseek/(.*)",
+      "destination": "https://openrouter.fans/$1"
+    },
+    {
+      "source": "/api-proxy/claude/(.*)",
+      "destination": "https://api.anthropic.com/$1"
+    },
+    {
+      "source": "/api-proxy/qwen/(.*)",
+      "destination": "https://dashscope.aliyuncs.com/$1"
+    },
+    {
+      "source": "/api-proxy/moonshot/(.*)",
+      "destination": "https://api.moonshot.cn/$1"
+    },
+    {
+      "source": "/api-proxy/zhipu/(.*)",
+      "destination": "https://open.bigmodel.cn/$1"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "name": "Amazon Product Dev - Market Dashboard",
+  "description": "A comprehensive dashboard for analyzing Amazon market data, including trends, price distributions, seller types, and brand leaderboards.",
+  "requestFramePermissions": []
+}
