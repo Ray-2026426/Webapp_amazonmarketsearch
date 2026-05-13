@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
-import { Plus, Trash2, Calculator, Globe, Save } from 'lucide-react';
+import { Plus, Trash2, Calculator, Globe, Save, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, ReferenceLine, Cell, PieChart, Pie } from 'recharts';
 
 interface Variant {
@@ -50,6 +50,77 @@ const COST_COLORS: Record<string, string> = {
   '仓储': '#14b8a6', '佣金': '#ec4899', '广告': '#f59e0b',
   '退款': '#ef4444', '其他': '#94a3b8', '净利润': '#10b981', '亏损': '#ef4444',
 };
+
+type SavedPlan = {
+  name: string;
+  variants: Variant[];
+  country: string;
+  rmbRate: number;
+  savedAt: string;
+  variantCount: number;
+};
+
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+  return typeof x === 'object' && x !== null && !Array.isArray(x);
+}
+
+/** 兼容老存档：把缺失/异常的字段统一回退到默认值，避免出现 NaN/undefined 或渲染崩溃 */
+function sanitizeVariant(v: unknown, idx: number): Variant {
+  const obj = (v ?? {}) as Record<string, unknown>;
+  const num = (x: unknown, fallback: number) => {
+    const n = Number(x);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  return {
+    id: typeof obj.id === 'string' && obj.id ? obj.id : `${Date.now()}_${idx}`,
+    name: typeof obj.name === 'string' && obj.name ? obj.name : `变体 ${idx + 1}`,
+    monthlySales: num(obj.monthlySales, DEFAULT_VARIANT.monthlySales),
+    price: num(obj.price, DEFAULT_VARIANT.price),
+    procurementCost: num(obj.procurementCost, DEFAULT_VARIANT.procurementCost),
+    shippingCost: num(obj.shippingCost, DEFAULT_VARIANT.shippingCost),
+    storageFee: round1(num(obj.storageFee, DEFAULT_VARIANT.storageFee)),
+    refundRate: num(obj.refundRate, DEFAULT_VARIANT.refundRate),
+    commissionRate: num(obj.commissionRate, DEFAULT_VARIANT.commissionRate),
+    fbaFee: num(obj.fbaFee, DEFAULT_VARIANT.fbaFee),
+    otherCost: num(obj.otherCost, DEFAULT_VARIANT.otherCost),
+    cvr: num(obj.cvr, DEFAULT_VARIANT.cvr),
+    cpc: num(obj.cpc, DEFAULT_VARIANT.cpc),
+    adOrderShare: num(obj.adOrderShare, DEFAULT_VARIANT.adOrderShare),
+  };
+}
+
+/** 从 localStorage 读入后统一成可靠结构，避免缺字段导致界面崩溃或「先空后有」的错觉 */
+function normalizeSavedPlans(raw: unknown): SavedPlan[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SavedPlan[] = [];
+  for (const item of raw) {
+    if (!isPlainObject(item)) continue;
+    const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : '未命名方案';
+    const variantsRaw = item.variants;
+    const rawVars = Array.isArray(variantsRaw) ? variantsRaw : [];
+    const variants = rawVars.map((v, i) => sanitizeVariant(v, i));
+    const country = typeof item.country === 'string' ? item.country : 'US';
+    const rmbN = Number(item.rmbRate);
+    const rmbRate = Number.isFinite(rmbN) ? rmbN : COUNTRIES[0].rmbRate;
+    const savedAt = typeof item.savedAt === 'string' && item.savedAt ? item.savedAt : '';
+    const vcN = Number(item.variantCount);
+    const variantCount = Number.isFinite(vcN) && vcN >= 0 ? Math.floor(vcN) : variants.length;
+    out.push({ name, variants, country, rmbRate, savedAt, variantCount });
+  }
+  return out;
+}
+
+function readPlansFromStorage(): { plans: SavedPlan[]; hadParseError: boolean } {
+  try {
+    const s = localStorage.getItem('profit_calc_plans');
+    if (s == null || s.trim() === '') return { plans: [], hadParseError: false };
+    const parsed = JSON.parse(s);
+    if (!Array.isArray(parsed)) return { plans: [], hadParseError: true };
+    return { plans: normalizeSavedPlans(parsed), hadParseError: false };
+  } catch {
+    return { plans: [], hadParseError: true };
+  }
+}
 
 function calcVariant(v: Variant, rmbRate: number) {
   const storage = round1(v.storageFee);
@@ -107,28 +178,87 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
   const [planName, setPlanName] = useState('');
   const [showSavePanel, setShowSavePanel] = useState(false);
   const [activeTab, setActiveTab] = useState<'input' | 'breakeven'>('input');
+  const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
+
+  const showNotification = (type: 'success' | 'error' | 'warning', message: string) => {
+    setNotification({ type, message });
+  };
 
   useEffect(() => {
-    try { const s = localStorage.getItem('profit_calc_plans'); if (s) setSavedPlans(JSON.parse(s)); } catch {}
+    if (!notification) return;
+    const t = setTimeout(() => setNotification(null), 3500);
+    return () => clearTimeout(t);
+  }, [notification]);
+
+  const loadErrorShownRef = useRef(false);
+  useEffect(() => {
+    const { plans, hadParseError } = readPlansFromStorage();
+    setSavedPlans(plans);
+    if (hadParseError && !loadErrorShownRef.current) {
+      loadErrorShownRef.current = true;
+      showNotification('error', '本地存档列表读取失败，可能数据已损坏。');
+    }
   }, []);
 
   const savePlan = () => {
-    if (!planName.trim()) return;
-    const plans = [...savedPlans, { name: planName.trim(), variants, country: country.code, rmbRate, savedAt: new Date().toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}), variantCount: variants.length }];
-    setSavedPlans(plans);
-    localStorage.setItem('profit_calc_plans', JSON.stringify(plans));
-    setPlanName(''); setShowSavePanel(false);
+    const name = planName.trim();
+    if (!name) return;
+    try {
+      const { plans: existing } = readPlansFromStorage();
+      const plans = [...existing, {
+        name,
+        variants,
+        country: country.code,
+        rmbRate,
+        savedAt: new Date().toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}),
+        variantCount: variants.length,
+      }];
+      localStorage.setItem('profit_calc_plans', JSON.stringify(plans));
+      setSavedPlans(normalizeSavedPlans(plans));
+      setPlanName('');
+      setShowSavePanel(false);
+      showNotification('success', `已保存方案「${name}」`);
+    } catch (err) {
+      console.error('[ProfitCalc] 保存失败：', err);
+      showNotification('error', `保存失败：${err instanceof Error ? err.message : '浏览器本地存储可能已满'}`);
+    }
   };
 
   const loadPlan = (p: typeof savedPlans[0]) => {
-    setVariants(p.variants.map((v) => ({ ...v, storageFee: round1(v.storageFee) })));
-    setRmbRate(p.rmbRate);
-    const c = COUNTRIES.find(x => x.code === p.country); if (c) setCountry(c);
+    try {
+      const raw = Array.isArray(p?.variants) && p.variants.length > 0 ? p.variants : [{}];
+      const safeVariants = raw.map((v, i) => sanitizeVariant(v, i));
+      setVariants(safeVariants);
+
+      const safeRate = Number.isFinite(Number(p?.rmbRate)) ? Number(p.rmbRate) : rmbRate;
+      setRmbRate(safeRate);
+
+      const matched = COUNTRIES.find(x => x.code === p?.country);
+      if (matched) setCountry(matched);
+
+      setShowSavePanel(false);
+
+      if (!matched) {
+        showNotification('warning', `已加载「${p?.name ?? '未命名方案'}」，但存档里的国家信息无法识别，已保留当前国家(${country.name})。`);
+      } else {
+        showNotification('success', `已加载方案「${p.name}」`);
+      }
+    } catch (err) {
+      console.error('[ProfitCalc] 加载失败：', err);
+      showNotification('error', `加载失败：${err instanceof Error ? err.message : '存档数据异常'}`);
+    }
   };
 
   const deletePlan = (i: number) => {
-    const plans = savedPlans.filter((_, j) => j !== i);
-    setSavedPlans(plans); localStorage.setItem('profit_calc_plans', JSON.stringify(plans));
+    try {
+      const { plans: fromDisk } = readPlansFromStorage();
+      const plans = fromDisk.filter((_, j) => j !== i);
+      localStorage.setItem('profit_calc_plans', JSON.stringify(plans));
+      setSavedPlans(normalizeSavedPlans(plans));
+    } catch (err) {
+      console.error('[ProfitCalc] 删除失败：', err);
+      showNotification('error', `删除失败：${err instanceof Error ? err.message : '存储异常'}`);
+    }
   };
 
   const addVariant = () => setVariants([...variants, { id: Date.now().toString(), ...DEFAULT_VARIANT, name: `变体 ${variants.length + 1}`, monthlySales: 100 }]);
