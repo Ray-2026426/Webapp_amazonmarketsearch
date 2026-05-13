@@ -176,6 +176,8 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
   const [variants, setVariants] = useState<Variant[]>([{ id: '1', ...DEFAULT_VARIANT }]);
   const [savedPlans, setSavedPlans] = useState<{ name: string; variants: Variant[]; country: string; rmbRate: number; savedAt: string; variantCount: number }[]>([]);
   const [planName, setPlanName] = useState('');
+  /** 从列表「加载」的方案在存档数组中的下标；用于「保存修改」覆盖原条目，另存为新方案后会指向新条目 */
+  const [activeSavedPlanIndex, setActiveSavedPlanIndex] = useState<number | null>(null);
   const [showSavePanel, setShowSavePanel] = useState(false);
   const [activeTab, setActiveTab] = useState<'input' | 'breakeven'>('input');
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
@@ -200,31 +202,65 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
     }
   }, []);
 
-  const savePlan = () => {
+  const savePlanAsNew = () => {
     const name = planName.trim();
     if (!name) return;
     try {
       const { plans: existing } = readPlansFromStorage();
-      const plans = [...existing, {
+      const entry = {
         name,
         variants,
         country: country.code,
         rmbRate,
         savedAt: new Date().toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}),
         variantCount: variants.length,
-      }];
+      };
+      const plans = [...existing, entry];
       localStorage.setItem('profit_calc_plans', JSON.stringify(plans));
       setSavedPlans(normalizeSavedPlans(plans));
-      setPlanName('');
+      setActiveSavedPlanIndex(plans.length - 1);
+      setPlanName(name);
       setShowSavePanel(false);
-      showNotification('success', `已保存方案「${name}」`);
+      showNotification('success', `已另存为新方案「${name}」`);
     } catch (err) {
       console.error('[ProfitCalc] 保存失败：', err);
       showNotification('error', `保存失败：${err instanceof Error ? err.message : '浏览器本地存储可能已满'}`);
     }
   };
 
-  const loadPlan = (p: typeof savedPlans[0]) => {
+  /** 把当前编辑内容写回「加载」时的那一条存档（可改上方名称后一并改名） */
+  const savePlanOverwrite = () => {
+    if (activeSavedPlanIndex === null) return;
+    try {
+      const { plans: existing } = readPlansFromStorage();
+      const idx = activeSavedPlanIndex;
+      if (idx < 0 || idx >= existing.length) {
+        setActiveSavedPlanIndex(null);
+        showNotification('warning', '原存档位置已变化，请重新在列表里点「加载」后再保存修改。');
+        return;
+      }
+      const name = planName.trim() || existing[idx].name;
+      const entry = {
+        name,
+        variants,
+        country: country.code,
+        rmbRate,
+        savedAt: new Date().toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}),
+        variantCount: variants.length,
+      };
+      const plans = existing.map((pl, j) => (j === idx ? entry : pl));
+      localStorage.setItem('profit_calc_plans', JSON.stringify(plans));
+      setSavedPlans(normalizeSavedPlans(plans));
+      setPlanName(name);
+      setShowSavePanel(false);
+      showNotification('success', `已更新存档「${name}」`);
+    } catch (err) {
+      console.error('[ProfitCalc] 覆盖保存失败：', err);
+      showNotification('error', `保存失败：${err instanceof Error ? err.message : '浏览器本地存储可能已满'}`);
+    }
+  };
+
+  const loadPlan = (p: typeof savedPlans[0], listIndex: number) => {
     try {
       const raw = Array.isArray(p?.variants) && p.variants.length > 0 ? p.variants : [{}];
       const safeVariants = raw.map((v, i) => sanitizeVariant(v, i));
@@ -235,6 +271,9 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
 
       const matched = COUNTRIES.find(x => x.code === p?.country);
       if (matched) setCountry(matched);
+
+      setActiveSavedPlanIndex(listIndex);
+      setPlanName(typeof p?.name === 'string' ? p.name : '');
 
       setShowSavePanel(false);
 
@@ -255,6 +294,12 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
       const plans = fromDisk.filter((_, j) => j !== i);
       localStorage.setItem('profit_calc_plans', JSON.stringify(plans));
       setSavedPlans(normalizeSavedPlans(plans));
+      setActiveSavedPlanIndex(prev => {
+        if (prev === null) return null;
+        if (i < prev) return prev - 1;
+        if (i === prev) return null;
+        return prev;
+      });
     } catch (err) {
       console.error('[ProfitCalc] 删除失败：', err);
       showNotification('error', `删除失败：${err instanceof Error ? err.message : '存储异常'}`);
@@ -358,10 +403,22 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
       {/* 存档面板 */}
       {showSavePanel && (
         <div className="bg-white border border-black/10 rounded-2xl p-4 shadow-lg">
-          <div className="flex items-center gap-3 mb-3">
-            <input value={planName} onChange={e=>setPlanName(e.target.value)} placeholder="输入方案名称..."
-              className="flex-1 border border-black/10 rounded-lg px-3 py-1.5 text-sm focus:outline-none"/>
-            <button onClick={savePlan} disabled={!planName.trim()} className="bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40">保存</button>
+          {activeSavedPlanIndex !== null && savedPlans[activeSavedPlanIndex] && (
+            <div className="mb-3 text-xs text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+              正在编辑已存档方案「{savedPlans[activeSavedPlanIndex].name}」。改完参数后点右侧「保存修改」即可覆盖该条存档；也可改名称后一并改名。
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <input value={planName} onChange={e=>setPlanName(e.target.value)} placeholder="方案名称（另存必填；覆盖时可改名）"
+              className="flex-1 min-w-[160px] border border-black/10 rounded-lg px-3 py-1.5 text-sm focus:outline-none"/>
+            <button type="button" onClick={savePlanOverwrite} disabled={activeSavedPlanIndex === null}
+              className="border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:pointer-events-none shrink-0">
+              保存修改
+            </button>
+            <button type="button" onClick={savePlanAsNew} disabled={!planName.trim()}
+              className="bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 shrink-0">
+              另存为新方案
+            </button>
           </div>
           {savedPlans.length>0 && <div className="space-y-2">
             <div className="text-xs text-[#86868b] font-medium">已保存方案</div>
@@ -376,7 +433,7 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
                   </div>
                 </div>
                 <div className="flex gap-3 shrink-0">
-                  <button onClick={()=>loadPlan(p)} className="text-xs text-indigo-600 hover:underline">加载</button>
+                  <button onClick={()=>loadPlan(p, i)} className="text-xs text-indigo-600 hover:underline">加载</button>
                   <button onClick={()=>deletePlan(i)} className="text-xs text-rose-500 hover:underline">删除</button>
                 </div>
               </div>
