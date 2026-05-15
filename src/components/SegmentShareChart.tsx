@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
-import { Product, HistoryRecord } from '../utils/parser';
+import { Product, HistoryRecord, formatRevenue } from '../utils/parser';
 
 interface SegmentShareChartProps {
   products: Product[];
@@ -9,6 +9,7 @@ interface SegmentShareChartProps {
   months: string[];
   segments: string[];
   asinToSegment: Record<string, string>;
+  domain?: string;
 }
 
 const COLORS = [
@@ -21,7 +22,8 @@ export const SegmentShareChart: React.FC<SegmentShareChartProps> = React.memo(({
   history, 
   months, 
   segments, 
-  asinToSegment 
+  asinToSegment,
+  domain = 'amazon.com',
 }) => {
   const [metric, setMetric] = useState<'sales' | 'revenue'>('sales');
 
@@ -70,9 +72,9 @@ export const SegmentShareChart: React.FC<SegmentShareChartProps> = React.memo(({
 
   const formatValue = (value: number) => {
     if (metric === 'revenue') {
-      return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+      return formatRevenue(value, domain);
     }
-    return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    return Math.round(value).toLocaleString();
   };
 
   return (

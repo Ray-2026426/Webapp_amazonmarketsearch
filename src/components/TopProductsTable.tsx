@@ -350,7 +350,7 @@ export const TopProductsTable = React.memo(function TopProductsTable({
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                         <Tooltip contentStyle={{ borderRadius:'12px', border:'none', boxShadow:'0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                           formatter={(value: number, name: string) => {
-                            if (name === '销售额') return [`${cur}${value.toLocaleString()}`, name];
+                            if (name === '销售额') return [`${cur}${Math.round(value).toLocaleString()}`, name];
                             if (name === '价格') return [`${cur}${value.toFixed(2)}`, name];
                             return [value.toLocaleString(), name];
                           }} />

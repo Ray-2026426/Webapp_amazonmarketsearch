@@ -21,7 +21,7 @@ import { MarketAnalysisReport } from './components/MarketAnalysisReport';
 import { MarketHistoryModal } from './components/MarketHistoryModal';
 import { saveMarketSnapshot, suggestMarketSnapshotTitle, type MarketHistorySnapshot } from './utils/marketHistory';
 import { clearWorkspaceIndexedDb } from './utils/workspaceIdb';
-import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, computeMarketReportFingerprint } from './utils/parser';
+import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, formatRevenue, computeMarketReportFingerprint } from './utils/parser';
 import { get, set, del } from 'idb-keyval';
 import { Toaster, toast } from 'sonner';
 import { getCurrentUser, logout, type SessionUser } from './utils/auth';
@@ -1142,7 +1142,7 @@ export default function App() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5" data-annotate-anchor="market-kpi-core">
                   <MetricCard large
                     title="总销售额"
-                    value={`${getCurrencySymbol(marketplace.domain)}${kpiData.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                    value={formatRevenue(kpiData.revenue, marketplace.domain)}
                     icon={DollarSign}
                     tooltip="所选时间段内所有ASIN的月均销售额总和"
                     yoy={calculateTrend(kpiData.revenue, lastYearKpiData.revenue)}
@@ -1201,6 +1201,7 @@ export default function App() {
                     months={selectedKpiMonths}
                     segments={segments}
                     asinToSegment={asinToSegment}
+                    domain={marketplace.domain}
                   />
                   <MarketTrendChart history={filteredHistory} months={months} products={filteredProducts} asinToSegment={asinToSegment} domain={marketplace.domain} />
                   <SeasonalHeatmap history={filteredHistory} months={months} domain={marketplace.domain} />

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
-import { Product, HistoryRecord } from '../utils/parser';
+import { Product, HistoryRecord, formatRevenue } from '../utils/parser';
 import { ProductModal } from './ProductModal';
 
 interface RatingDistributionChartProps {
@@ -152,7 +152,7 @@ export const RatingDistributionChart = React.memo(function RatingDistributionCha
                     return [value.toLocaleString(), 'ASIN数量'];
                   }
                   const isRevenue = name === '销售额';
-                  const formattedValue = isRevenue ? `$${value.toLocaleString()}` : value.toLocaleString();
+                  const formattedValue = isRevenue ? formatRevenue(value, domain) : Math.round(value).toLocaleString();
                   return [formattedValue, name];
                 }}
               />

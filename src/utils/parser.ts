@@ -27,6 +27,11 @@ export const getCurrencySymbol = (domain: string): string => {
   return map[domain] ?? '$';
 };
 
+/** 销售额等金额：取整后显示（带站点货币符号） */
+export function formatRevenue(value: number, domain = 'amazon.com'): string {
+  return `${getCurrencySymbol(domain)}${Math.round(value).toLocaleString()}`;
+}
+
 /** 从 Excel 列名中提取货币符号，如 "2026-04(£)" → "£" */
 function extractCurrencyFromHeader(headers: any[]): string | null {
   for (const h of headers) {

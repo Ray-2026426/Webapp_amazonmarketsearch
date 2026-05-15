@@ -22,7 +22,7 @@ const CustomTooltip = ({ active, payload, label, currency, metric }: any) => {
       <div className="font-bold text-sm text-[#1d1d1f] mb-2">{label}</div>
       <div className="space-y-1 text-xs">
         <div className="flex justify-between gap-4"><span className="text-[#86868b]">ASIN数量</span><span className="font-semibold">{d?.count}</span></div>
-        <div className="flex justify-between gap-4"><span className="text-[#86868b]">{metric === 'revenue' ? '销售额' : '销量'}</span><span className="font-semibold">{metric === 'revenue' ? `${currency}${d?.revenue?.toLocaleString(undefined,{maximumFractionDigits:0})}` : d?.sales?.toLocaleString()}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-[#86868b]">{metric === 'revenue' ? '销售额' : '销量'}</span><span className="font-semibold">{metric === 'revenue' ? `${currency}${Math.round(d?.revenue ?? 0).toLocaleString()}` : d?.sales?.toLocaleString()}</span></div>
         <div className="flex justify-between gap-4"><span className="text-[#86868b]">市场份额</span><span className="font-semibold">{d?.share?.toFixed(1)}%</span></div>
       </div>
     </div>

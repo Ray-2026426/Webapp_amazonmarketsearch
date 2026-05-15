@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
-import { HistoryRecord, Product } from '../utils/parser';
+import { HistoryRecord, Product, getCurrencySymbol, formatRevenue } from '../utils/parser';
 import { ProductModal } from './ProductModal';
 
 interface MarketTrendChartProps {
@@ -15,6 +15,7 @@ interface MarketTrendChartProps {
 type AggregationType = 'month' | 'quarter' | 'year';
 
 export const MarketTrendChart = React.memo(function MarketTrendChart({ history, months, products = [], asinToSegment = {}, domain = 'amazon.com' }: MarketTrendChartProps) {
+  const currency = getCurrencySymbol(domain);
   const [aggregation, setAggregation] = useState<AggregationType>('month');
   const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(null);
 
@@ -150,7 +151,7 @@ export const MarketTrendChart = React.memo(function MarketTrendChart({ history, 
                 fontSize={12} 
                 tickLine={false} 
                 axisLine={false} 
-                tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`}
+                tickFormatter={(value) => `${currency}${(value / 1000000).toFixed(1)}M`}
               />
               <YAxis 
                 yAxisId="right"
@@ -168,16 +169,16 @@ export const MarketTrendChart = React.memo(function MarketTrendChart({ history, 
                 fontSize={12} 
                 tickLine={false} 
                 axisLine={false} 
-                tickFormatter={(value) => `$${value.toFixed(0)}`}
+                tickFormatter={(value) => `${currency}${value.toFixed(0)}`}
                 dx={10}
               />
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
               <Tooltip 
                 contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                 formatter={(value: number, name: string, props: any) => {
-                  if (props.dataKey === 'revenue') return [`$${value.toLocaleString()}`, '销售额'];
-                  if (props.dataKey === 'sales') return [value.toLocaleString(), '销量'];
-                  if (props.dataKey === 'price') return [`$${value.toFixed(2)}`, '平均价格'];
+                  if (props.dataKey === 'revenue') return [formatRevenue(value, domain), '销售额'];
+                  if (props.dataKey === 'sales') return [Math.round(value).toLocaleString(), '销量'];
+                  if (props.dataKey === 'price') return [`${currency}${value.toFixed(2)}`, '平均价格'];
                   return [value, name];
                 }}
               />

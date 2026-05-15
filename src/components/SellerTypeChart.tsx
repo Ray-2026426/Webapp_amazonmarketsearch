@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { Product, HistoryRecord } from '../utils/parser';
+import { Product, HistoryRecord, getCurrencySymbol, formatRevenue } from '../utils/parser';
 import { ProductModal } from './ProductModal';
 
 interface SellerTypeChartProps {
@@ -15,6 +15,7 @@ interface SellerTypeChartProps {
 const COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6'];
 
 export const SellerTypeChart = React.memo(function SellerTypeChart({ products, domain = 'amazon.com', history = [], months = [], asinToSegment = {} }: SellerTypeChartProps) {
+  const currency = getCurrencySymbol(domain);
   const [metric, setMetric] = useState<'sales' | 'revenue'>('sales');
   const [selectedProducts, setSelectedProducts] = useState<Product[] | null>(null);
 
@@ -90,8 +91,8 @@ export const SellerTypeChart = React.memo(function SellerTypeChart({ products, d
                     const totalCount = payload.products.length;
                     const avg = totalCount > 0 ? value / totalCount : 0;
                     const isRevenue = metric === 'revenue';
-                    const formattedValue = isRevenue ? `$${value.toLocaleString()}` : value.toLocaleString();
-                    const formattedAvg = isRevenue ? `$${avg.toFixed(2)}` : avg.toFixed(1);
+                    const formattedValue = isRevenue ? formatRevenue(value, domain) : Math.round(value).toLocaleString();
+                    const formattedAvg = isRevenue ? `${currency}${Math.round(avg).toLocaleString()}` : avg.toFixed(1);
                     return [
                       `${formattedValue} (总平均每个ASIN${isRevenue ? '销售额' : '销量'}: ${formattedAvg})`, 
                       isRevenue ? '销售额' : '销量'

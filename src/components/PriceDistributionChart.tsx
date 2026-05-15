@@ -116,7 +116,7 @@ const CustomTooltip = ({ active, payload, label, metric, currency, hasCompare }:
   const growth = payload.find((p: any) => p.dataKey === 'growthRate');
 
   const fmt = (v: number) => {
-    if (metric === 'revenue') return `${currency}${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    if (metric === 'revenue') return `${currency}${Math.round(v).toLocaleString()}`;
     return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
   };
 

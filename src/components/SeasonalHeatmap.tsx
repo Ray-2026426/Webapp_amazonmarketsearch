@@ -111,7 +111,7 @@ export const SeasonalHeatmap = React.memo(function SeasonalHeatmap({ history, mo
   const normalize = (v: number) => maxVal === minVal ? 0.5 : (v - minVal) / (maxVal - minVal);
 
   const formatVal = (v: number) => {
-    if (metric === 'revenue') return v >= 1000000 ? `${currency}${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${currency}${(v/1000).toFixed(0)}k` : `${currency}${v.toFixed(0)}`;
+    if (metric === 'revenue') return v >= 1000000 ? `${currency}${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${currency}${Math.round(v/1000)}k` : `${currency}${Math.round(v)}`;
     if (metric === 'avgPrice') return `${currency}${v.toFixed(1)}`;
     return v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(Math.round(v));
   };
