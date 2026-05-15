@@ -21,7 +21,7 @@ import { MarketAnalysisReport } from './components/MarketAnalysisReport';
 import { MarketHistoryModal } from './components/MarketHistoryModal';
 import { saveMarketSnapshot, suggestMarketSnapshotTitle, type MarketHistorySnapshot } from './utils/marketHistory';
 import { clearWorkspaceIndexedDb } from './utils/workspaceIdb';
-import { parseProducts, parseHistory, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, computeMarketReportFingerprint } from './utils/parser';
+import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, computeMarketReportFingerprint } from './utils/parser';
 import { get, set, del } from 'idb-keyval';
 import { Toaster, toast } from 'sonner';
 import { getCurrentUser, logout, type SessionUser } from './utils/auth';
@@ -680,8 +680,10 @@ export default function App() {
   const handleDataLoaded = async (file1: File, file2: File) => {
     setIsLoading(true);
     try {
-      const marketplaceInfo = getMarketplace(file1, file2);
-      console.log("Detected marketplace:", marketplaceInfo);
+      // 优先从文件内容（货币符号）识别站点；文件名识别作兜底
+      const contentDetected = await detectMarketplaceFromFile(file2) ?? await detectMarketplaceFromFile(file1);
+      const marketplaceInfo = contentDetected ?? getMarketplace(file1, file2);
+      console.log("Detected marketplace:", marketplaceInfo, contentDetected ? '(from file content)' : '(from filename)');
       
       toast.info("正在解析商品明细数据...");
       const parsedProducts = await parseProducts(file1);

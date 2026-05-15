@@ -27,6 +27,75 @@ export const getCurrencySymbol = (domain: string): string => {
   return map[domain] ?? '$';
 };
 
+/** 从 Excel 列名中提取货币符号，如 "2026-04(£)" → "£" */
+function extractCurrencyFromHeader(headers: any[]): string | null {
+  for (const h of headers) {
+    if (!h) continue;
+    const s = String(h);
+    // 括号内的货币符号，如 ($) (£) (€) (¥) (CDN$) (A$) (MX$) (CA$) (S$) (R$) (kr) (zł) (₹) (₺) (AED) (SAR)
+    const m = s.match(/[\(（]([^)）\d\s]{1,6})[\)）]/);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
+/** 货币符号 → 站点信息映射 */
+const CURRENCY_TO_MARKETPLACE: { currency: string; code: string; domain: string }[] = [
+  { currency: '£',   code: 'UK', domain: 'amazon.co.uk' },
+  { currency: '€',   code: 'DE', domain: 'amazon.de' },
+  { currency: '¥',   code: 'JP', domain: 'amazon.co.jp' },
+  { currency: 'CDN$',code: 'CA', domain: 'amazon.ca' },
+  { currency: 'CA$', code: 'CA', domain: 'amazon.ca' },
+  { currency: 'A$',  code: 'AU', domain: 'amazon.com.au' },
+  { currency: 'MX$', code: 'MX', domain: 'amazon.com.mx' },
+  { currency: 'S$',  code: 'SG', domain: 'amazon.sg' },
+  { currency: 'R$',  code: 'BR', domain: 'amazon.com.br' },
+  { currency: '₹',   code: 'IN', domain: 'amazon.in' },
+  { currency: '₺',   code: 'TR', domain: 'amazon.com.tr' },
+  { currency: 'AED', code: 'AE', domain: 'amazon.ae' },
+  { currency: 'SAR', code: 'SA', domain: 'amazon.sa' },
+  { currency: 'kr',  code: 'SE', domain: 'amazon.se' },
+  { currency: 'zł',  code: 'PL', domain: 'amazon.pl' },
+];
+
+/**
+ * 从历史数据文件的列名中识别站点（货币符号优先）。
+ * 如 "2026-04(£)" → { code: 'UK', domain: 'amazon.co.uk' }
+ * 找不到时返回 null。
+ */
+export async function detectMarketplaceFromFile(
+  file: File
+): Promise<{ code: string; domain: string } | null> {
+  try {
+    const workbook = await readWorkbook(file);
+    // 扫描所有 sheet 的第一行表头
+    for (const sheetName of workbook.SheetNames) {
+      const rows: any[][] = XLSX.utils.sheet_to_json<any[]>(workbook.Sheets[sheetName], {
+        header: 1,
+        range: 0,  // 只取第一行
+      });
+      // 找包含 ASIN 的那行（即真正的表头行）
+      for (let i = 0; i < Math.min(rows.length, 5); i++) {
+        const row = rows[i];
+        if (!row || !Array.isArray(row)) continue;
+        const rowStr = row.map((c: any) => String(c ?? '')).join('|').toLowerCase();
+        if (!rowStr.includes('asin')) continue;
+        const currency = extractCurrencyFromHeader(row);
+        if (currency) {
+          const match = CURRENCY_TO_MARKETPLACE.find(m => m.currency === currency);
+          if (match) {
+            console.log(`[detectMarketplace] Found currency "${currency}" in sheet "${sheetName}" → ${match.code}`);
+            return { code: match.code, domain: match.domain };
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[detectMarketplace] Failed to scan file:', e);
+  }
+  return null;
+}
+
 
 export interface Product {
   asin: string;
@@ -239,7 +308,7 @@ export const parseProducts = async (file: File): Promise<Product[]> => {
         title: titleRaw,
         image: imageUrl,
         monthlySales: getNum(idx.sales),
-        monthlyRevenue: getNum(idx.revenue),
+        monthlyRevenue: idx.revenue >= 0 ? getNum(idx.revenue) : (getNum(idx.sales) * getNum(idx.price)),
         price: getNum(idx.price),
         rating: idx.rating >= 0 ? parseRating(row[idx.rating]) : 0,
         reviewCount: getNum(idx.reviewCount),
@@ -678,7 +747,11 @@ export const parseHistory = async (file: File): Promise<{ history: HistoryRecord
     if (typeof cell === 'number') {
       return excelDateToYYYYMM(cell);
     }
-    const s = String(cell).trim();
+    let s = String(cell).trim();
+    if (!s) return null;
+    // 去掉列名中常见的单位/货币后缀，如 "2026-04($)"、"2026-04(USD)"、"2026-04 销售额" 等
+    // 保留日期部分，去除括号内容及前后空格
+    s = s.replace(/\s*[\(（][^)）]*[\)）]/g, '').trim();
     if (!s) return null;
     // Already YYYY-MM format
     if (s.match(/^\d{4}[-/]\d{1,2}$/)) return s.replace('/', '-');
@@ -756,8 +829,17 @@ export const parseHistory = async (file: File): Promise<{ history: HistoryRecord
       if (normalized) revMonthToCol.set(normalized, i);
     }
     const revMonthCols = months.map((m) => revMonthToCol.get(m) ?? -1);
-    revenueReadSpec = { asinColIdx: revAsinCol, monthCols: revMonthCols };
-    console.log('[parseHistory] revenue month column map (first 5):', revMonthCols.slice(0, 5));
+    
+    // 只要至少有一个月份列被成功映射，就认为 revenue 表有效
+    const validCols = revMonthCols.filter(c => c >= 0).length;
+    if (validCols > 0) {
+      revenueReadSpec = { asinColIdx: revAsinCol, monthCols: revMonthCols };
+    }
+    
+    console.log('[parseHistory] Revenue sheet: headerRowIdx=', revHeaderRowIdx, 'asinCol=', revAsinCol, 'valid month cols=', validCols, '/', revMonthCols.length);
+    console.log('[parseHistory] Revenue month columns:', revMonthCols.slice(0, 5), '...');
+  } else {
+    console.warn('[parseHistory] No revenue rows found');
   }
 
   const historyMap = new Map<string, HistoryRecord>();
@@ -806,12 +888,15 @@ export const parseHistory = async (file: File): Promise<{ history: HistoryRecord
   await processSheet(salesRows, 'sales', { asinColIdx, monthCols: salesMonthCols });
   if (revenueReadSpec) {
     await processSheet(revenueRows, 'revenue', revenueReadSpec);
+  } else {
+    console.warn('[parseHistory] Revenue sheet not found or no valid columns mapped; using sales data only');
   }
 
   // Derive price from revenue/sales
   historyMap.forEach(record => {
     Object.keys(record.history).forEach(month => {
       const h = record.history[month];
+      // 若 price 缺失但有 revenue/sales，推导价格
       if (h.price === 0 && h.sales > 0 && h.revenue > 0) {
         h.price = h.revenue / h.sales;
       }
