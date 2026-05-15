@@ -161,7 +161,7 @@ export function KwView(p:KwViewProps){
         {tab==='dd'&&hasSeg&&<DdTab segs={segs} seg={seg} setSeg={setSeg} keywords={keywords}/>}
         {tab==='ai'&&<AiTab ins={ins} hasSeg={hasSeg} genIns={genIns} onGenAI={onGenAI} setSeg={setSeg} setTab={setTab}/>}
 
-        <div><button onClick={()=>setShowT(v=>!v)} className="flex items-center gap-2 text-sm text-[#86868b] hover:text-[#1d1d1f] font-medium"><Filter className="w-4 h-4"/>{showT?'收起':'展开'}原始关键词表<span className="text-xs bg-[#f5f5f7] px-2 py-0.5 rounded-full border border-black/5">{keywords.length} 个词</span></button></div>
+        <div><button type="button" onClick={() => setShowT(!showT)} className="flex items-center gap-2 text-sm text-[#86868b] hover:text-[#1d1d1f] font-medium"><Filter className="w-4 h-4"/>{showT?'收起':'展开'}原始关键词表<span className="text-xs bg-[#f5f5f7] px-2 py-0.5 rounded-full border border-black/5">{keywords.length} 个词</span></button></div>
         {showT&&<RawTable filt={filt} eid={eid} etags={etags} q={q} setQ={setQ} cat={cat} setCat={setCat} onStartEdit={onStartEdit} onSaveEdit={onSaveEdit} onCancelEdit={onCancelEdit} onTogTag={onTogTag}/>}
       </>}
     </div>

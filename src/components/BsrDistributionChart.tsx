@@ -55,7 +55,7 @@ export const BsrDistributionChart = React.memo(function BsrDistributionChart({ p
       const minSales = count > 0 ? ps.filter(p => p.monthlySales > 0).reduce((s, p, _, arr) => s + p.monthlySales / arr.length, 0) : 0;
       const sortedSales = ps.map(p => p.monthlySales).filter(v => v > 0).sort((a,b)=>a-b);
       const medianSales = sortedSales.length > 0 ? sortedSales[Math.floor(sortedSales.length / 2)] : 0;
-      return { label: b.label, count, avgSales, avgPrice, minSales, medianSales, color: BUCKET_COLORS[i] };
+      return { label: b.label, count, avgSales, avgPrice, minSales, medianSales, color: BUCKET_COLORS[i], bucketProducts: ps };
     }).filter(d => d.count > 0);
   }, [products]);
 
@@ -92,7 +92,7 @@ export const BsrDistributionChart = React.memo(function BsrDistributionChart({ p
                   <Tooltip content={<CustomTooltip currency={currency}/>}/>
                   <Legend verticalAlign="bottom" height={28} iconType="circle" wrapperStyle={{fontSize:'12px'}}/>
                   <Bar yAxisId="left" dataKey="count" name="ASIN数量" radius={[4,4,0,0]} barSize={28}
-                    onClick={(d:any)=>setSelectedProducts(d.products)}
+                    onClick={(_, index) => { const row = data[index]; if (row?.bucketProducts) setSelectedProducts(row.bucketProducts); }}
                     className="cursor-pointer">
                     {data.map((d,i)=><Cell key={i} fill={d.color} fillOpacity={0.85}/>)}
                   </Bar>
@@ -105,7 +105,7 @@ export const BsrDistributionChart = React.memo(function BsrDistributionChart({ p
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
               {data.slice(0,4).map((d,i)=>(
                 <div key={i} className="bg-[#f5f5f7] rounded-2xl p-3 border border-black/5 cursor-pointer hover:bg-indigo-50 hover:border-indigo-100 transition-colors"
-                  onClick={()=>setSelectedProducts(d.products)}>
+                  onClick={()=>setSelectedProducts(d.bucketProducts)}>
                   <div className="text-xs text-[#86868b] mb-1">{d.label}</div>
                   <div className="font-bold text-[#1d1d1f]">月销中位数 {d.medianSales.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
                   <div className="text-xs text-[#86868b] mt-0.5">均价 {currency}{d.avgPrice.toFixed(0)} · {d.count} 个ASIN</div>

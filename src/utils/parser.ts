@@ -742,9 +742,31 @@ export const parseHistory = async (file: File): Promise<{ history: HistoryRecord
     console.log('[parseHistory] asinColIdx:', asinColIdx, '| dataStartIdx:', dataStartIdx, '| raw header[dataStartIdx]:', header[dataStartIdx], '| months:', months.slice(0, 5), '... total:', months.length);
   }
 
+  /** 销量表：月份列与 months 数组下标连续；销售额表：按表头月份文字映射列，避免两表空列/顺序不一致时读错 */
+  const salesMonthCols = months.map((_, k) => dataStartIdx + k);
+
+  let revenueReadSpec: { asinColIdx: number; monthCols: number[] } | null = null;
+  if (revenueRows.length > 0) {
+    const revHeaderRowIdx = findHeaderRow(revenueRows, ['asin', 'sku', '202', '201', '产品']);
+    const revHeader = revenueRows[revHeaderRowIdx] || [];
+    const revAsinCol = findCol(revHeader, ['asin'], 1);
+    const revMonthToCol = new Map<string, number>();
+    for (let i = 0; i < revHeader.length; i++) {
+      const normalized = normalizeMonthCell(revHeader[i]);
+      if (normalized) revMonthToCol.set(normalized, i);
+    }
+    const revMonthCols = months.map((m) => revMonthToCol.get(m) ?? -1);
+    revenueReadSpec = { asinColIdx: revAsinCol, monthCols: revMonthCols };
+    console.log('[parseHistory] revenue month column map (first 5):', revMonthCols.slice(0, 5));
+  }
+
   const historyMap = new Map<string, HistoryRecord>();
 
-  const processSheet = async (rows: any[][], type: 'sales' | 'revenue') => {
+  const processSheet = async (
+    rows: any[][],
+    type: 'sales' | 'revenue',
+    readSpec: { asinColIdx: number; monthCols: number[] }
+  ) => {
     if (rows.length === 0) return;
     const headerRowIdx = findHeaderRow(rows, ['asin', 'sku', '202', '201', '产品']);
     const CHUNK_SIZE = 500;
@@ -754,7 +776,7 @@ export const parseHistory = async (file: File): Promise<{ history: HistoryRecord
       for (let j = i; j < end; j++) {
         const row = rows[j];
         if (!row) continue;
-        const asinRaw = row[asinColIdx];
+        const asinRaw = row[readSpec.asinColIdx];
         if (!asinRaw) continue;
         const asin = String(asinRaw).trim();
         if (!asin || asin.toLowerCase() === 'asin' || asin.length < 3) continue;
@@ -766,7 +788,9 @@ export const parseHistory = async (file: File): Promise<{ history: HistoryRecord
 
         for (let k = 0; k < months.length; k++) {
           const month = months[k];
-          const val = parseNumber(row[dataStartIdx + k]);
+          const col = readSpec.monthCols[k];
+          if (col < 0) continue;
+          const val = parseNumber(row[col]);
           if (!record.history[month]) {
             record.history[month] = { sales: 0, revenue: 0, price: 0 };
           }
@@ -779,8 +803,10 @@ export const parseHistory = async (file: File): Promise<{ history: HistoryRecord
     console.log(`[parseHistory] ${type}: processed ${processed} rows`);
   };
 
-  await processSheet(salesRows, 'sales');
-  await processSheet(revenueRows, 'revenue');
+  await processSheet(salesRows, 'sales', { asinColIdx, monthCols: salesMonthCols });
+  if (revenueReadSpec) {
+    await processSheet(revenueRows, 'revenue', revenueReadSpec);
+  }
 
   // Derive price from revenue/sales
   historyMap.forEach(record => {

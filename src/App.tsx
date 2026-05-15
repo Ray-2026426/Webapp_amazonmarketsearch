@@ -280,8 +280,11 @@ export default function App() {
       activeView,
       anchorAnnotations,
     });
-    if (res.ok) toast.success('已保存到我的市场历史（存在本机浏览器）');
-    else toast.error(res.error);
+    if ('error' in res) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success('已保存到我的市场历史（存在本机浏览器）');
   }, [
     isRegisteredUser,
     currentUser,
@@ -466,7 +469,8 @@ export default function App() {
               savedHistory, savedMonths, savedSegments, 
               savedAsinToSegment, savedSegmentDescriptions,
               savedReviews, savedPersona, savedKeywords, savedSelectedSegment,
-              savedMarketReportCache, savedHistorySourceLabel, savedAnchorAnnotations
+              savedMarketReportCache, savedHistorySourceLabel, savedAnchorAnnotations,
+              savedSelectedKpiMonths, savedPreviousKpiMonths, savedLastYearKpiMonths,
             ] = await Promise.all([
               get('history'), get('months'), get('segments'),
               get('asinToSegment'), get('segmentDescriptions'),
@@ -474,6 +478,9 @@ export default function App() {
               get('marketReportCache'),
               get('historySourceLabel'),
               get('anchorAnnotations'),
+              get('selectedKpiMonths'),
+              get('previousKpiMonths'),
+              get('lastYearKpiMonths'),
             ]);
 
             if (savedHistory) setHistory(savedHistory);
@@ -497,6 +504,20 @@ export default function App() {
               setHistorySourceLabel(savedHistorySourceLabel);
             }
             setAnchorAnnotations(normalizeAnchorAnnotations(savedAnchorAnnotations));
+
+            const validMonthSubset = (arr: unknown, available: string[]): arr is string[] =>
+              Array.isArray(arr) &&
+              arr.length > 0 &&
+              arr.every((x) => typeof x === 'string' && available.includes(x));
+            if (savedMonths && Array.isArray(savedMonths) && savedMonths.length > 0) {
+              const available = savedMonths as string[];
+              if (validMonthSubset(savedSelectedKpiMonths, available))
+                setSelectedKpiMonths(savedSelectedKpiMonths);
+              if (validMonthSubset(savedPreviousKpiMonths, available))
+                setPreviousKpiMonths(savedPreviousKpiMonths);
+              if (validMonthSubset(savedLastYearKpiMonths, available))
+                setLastYearKpiMonths(savedLastYearKpiMonths);
+            }
             
             setIsDataLoaded(true);
             console.log("App state restored successfully.");
@@ -554,6 +575,9 @@ export default function App() {
         await set('asinToSegment', asinToSegment);
         await set('segmentDescriptions', segmentDescriptions);
         await set('selectedSegment', selectedSegment);
+        await set('selectedKpiMonths', selectedKpiMonths);
+        await set('previousKpiMonths', previousKpiMonths);
+        await set('lastYearKpiMonths', lastYearKpiMonths);
         
         // Content state
         await set('reviews', reviews);
@@ -574,7 +598,8 @@ export default function App() {
   }, [
     marketplace, isInitializing, activeView, isDataLoaded,
     products, history, months, segments, asinToSegment, segmentDescriptions,
-    selectedSegment, reviews, persona, keywords, marketReportCache, historySourceLabel, anchorAnnotations
+    selectedSegment, selectedKpiMonths, previousKpiMonths, lastYearKpiMonths,
+    reviews, persona, keywords, marketReportCache, historySourceLabel, anchorAnnotations
   ]);
 
   const filteredProducts = useMemo(() => {
@@ -679,6 +704,10 @@ export default function App() {
       }
       
       toast.info("正在保存并初始化仪表盘...");
+
+      setSelectedKpiMonths([]);
+      setPreviousKpiMonths([]);
+      setLastYearKpiMonths([]);
       
       // Save heavy data to IndexedDB FIRST to ensure persistence
       await set('products', parsedProducts);
@@ -808,26 +837,34 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handleScroll = () => {
-      sessionStorage.setItem(`scrollPosition_${activeView}`, window.scrollY.toString());
+    if (!currentUser || isLoading || isInitializing || isRestoring) return;
+    const el = scrollMainRef.current;
+    if (!el) return;
+    const key = `workspaceScroll_${activeView}`;
+    const onScroll = () => {
+      sessionStorage.setItem(key, String(el.scrollTop));
     };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [activeView]);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [activeView, currentUser, isLoading, isInitializing, isRestoring]);
 
   useEffect(() => {
-    if (!isInitializing) {
-      const savedScroll = sessionStorage.getItem(`scrollPosition_${activeView}`);
-      if (savedScroll) {
-        // Use a small timeout to ensure DOM is rendered before scrolling
-        setTimeout(() => {
-          window.scrollTo(0, parseInt(savedScroll, 10));
-        }, 100);
-      } else {
-        window.scrollTo(0, 0);
-      }
-    }
-  }, [isInitializing, activeView]);
+    if (isInitializing || isLoading || isRestoring || !currentUser) return;
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
+      const el = scrollMainRef.current;
+      if (!el) return;
+      const key = `workspaceScroll_${activeView}`;
+      const saved = sessionStorage.getItem(key);
+      el.scrollTop = saved ? parseInt(saved, 10) || 0 : 0;
+    };
+    const t = window.setTimeout(run, 100);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [isInitializing, activeView, currentUser, isLoading, isRestoring]);
 
   return (
     <ErrorBoundary>
