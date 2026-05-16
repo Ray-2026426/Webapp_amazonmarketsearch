@@ -522,6 +522,21 @@ export default function App() {
             setIsDataLoaded(true);
             console.log("App state restored successfully.");
           }
+        } else {
+          // 未加载市场数据时，仍恢复已保存的评论等工作区内容（仅评论分析）
+          const [savedReviews, savedPersona, savedKeywords, savedAnchorAnnotations] = await Promise.all([
+            get('reviews'),
+            get('persona'),
+            get('keywords'),
+            get('anchorAnnotations'),
+          ]);
+          if (savedReviews && Array.isArray(savedReviews) && savedReviews.length > 0) {
+            setReviews(savedReviews);
+            if (savedPersona) setPersona(savedPersona);
+            if (savedKeywords) setKeywords(savedKeywords);
+            setAnchorAnnotations(normalizeAnchorAnnotations(savedAnchorAnnotations));
+            console.log('Restored reviews-only workspace from IDB.');
+          }
         }
       } catch (error) {
         console.error("Failed to load state from IndexedDB:", error);
@@ -545,19 +560,20 @@ export default function App() {
   // Prevent accidental refresh during critical operations
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isInitializing || !isDataLoaded) return;
-      // We only warn if they have data loaded, as refreshing would be annoying
+      if (isInitializing) return;
+      if (!isDataLoaded && reviews.length === 0) return;
       e.preventDefault();
       e.returnValue = '';
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isInitializing, isDataLoaded]);
+  }, [isInitializing, isDataLoaded, reviews.length]);
 
-  // Save state to IndexedDB when it changes (consolidated and debounced)
+  // Save state to IndexedDB when it changes（有市场数据或仅有评论数据时都持久化）
   useEffect(() => {
-    if (isInitializing || !isDataLoaded) return;
-    
+    if (isInitializing) return;
+    if (!isDataLoaded && reviews.length === 0) return;
+
     const saveState = async () => {
       try {
         // Persist all state for full recovery on refresh
@@ -1225,8 +1241,8 @@ export default function App() {
               </div>
               }
 
-              {/* 保持挂载：打标等长任务在后台继续，切换「关键词/利润」等 tab 时不应卸载 UserInsights */}
-              {isDataLoaded && (
+              {/* 有市场数据、或当前在用户洞察、或已有评论数据时保持挂载（后台打标不因切 Tab 中断） */}
+              {(isDataLoaded || activeView === 'insights' || reviews.length > 0) && (
                 <div
                   className={activeView === 'insights' ? 'max-w-7xl mx-auto' : 'hidden'}
                   data-annotate-anchor="insights-root"
@@ -1237,6 +1253,7 @@ export default function App() {
                     setReviews={setReviews}
                     persona={persona}
                     setPersona={setPersona}
+                    insightsUiActive={activeView === 'insights'}
                   />
                 </div>
               )}

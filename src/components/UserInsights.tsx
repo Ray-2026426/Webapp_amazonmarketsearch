@@ -10,6 +10,8 @@ import {
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend, PieChart, Pie } from 'recharts';
 
 interface TagLibrary {
@@ -25,6 +27,8 @@ interface UserInsightsProps {
   setReviews: React.Dispatch<React.SetStateAction<Review[]>>;
   persona: { people: string; scenarios: string; needs: string } | null;
   setPersona: React.Dispatch<React.SetStateAction<{ people: string; scenarios: string; needs: string } | null>>;
+  /** 为 false 时不挂载 Recharts，避免父级 `hidden` 下图表与 React DOM 冲突（insertBefore 报错）。App 传 `activeView === 'insights'`。 */
+  insightsUiActive?: boolean;
 }
 
 const COLORS = ['#6366f1','#8b5cf6','#ec4899','#f43f5e','#f59e0b','#10b981','#06b6d4','#3b82f6','#84cc16','#f97316'];
@@ -47,16 +51,110 @@ interface JourneyRow {
 const JOURNEY_MAX_ROWS = 80;
 const JOURNEY_RAW_MAX_LEN = 350_000;
 
-/** 拆表格行：制表符 或 Markdown 表格（保留空单元格以免错位） */
+/** 每个维度标签库最多保留条数（与 AI 提示、解析一致） */
+const TAG_LIB_MAX_PER_DIM = 6;
+
+/** 去掉 AI 用 ``` 包裹的表格外壳，便于解析 */
+function stripMarkdownFence(raw: string): string {
+  let t = raw.trim();
+  if (!t.startsWith('```')) return t;
+  t = t.replace(/^```[a-zA-Z0-9_-]*\s*\n?/, '');
+  t = t.replace(/\n?```\s*$/, '');
+  return t.trim();
+}
+
+/** 深度报告：把「一、xxx」类章节行提升为 Markdown 标题，层次更清晰 */
+function enhanceInsightReportMarkdown(text: string): string {
+  const t = text.trim();
+  return t.replace(/^([一二三四五六七八九十]+[、．.]\s*[^\n#]+)$/gm, (line) => {
+    if (/^\s*#+\s/.test(line)) return line;
+    return `## ${line}`;
+  });
+}
+
+/** 抽取 AI 返回中第一段 JSON 对象 / 数组（用于旅程表 JSON 模式解析） */
+function extractFirstJsonBlock(raw: string): string | null {
+  const text = raw.trim();
+  if (!text) return null;
+  const start = text.search(/[{[]/);
+  if (start === -1) return null;
+  const open = text[start];
+  const close = open === '{' ? '}' : ']';
+  let depth = 0;
+  let inStr: '"' | "'" | null = null;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === inStr) { inStr = null; }
+      continue;
+    }
+    if (ch === '"' || ch === "'") { inStr = ch as '"' | "'"; continue; }
+    if (ch === open) depth++;
+    else if (ch === close) {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/** 将 AI 返回解析为旅程行：先尝试 JSON，再回退到 TSV / Markdown 表 */
+function parseJourneyRowsFlexible(raw: string): JourneyRow[] {
+  const cleaned = stripMarkdownFence(typeof raw === 'string' ? raw : '');
+  const jsonText = extractFirstJsonBlock(cleaned);
+  if (jsonText) {
+    try {
+      const parsed = JSON.parse(jsonText) as unknown;
+      const list = Array.isArray(parsed)
+        ? parsed
+        : (parsed && typeof parsed === 'object' && Array.isArray((parsed as { rows?: unknown[] }).rows))
+          ? (parsed as { rows: unknown[] }).rows
+          : null;
+      if (list && list.length > 0) {
+        const rows: JourneyRow[] = [];
+        for (const item of list) {
+          if (!item || typeof item !== 'object') continue;
+          const o = item as Record<string, unknown>;
+          const pick = (...keys: string[]) =>
+            String(keys.map((k) => o[k]).find((v) => v != null) ?? '').trim();
+          const row: JourneyRow = {
+            stage: pick('stage', '阶段', '用户旅程阶段'),
+            who: pick('who', 'Who'),
+            where: pick('where', 'Where'),
+            when: pick('when', 'When'),
+            what: pick('what', 'What'),
+            why: pick('why', 'Why'),
+            how: pick('how', 'How'),
+            quote: pick('quote', '原句', '代表评论原句'),
+            weakness: pick('weakness', '劣势', '当前方案劣势'),
+            improvement: pick('improvement', '改进', '改进方案', '可能的改进方案'),
+          };
+          if (row.stage) rows.push(row);
+          if (rows.length >= JOURNEY_MAX_ROWS) break;
+        }
+        if (rows.length > 0) return rows;
+      }
+    } catch {
+      /* fallback */
+    }
+  }
+  return parseJourneyRows(cleaned);
+}
+
+/** 拆表格行：制表符 或 Markdown 表格（保留空单元格；兼容无尾部 | 的行，避免误删最后一列） */
 function splitJourneyTableLine(line: string): string[] {
   const t = line.trim();
   if (!t) return [];
   if (t.startsWith('|')) {
-    const parts = line.split('|');
-    if (parts.length >= 2 && parts[0].trim() === '' && parts[parts.length - 1].trim() === '') {
-      return parts.slice(1, -1).map((c) => c.trim());
-    }
-    return parts.map((c) => c.trim()).filter((_, i) => i > 0 && i < parts.length - 1);
+    const parts = line.split('|').map((c) => c.trim());
+    let start = 0;
+    let end = parts.length;
+    if (start < end && parts[start] === '') start++;
+    if (end > start && parts[end - 1] === '') end--;
+    return parts.slice(start, end);
   }
   return line.split('\t').map((c) => c.trim());
 }
@@ -134,9 +232,16 @@ function repairJourneyRowMisplacedQuote(row: JourneyRow): JourneyRow {
 }
 
 const parseJourneyRows = (raw: string): JourneyRow[] => {
-  const safeRaw = typeof raw === 'string' ? raw.slice(0, JOURNEY_RAW_MAX_LEN) : '';
+  const safeRaw = stripMarkdownFence(typeof raw === 'string' ? raw.slice(0, JOURNEY_RAW_MAX_LEN) : '');
   const lines = safeRaw.split('\n').map((l) => l.trim()).filter(Boolean);
-  const tableLines = lines.filter((l) => l.includes('\t') || l.includes('|'));
+  const tableLines = lines.filter((l) => {
+    if (l.includes('\t')) return true;
+    if (!l.includes('|')) return false;
+    // 跳过分隔行 |---|---| 与仅含空白的管道行
+    const cells = splitJourneyTableLine(l);
+    if (cells.length && cells.every((c) => /^[\s\-:|]+$/.test(String(c)))) return false;
+    return true;
+  });
   const rows = tableLines
     .map((line) => splitJourneyTableLine(line))
     .map((cells) => journeyCellsToRow(cells))
@@ -226,12 +331,12 @@ function parseTagLinesFromInput(text: string): string[] {
     if (seen.has(p)) continue;
     seen.add(p);
     out.push(p);
-    if (out.length >= 80) break;
+    if (out.length >= TAG_LIB_MAX_PER_DIM) break;
   }
   return out;
 }
 
-export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products, reviews, setReviews, persona, setPersona }) => {
+export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products, reviews, setReviews, persona, setPersona, insightsUiActive = true }) => {
   // ── State ──────────────────────────────────────────────
   const [step, setStep] = useState<'idle'|'step1'|'step2'|'done'>('idle');
   const [stepProgress, setStepProgress] = useState('');
@@ -241,6 +346,8 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
   const [journeyReportRaw, setJourneyReportRaw] = useState<string | null>(null);
   const [journeyRows, setJourneyRows] = useState<JourneyRow[]>([]);
   const [isJourneyLoading, setIsJourneyLoading] = useState(false);
+  /** 每成功拉取一次旅程数据 +1，强制整段旅程 UI 重挂载，避免与 Recharts 并发提交 DOM 时 insertBefore 崩溃 */
+  const [journeyMountId, setJourneyMountId] = useState(0);
   const [listSearchTerm, setListSearchTerm] = useState('');
   const [listMediaOnly, setListMediaOnly] = useState(false);
   const [filterRating, setFilterRating] = useState<'all' | '1' | '2' | '3' | '4' | '5' | 'bad'>('all');
@@ -276,6 +383,11 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
   const journeyQuoteTrRef = useRef<Record<string, string>>({});
   journeyQuoteTrRef.current = journeyQuoteTr;
   const [expandedReviewIds, setExpandedReviewIds] = useState<Record<string, boolean>>({});
+
+  const deepReportMarkdown = useMemo(
+    () => (deepReport ? enhanceInsightReportMarkdown(deepReport) : ''),
+    [deepReport]
+  );
 
   // ── Derived ────────────────────────────────────────────
   const allAsins = useMemo(
@@ -576,7 +688,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
       const res = await generateText(prompt, aiSettings, { jsonMode: true });
       const raw = JSON.parse(res.match(/\{[\s\S]*\}/)?.[0] ?? res) as Record<string, unknown>;
       const asArr = (x: unknown): string[] =>
-        Array.isArray(x) ? x.map((s) => String(s).trim()).filter(Boolean).slice(0, 80) : [];
+        Array.isArray(x) ? x.map((s) => String(s).trim()).filter(Boolean).slice(0, TAG_LIB_MAX_PER_DIM) : [];
       const lib: TagLibrary = {
         positive: asArr(raw.positive),
         negative: asArr(raw.negative),
@@ -586,7 +698,9 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
       setTagLib(lib);
       setStep('done');
       setStepProgress('');
-      toast.success(`标签库生成完成！好评${lib.positive.length}个，差评${lib.negative.length}个`);
+      toast.success(
+        `标签库生成完成！好评 ${lib.positive.length} · 差评 ${lib.negative.length} · 场景 ${lib.scenarios.length} · 人群 ${lib.audience.length}`
+      );
       return lib;
     } catch(e: any) {
       toast.error('Step1 失败: ' + e.message); setStep('idle'); return null;
@@ -717,25 +831,28 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
         .join('\n');
       const basePrompt = getPrompt('voc_user_journey_5w1h');
       const prompt = `${basePrompt}\n\n评论数据（共${filteredReviews.length}条，样本${sample.length}条）：\n${reviewText}`;
-      const res = await generateText(prompt, aiSettings);
-      const trimmed = typeof res === 'string' ? res.slice(0, JOURNEY_RAW_MAX_LEN) : '';
+      const res = await generateText(prompt, aiSettings, { jsonMode: true });
+      const trimmed = stripMarkdownFence(typeof res === 'string' ? res.slice(0, JOURNEY_RAW_MAX_LEN) : '');
       setJourneyQuoteTr({});
       setJourneyQuoteTrShow({});
       setJourneyReportRaw(trimmed);
       let rows: JourneyRow[] = [];
       try {
-        rows = parseJourneyRows(trimmed);
+        rows = parseJourneyRowsFlexible(trimmed);
       } catch (err) {
-        console.error('parseJourneyRows', err);
+        console.error('parseJourneyRowsFlexible', err);
         toast.error('解析旅程表格失败，可能是 AI 返回格式异常。已保留原文，可缩小筛选范围后重试。');
       }
       setJourneyRows(rows);
-      if (rows.length === 0) toast.warning('已生成内容，但未识别到标准表格行，请检查返回是否为制表符/表格格式');
+      setJourneyMountId((n) => n + 1);
+      if (rows.length === 0 && trimmed.length > 80) {
+        toast.warning('AI 返回内容未能解析为旅程表，已展示原文。可缩小筛选范围或在 AI 设置中恢复「VOC Step4」默认提示后重试。');
+      }
       else if (rows.length >= JOURNEY_MAX_ROWS) toast.info(`仅展示前 ${JOURNEY_MAX_ROWS} 行旅程，避免页面过载`);
     } catch (e: any) {
       toast.error('生成用户旅程失败: ' + e.message);
     } finally {
-      setIsJourneyLoading(false);
+      window.setTimeout(() => setIsJourneyLoading(false), 0);
     }
   };
 
@@ -834,6 +951,8 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
   };
 
   const hasTagged = reviews.some(r => r.tags);
+  /** 生成旅程表时暂时卸载 Recharts，避免与大量旅程节点同一提交周期内抢 DOM（常见 insertBefore NotFoundError） */
+  const showInsightCharts = hasTagged && insightsUiActive && !isJourneyLoading;
   const isRunning = step === 'step1' || step === 'step2';
   const tagModalReviews = useMemo(() => {
     if (!tagModal) return [];
@@ -1215,7 +1334,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
             <Card className="rounded-2xl border-indigo-100 shadow-sm overflow-hidden ring-1 ring-indigo-100">
               <CardHeader className="bg-indigo-50/80 border-b border-indigo-100">
                 <CardTitle className="text-sm font-bold text-indigo-900">编辑标签库</CardTitle>
-                <p className="text-xs text-indigo-800/80 mt-1">每类单独填写：可<strong>一行一个标签</strong>，或用<strong>中文/英文逗号、顿号</strong>分隔。保存后直接用下方「Step2: 自动打标」，无需再跑 Step1。</p>
+                <p className="text-xs text-indigo-800/80 mt-1">每类单独填写：可<strong>一行一个标签</strong>，或用<strong>中文/英文逗号、顿号</strong>分隔；<strong>每类最多 {TAG_LIB_MAX_PER_DIM} 个</strong>。保存后直接用下方「Step2: 自动打标」，无需再跑 Step1。</p>
               </CardHeader>
               <CardContent className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className="flex flex-col gap-1">
@@ -1300,8 +1419,8 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
 
           
 
-          {/* Tag Charts - only show if tagged */}
-          {hasTagged && (
+          {/* Tag Charts - only show if tagged；仅在本 Tab 可见时挂载 Recharts，避免父级 `hidden` 下初始化图表 */}
+          {showInsightCharts && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {([['positive','好评点',ThumbsUp,'#10b981'],['negative','差评点',ThumbsDown,'#f43f5e'],['scenarios','使用场景',MapPin,'#6366f1'],['audience','目标人群',UsersIcon,'#f59e0b']] as const).map(([dim, label, Icon, color]) => {
                 const selTag =
@@ -1350,7 +1469,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
           )}
 
           {/* 标签趋势：单标签 + TOP 多标签月度对比 + 国家分布 */}
-          {hasTagged && (
+          {showInsightCharts && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               <Card className="rounded-3xl border-black/5 shadow-sm overflow-hidden">
                 <CardHeader className="bg-[#f5f5f7]/50 border-b border-black/5">
@@ -1483,7 +1602,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-indigo-100 rounded-xl"><Sparkles className="w-4 h-4 text-indigo-600"/></div>
-                    <div><CardTitle className="text-sm font-bold">AI 深度洞察报告</CardTitle><p className="text-xs text-[#86868b] mt-0.5">用于产品策略、卖点与问题优先级判断（整行宽展示）</p></div>
+                    <div><CardTitle className="text-sm font-bold">AI 深度洞察报告</CardTitle><p className="text-xs text-[#86868b] mt-0.5">产品策略与卖点优先级；章节自动分层，支持表格与列表</p></div>
                   </div>
                   <button onClick={runDeepReport} disabled={isReportLoading} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60">
                     {isReportLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <FileText className="w-4 h-4"/>}
@@ -1493,12 +1612,10 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
               </CardHeader>
               <CardContent className="p-6">
                 {deepReport ? (
-                  <div className="space-y-3 max-h-[min(560px,70vh)] overflow-y-auto pr-1">
-                    {deepReport.split('\n').filter(l => l.trim()).map((line, i) => (
-                      <p key={i} className={`text-sm leading-relaxed ${/^([一二三四五六七八九十]、|#+)/.test(line) ? 'font-bold text-[#1d1d1f] mt-3 first:mt-0' : 'text-[#424245]'}`}>
-                        {line}
-                      </p>
-                    ))}
+                  <div className="max-h-[min(560px,70vh)] overflow-x-auto overflow-y-auto rounded-2xl border border-indigo-100/90 bg-gradient-to-b from-white via-white to-indigo-50/40 px-5 py-6 shadow-inner">
+                    <div className="prose prose-base max-w-none min-w-[280px] text-[#3f3f46] leading-relaxed prose-headings:scroll-mt-4 prose-headings:font-semibold prose-headings:text-indigo-950 prose-h2:text-[1.05rem] prose-h2:mt-8 prose-h2:mb-3 prose-h2:border-b prose-h2:border-indigo-100 prose-h2:pb-2 prose-h2:first:mt-0 prose-p:my-2.5 prose-p:text-[15px] prose-ul:my-2 prose-ul:pl-1 prose-li:my-1 prose-li:marker:text-indigo-400 prose-strong:text-[#1e1b4b] [&_table]:w-full [&_table]:text-[14px] prose-th:border prose-th:border-black/10 prose-th:bg-stone-50 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-td:border prose-td:border-black/10 prose-td:px-3 prose-td:py-2">
+                      <Markdown remarkPlugins={[remarkGfm]}>{deepReportMarkdown}</Markdown>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12 text-[#86868b]">
@@ -1524,7 +1641,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
               </CardHeader>
               <CardContent className="p-4">
                 {journeyRows.length > 0 ? (
-                  <div className="space-y-3">
+                  <div key={`journey-parsed-${journeyMountId}`} className="space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[11px] text-[#86868b] mr-1">呈现方式</span>
                       <button
@@ -1545,7 +1662,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                     {journeyViewMode === 'timeline' ? (
                       <div className="space-y-0 max-h-[min(560px,70vh)] overflow-y-auto pr-1">
                         {journeyRows.map((r, i) => (
-                          <div key={i} className="relative pl-7 pb-6 last:pb-2 border-l-2 border-amber-200/90 ml-2">
+                          <div key={`jm-${journeyMountId}-${i}-${r.stage.slice(0, 32)}`} className="relative pl-7 pb-6 last:pb-2 border-l-2 border-amber-200/90 ml-2">
                             <div className="absolute left-[-7px] top-1.5 w-3 h-3 rounded-full bg-amber-500 border-2 border-white shadow-sm" />
                             <div className="rounded-2xl border border-black/5 bg-gradient-to-br from-white to-amber-50/40 p-4 shadow-sm">
                               <div className="flex flex-wrap items-baseline gap-2 mb-3">
@@ -1580,7 +1697,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                                           <div className="mt-2 flex flex-wrap gap-2">
                                             {matched.imageUrls.slice(0, 8).map((url, uidx) => (
                                               <button key={`${qKey}-img-${uidx}`} type="button" onClick={() => setMediaPreview({ type: 'image', url })} className="block">
-                                                <img src={url} alt="" className="h-16 w-16 rounded-lg object-cover border border-black/5" />
+                                                <img src={url} alt="" loading="lazy" decoding="async" className="h-16 w-16 rounded-lg object-cover border border-black/5" />
                                               </button>
                                             ))}
                                           </div>
@@ -1643,7 +1760,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                           </thead>
                           <tbody>
                             {journeyRows.map((r, i) => (
-                              <tr key={i} className="align-top odd:bg-white even:bg-[#fcfcfd]">
+                              <tr key={`jmt-${journeyMountId}-${i}-${r.stage.slice(0, 24)}`} className="align-top odd:bg-white even:bg-[#fcfcfd]">
                                 <td className="px-3 py-2 border-b border-black/5 font-semibold text-[#1d1d1f]">{r.stage}</td>
                                 <td className="px-3 py-2 border-b border-black/5 text-[#424245]">{r.who}</td>
                                 <td className="px-3 py-2 border-b border-black/5 text-[#424245]">{r.where}</td>
@@ -1663,7 +1780,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                                             <div className="mt-1.5 flex flex-wrap gap-1.5">
                                               {matched.imageUrls.slice(0, 6).map((url, uidx) => (
                                                 <button key={`${qKey}-im-${uidx}`} type="button" onClick={() => setMediaPreview({ type: 'image', url })} className="block">
-                                                  <img src={url} alt="" className="h-12 w-12 rounded-md object-cover border border-black/5" />
+                                                  <img src={url} alt="" loading="lazy" decoding="async" className="h-12 w-12 rounded-md object-cover border border-black/5" />
                                                 </button>
                                               ))}
                                             </div>
@@ -1689,16 +1806,19 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                       </div>
                     )}
                   </div>
+                ) : journeyReportRaw ? (
+                  <div key={`journey-raw-${journeyMountId}`} className="space-y-3">
+                    <div className="rounded-lg border border-amber-200/90 bg-amber-50/90 px-3 py-2.5 text-xs text-amber-950 leading-relaxed">
+                      <span className="font-semibold text-amber-900">AI 返回格式不规范，无法生成结构化旅程表</span>
+                      。建议：① 在「AI 设置 → AI 提示词」找到「VOC Step4: 用户旅程5W1H」点击 <strong>恢复默认</strong>（已优化为 JSON 输出）；② 缩小筛选条件后重新生成。下方保留 AI 原文以便排查。
+                    </div>
+                    <pre className="max-h-[min(420px,60vh)] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-black/5 bg-[#fafafa] p-4 text-xs leading-relaxed text-[#424245]">{journeyReportRaw}</pre>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12 text-[#86868b]">
                     <Route className="w-12 h-12 mb-3 text-zinc-200"/>
                     <p className="text-sm text-center">点击「生成旅程表」，AI 会按你指定的 5W1H 结构输出用户旅程阶段表</p>
                   </div>
-                )}
-                {journeyReportRaw && journeyRows.length === 0 && (
-                  <pre className="mt-4 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-[#424245] bg-[#f5f5f7] rounded-xl p-3 border border-black/5">
-                    {journeyReportRaw}
-                  </pre>
                 )}
               </CardContent>
             </Card>
