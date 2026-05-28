@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { X, Plus, Trash2, Sparkles, Loader2, ChevronLeft, ChevronRight, Search, Check, ExternalLink, Users, Cloud, Ban } from 'lucide-react';
+import { X, Plus, Trash2, Sparkles, Loader2, ChevronLeft, ChevronRight, Search, Check, ExternalLink, Users, Cloud, Ban, Download } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/Card';
 import { Product } from '../utils/parser';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
 import { TitleWordCloudModal } from './TitleWordCloudModal';
 import {
   parseFilterTerms,
@@ -232,6 +233,48 @@ export const SegmentationManager = React.memo(function SegmentationManager({
       newSelected.add(asin);
     }
     setSelectedAsins(newSelected);
+  };
+
+  const handleExportAsinTable = () => {
+    if (filteredProducts.length === 0) {
+      toast.error('当前没有可导出的产品数据');
+      return;
+    }
+
+    const rows = filteredProducts.map((p) => ({
+      ASIN: p.asin,
+      SKU: p.sku,
+      品牌: p.brand,
+      标题: p.title,
+      主图链接: p.image,
+      月销量: p.monthlySales,
+      月销售额: p.monthlyRevenue,
+      价格: p.price,
+      评分: p.rating,
+      评论数: p.reviewCount,
+      月新增评论: p.reviewGrowth,
+      卖家数: p.sellerCount,
+      包装重量kg: p.weight,
+      包装体积cm3: p.volume,
+      上架时间: p.launchDate,
+      上架天数: p.daysSinceLaunch,
+      BuyBox类型: p.buyBoxType,
+      卖家所属地: p.sellerLocation,
+      FBA费用: p.fbaFee,
+      小类BSR: p.subBsr,
+      小类目: p.subCategory,
+      分类标签: asinToSegment[p.asin] || '未分类',
+    }));
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, '市场细分导出');
+    const date = new Date();
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    XLSX.writeFile(workbook, `市场细分导出_${y}${m}${d}.xlsx`);
+    toast.success(`导出成功，共 ${rows.length} 条 ASIN`);
   };
 
   const runAiCategorization = async () => {
@@ -617,15 +660,26 @@ ${batchInfo}`;
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setWordCloudOpen(true)}
-                    disabled={segmentScopedProducts.length === 0}
-                    className="flex items-center gap-2 px-4 py-2 bg-sky-50 text-sky-800 border border-sky-200 rounded-xl text-sm font-semibold hover:bg-sky-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Cloud className="w-4 h-4" />
-                    标题词云
-                  </button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setWordCloudOpen(true)}
+                      disabled={segmentScopedProducts.length === 0}
+                      className="flex items-center gap-2 px-4 py-2 bg-sky-50 text-sky-800 border border-sky-200 rounded-xl text-sm font-semibold hover:bg-sky-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Cloud className="w-4 h-4" />
+                      标题词云
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportAsinTable}
+                      disabled={filteredProducts.length === 0}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-sm font-semibold hover:bg-emerald-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Download className="w-4 h-4" />
+                      导出ASIN表格
+                    </button>
+                  </div>
                   <div className="text-sm text-[#86868b]">共 {filteredProducts.length} 个产品</div>
                 </div>
               </div>

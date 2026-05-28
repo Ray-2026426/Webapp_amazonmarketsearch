@@ -1,9 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
-import { Upload, FileSpreadsheet, Brain, Trash2, Edit2, Check, X, Filter, ExternalLink, Zap, Search, Target, Lightbulb, BarChart2, Sparkles, TrendingUp, Tag, Download, HelpCircle, Settings2, ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react';
+import { Upload, FileSpreadsheet, Brain, Trash2, Edit2, Check, X, Filter, ExternalLink, Zap, Search, Target, Lightbulb, BarChart2, Sparkles, TrendingUp, Tag, Download, HelpCircle, Settings2, ChevronDown, ChevronUp, ArrowUpDown, Trophy, Merge, Layers } from 'lucide-react';
 import { Keyword } from '../utils/parser';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, BarChart, Bar } from 'recharts';
-import { SegStat, AiInsight, QI, SC, TAGS, QuadrantRule, DEFAULT_QUADRANT_RULE } from './KeywordAnalysis';
+import { SegStat, AiInsight, QI, SC, TAGS, QuadrantRule, DEFAULT_QUADRANT_RULE, calcKwValueDensity } from './KeywordAnalysis';
+
+// 评分配色：≥75 绿 / 60-75 蓝 / 45-60 橙 / <45 灰
+const scoreColor = (s:number) => s>=75?'#10b981':s>=60?'#3b82f6':s>=45?'#f59e0b':'#9ca3af';
+const scoreBg    = (s:number) => s>=75?'bg-emerald-50':s>=60?'bg-blue-50':s>=45?'bg-amber-50':'bg-[#f5f5f7]';
+const fmtNum  = (v:number) => v>=1000 ? `${(v/1000).toFixed(1)}k` : v.toFixed(0);
 
 const TL=[{id:'ss',name:'卖家精灵',desc:'ABA 关键词反查',url:'https://www.sellersprite.com/v3/aba-research',bg:'bg-violet-50',bd:'border-violet-100',ac:'text-violet-600',ib:'bg-violet-100',tag:'ABA 反查'},{id:'xy',name:'西柚找词',desc:'搜索词浏览器',url:'https://www.xiyouzhaoci.com/searchTerm_explorer?country=US',bg:'bg-orange-50',bd:'border-orange-100',ac:'text-orange-500',ib:'bg-orange-100',tag:'搜索词挖掘'}];
 
@@ -12,7 +17,24 @@ const TB=()=>(<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{TL.map(t=>
 const QTip=({active,payload}:any)=>{
   if(!active||!payload?.length)return null;
   const d=payload[0].payload as SegStat&{color:string};const qi=QI[d.quadrant];
-  return(<div className="bg-white border border-black/10 rounded-2xl shadow-xl p-4 max-w-[240px]"><div className="font-bold text-[#1d1d1f] text-sm mb-2">{d.segment}</div><div className="space-y-1 text-xs text-[#86868b]">{[['周搜索量',d.totalVolume.toLocaleString()],['平均CPC',`$${d.avgCpc.toFixed(2)}`],['词数',d.count],['均CVR',`${(d.avgCvr*100).toFixed(1)}%`],['平均难度',d.avgDifficulty.toFixed(1)]].map(([l,v])=>(<div key={String(l)} className="flex justify-between gap-4"><span>{l}</span><span className="font-semibold text-[#1d1d1f]">{v}</span></div>))}</div>{qi&&<div className="mt-2 pt-2 border-t border-black/5 text-[11px] font-bold" style={{color:qi.color}}>{qi.label} — {qi.desc}</div>}{d.topKeywords?.length>0&&<div className="mt-2 pt-2 border-t border-black/5"><div className="text-[10px] text-[#86868b] mb-1">代表词</div><div className="flex flex-wrap gap-1">{d.topKeywords.slice(0,3).map((kw:string)=>(<span key={kw} className="text-[10px] bg-[#f5f5f7] px-1.5 py-0.5 rounded">{kw}</span>))}</div></div>}</div>);
+  return(<div className="bg-white border border-black/10 rounded-2xl shadow-xl p-4 max-w-[260px]">
+    <div className="flex items-center justify-between gap-2 mb-2">
+      <span className="font-bold text-[#1d1d1f] text-sm truncate">{d.segment}</span>
+      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{color:scoreColor(d.opportunityScore),backgroundColor:`${scoreColor(d.opportunityScore)}1A`}}>{d.opportunityScore}分</span>
+    </div>
+    <div className="space-y-1 text-xs text-[#86868b]">
+      {[
+        ['周搜索量',d.totalVolume.toLocaleString()],
+        ['平均CPC',`$${d.avgCpc.toFixed(2)}`],
+        ['均CVR',`${(d.avgCvr*100).toFixed(1)}%`],
+        ['价值密度',fmtNum(d.valueDensity)],
+        ['平均难度',d.avgDifficulty.toFixed(1)],
+        ['词数',String(d.count)],
+      ].map(([l,v])=>(<div key={String(l)} className="flex justify-between gap-4"><span>{l}</span><span className="font-semibold text-[#1d1d1f]">{v}</span></div>))}
+    </div>
+    {qi&&<div className="mt-2 pt-2 border-t border-black/5 text-[11px] font-bold" style={{color:qi.color}}>{qi.label} — {qi.desc}</div>}
+    {d.topKeywords?.length>0&&<div className="mt-2 pt-2 border-t border-black/5"><div className="text-[10px] text-[#86868b] mb-1">代表词</div><div className="flex flex-wrap gap-1">{d.topKeywords.slice(0,3).map((kw:string)=>(<span key={kw} className="text-[10px] bg-[#f5f5f7] px-1.5 py-0.5 rounded">{kw}</span>))}</div></div>}
+  </div>);
 };
 
 // 四象限说明弹窗
@@ -53,6 +75,121 @@ function QuadrantInfoModal({ rule, onClose, onSave }: { rule: QuadrantRule; onCl
         <div className="p-5 border-t border-black/5 flex justify-end gap-3">
           <button onClick={()=>{ setDraft(DEFAULT_QUADRANT_RULE); }} className="px-4 py-2 text-sm text-[#86868b] hover:text-[#1d1d1f]">恢复默认</button>
           <button onClick={()=>{ onSave(draft); onClose(); }} className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">保存</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 细分管理弹窗：合并 / 改名 / 删除
+function SegmentManagerModal({ segs, onClose, onMerge, onRename, onDelete }: {
+  segs: SegStat[];
+  onClose: () => void;
+  onMerge: (sources: string[], target: string) => void;
+  onRename: (oldName: string, newName: string) => void;
+  onDelete: (name: string) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const [mergeTarget, setMergeTarget] = useState('');
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editVal, setEditVal] = useState('');
+
+  const toggleSel = (name: string) => {
+    setSelected(p => p.includes(name) ? p.filter(x => x!==name) : [...p, name]);
+  };
+
+  const doMerge = () => {
+    if (selected.length < 2) return;
+    const tgt = mergeTarget.trim() || selected[0];
+    onMerge(selected, tgt);
+    setSelected([]);
+    setMergeTarget('');
+  };
+
+  const startEdit = (name: string) => { setEditId(name); setEditVal(name); };
+  const saveRename = () => {
+    if (!editId) return;
+    if (editVal.trim() && editVal.trim() !== editId) onRename(editId, editVal.trim());
+    setEditId(null);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white w-full max-w-3xl max-h-[85vh] rounded-[24px] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col">
+        <div className="p-5 border-b border-black/5 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <Layers className="w-5 h-5 text-violet-500"/>
+            <h3 className="font-semibold text-[#1d1d1f]">管理细分方向</h3>
+            <span className="text-xs text-[#86868b]">共 {segs.length} 个</span>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-black/5 rounded-full"><X className="w-4 h-4 text-[#86868b]"/></button>
+        </div>
+
+        {/* 合并工具条 */}
+        {selected.length >= 2 && (
+          <div className="px-5 py-3 bg-violet-50 border-b border-violet-100 flex items-center gap-3 flex-wrap shrink-0">
+            <Merge className="w-4 h-4 text-violet-600 shrink-0"/>
+            <span className="text-sm font-medium text-violet-700">已选 {selected.length} 个，合并为</span>
+            <input
+              value={mergeTarget}
+              onChange={e=>setMergeTarget(e.target.value)}
+              placeholder={selected[0]}
+              className="flex-1 min-w-[160px] bg-white border border-violet-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+            />
+            <button onClick={doMerge} className="px-4 py-1.5 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700">确认合并</button>
+            <button onClick={()=>setSelected([])} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">清空选择</button>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-5 space-y-2">
+            <p className="text-xs text-[#86868b] mb-3">勾选 2 个以上细分可合并；点击 ✏️ 改名；点击 🗑 解除归类（关键词变为未分类）。</p>
+            {segs.map(s => (
+              <div key={s.segment} className={`flex items-center gap-3 p-3 rounded-2xl border transition-colors ${selected.includes(s.segment)?'bg-violet-50 border-violet-200':'bg-white border-black/5 hover:bg-[#f5f5f7]/50'}`}>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(s.segment)}
+                  onChange={()=>toggleSel(s.segment)}
+                  className="w-4 h-4 accent-violet-600 shrink-0"
+                />
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${scoreBg(s.opportunityScore)}`}>
+                  <span className="text-sm font-bold" style={{color:scoreColor(s.opportunityScore)}}>{s.opportunityScore}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  {editId === s.segment ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={editVal}
+                        onChange={e=>setEditVal(e.target.value)}
+                        onKeyDown={e=>{ if(e.key==='Enter') saveRename(); if(e.key==='Escape') setEditId(null); }}
+                        autoFocus
+                        className="flex-1 bg-white border border-indigo-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      />
+                      <button onClick={saveRename} className="p-1 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100"><Check className="w-4 h-4"/></button>
+                      <button onClick={()=>setEditId(null)} className="p-1 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100"><X className="w-4 h-4"/></button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="font-semibold text-[#1d1d1f] text-sm truncate">{s.segment}</div>
+                      <div className="text-[11px] text-[#86868b]">
+                        {s.count} 个词 · {s.totalVolume.toLocaleString()}/周 · CVR {(s.avgCvr*100).toFixed(1)}% · 难度 {s.avgDifficulty.toFixed(0)}
+                      </div>
+                    </>
+                  )}
+                </div>
+                {editId !== s.segment && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={()=>startEdit(s.segment)} title="改名" className="p-1.5 text-[#86868b] hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><Edit2 className="w-4 h-4"/></button>
+                    <button onClick={()=>{ if(confirm(`确定要把「${s.segment}」的 ${s.count} 个词移出此细分？`)) onDelete(s.segment); }} title="删除（变为未分类）" className="p-1.5 text-[#86868b] hover:text-rose-600 hover:bg-rose-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-black/5 flex justify-end gap-3 shrink-0">
+          <button onClick={onClose} className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">完成</button>
         </div>
       </div>
     </div>
@@ -108,28 +245,34 @@ export interface KwViewProps{
   onSaveEdit:(id:string)=>void;
   onCancelEdit:()=>void;
   onTogTag:(tag:string)=>void;
+  onMergeSegments:(sources:string[], target:string)=>void;
+  onRenameSegment:(oldName:string, newName:string)=>void;
+  onDeleteSegment:(name:string)=>void;
 }
 
 export function KwView(p:KwViewProps){
   const [showQInfo, setShowQInfo] = useState(false);
   const [showSegLimit, setShowSegLimit] = useState(false);
-  const{keywords,hasSeg,segs,scat,tStat,filt,totVol,isAI,prog,tab,setTab,seg,setSeg,ins,genIns,showT,setShowT,q,setQ,cat,setCat,eid,etags,maxSegs,setMaxSegs,quadrantRule,setQuadrantRule,onUpload,onRunAI,onStop,onGenAI,onClear,onExport,onStartEdit,onSaveEdit,onCancelEdit,onTogTag}=p;
+  const [showSegMgr, setShowSegMgr] = useState(false);
+  const{keywords,hasSeg,segs,scat,tStat,filt,totVol,isAI,prog,tab,setTab,seg,setSeg,ins,genIns,showT,setShowT,q,setQ,cat,setCat,eid,etags,maxSegs,setMaxSegs,quadrantRule,setQuadrantRule,onUpload,onRunAI,onStop,onGenAI,onClear,onExport,onStartEdit,onSaveEdit,onCancelEdit,onTogTag,onMergeSegments,onRenameSegment,onDeleteSegment}=p;
   return(
     <div className="space-y-6">
       {showQInfo && <QuadrantInfoModal rule={quadrantRule} onClose={()=>setShowQInfo(false)} onSave={setQuadrantRule}/>}
       {showSegLimit && <SegLimitModal maxSegs={maxSegs} onClose={()=>setShowSegLimit(false)} onSave={setMaxSegs}/>}
+      {showSegMgr && <SegmentManagerModal segs={segs} onClose={()=>setShowSegMgr(false)} onMerge={onMergeSegments} onRename={onRenameSegment} onDelete={onDeleteSegment}/>}
 
       <div><div className="flex items-center gap-2 mb-3"><Zap className="w-4 h-4 text-indigo-500"/><span className="text-sm font-semibold text-[#1d1d1f]">选词工具快捷入口</span><span className="text-xs text-[#86868b]">— 新标签页，浏览器可记住密码</span></div><TB/></div>
 
       <Card className="border-none shadow-sm overflow-hidden">
         <CardHeader className="bg-[#f5f5f7]/50 border-b border-black/5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-3">
             <div><CardTitle className="text-lg font-semibold flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-indigo-600"/>关键词数据</CardTitle><CardDescription>上传西柚找词/卖家精灵导出的关键词表</CardDescription></div>
             {keywords.length>0&&(
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button onClick={()=>setShowSegLimit(true)} title={`细分上限: ${maxSegs}`} className="flex items-center gap-1.5 px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-xl text-xs font-medium text-[#86868b] hover:text-[#1d1d1f] transition-colors">
                   <Settings2 className="w-3.5 h-3.5"/>细分上限: {maxSegs}
                 </button>
+                {hasSeg && <button onClick={()=>setShowSegMgr(true)} className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 border border-violet-100 rounded-xl text-xs font-medium text-violet-600 hover:bg-violet-100 transition-colors"><Layers className="w-3.5 h-3.5"/>管理细分</button>}
                 <button onClick={onExport} className="flex items-center gap-1.5 px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-xl text-xs font-medium text-[#86868b] hover:text-emerald-600 transition-colors"><Download className="w-3.5 h-3.5"/>导出 Excel</button>
                 <button onClick={isAI?onStop:onRunAI} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${isAI?'bg-rose-50 text-rose-600':'bg-indigo-600 text-white hover:bg-indigo-700'}`}><Brain className="w-4 h-4"/>{isAI?`取消(${prog.c}/${prog.t})`:'AI 智能分析'}</button>
                 <button onClick={onClear} className="flex items-center gap-2 bg-rose-50 text-rose-600 px-3 py-2 rounded-xl text-sm font-medium"><Trash2 className="w-4 h-4"/></button>
@@ -158,7 +301,7 @@ export function KwView(p:KwViewProps){
 
         {tab==='ov'&&<OvTab hasSeg={hasSeg} segs={segs} tStat={tStat}/>}
         {tab==='qd'&&hasSeg&&<QdTab scat={scat} segs={segs} setSeg={setSeg} setTab={setTab} onShowQInfo={()=>setShowQInfo(true)}/>}
-        {tab==='dd'&&hasSeg&&<DdTab segs={segs} seg={seg} setSeg={setSeg} keywords={keywords}/>}
+        {tab==='dd'&&hasSeg&&<DdTab segs={segs} seg={seg} setSeg={setSeg} keywords={keywords} onOpenSegMgr={()=>setShowSegMgr(true)}/>}
         {tab==='ai'&&<AiTab ins={ins} hasSeg={hasSeg} genIns={genIns} onGenAI={onGenAI} setSeg={setSeg} setTab={setTab}/>}
 
         <div><button type="button" onClick={() => setShowT(!showT)} className="flex items-center gap-2 text-sm text-[#86868b] hover:text-[#1d1d1f] font-medium"><Filter className="w-4 h-4"/>{showT?'收起':'展开'}原始关键词表<span className="text-xs bg-[#f5f5f7] px-2 py-0.5 rounded-full border border-black/5">{keywords.length} 个词</span></button></div>
@@ -170,22 +313,24 @@ export function KwView(p:KwViewProps){
 
 // ─── OvTab ───────────────────────────────────────────────────────────────────
 function OvTab({hasSeg,segs,tStat}:{hasSeg:boolean;segs:SegStat[];tStat:{name:string;count:number;vol:number}[]}){
-  const barH = Math.max(280, segs.length * 38);
-  const maxLabelLen = segs.reduce((m,s)=>Math.max(m,s.segment.length),0);
+  // 需求强度图：按周搜索量倒序（不跟随评分排序）
+  const segsByVol = useMemo(()=>[...segs].sort((a,b)=>b.totalVolume-a.totalVolume), [segs]);
+  const barH = Math.max(280, segsByVol.length * 38);
+  const maxLabelLen = segsByVol.reduce((m,s)=>Math.max(m,s.segment.length),0);
   const yAxisW = Math.min(160, Math.max(80, maxLabelLen * 8));
   return(<div className="space-y-6">
     {!hasSeg&&<div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-center gap-3"><Sparkles className="w-5 h-5 text-indigo-500 shrink-0"/><p className="text-sm text-indigo-700">点击「AI 智能分析」，AI 自动识别细分方向并打标，解锁机会四象限和细分深挖。</p></div>}
     {hasSeg&&<Card className="border-none shadow-sm">
-      <CardHeader><CardTitle className="text-base font-semibold flex items-center gap-2"><BarChart2 className="w-4 h-4 text-indigo-600"/>各细分方向需求强度<span className="text-xs font-normal text-[#86868b] ml-1">（周搜索量）</span></CardTitle></CardHeader>
+      <CardHeader><CardTitle className="text-base font-semibold flex items-center gap-2"><BarChart2 className="w-4 h-4 text-indigo-600"/>各细分方向需求强度<span className="text-xs font-normal text-[#86868b] ml-1">（按周搜索量排序）</span></CardTitle></CardHeader>
       <CardContent style={{height: barH}}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={segs} layout="vertical" margin={{left:8,right:70,top:4,bottom:4}}>
+          <BarChart data={segsByVol} layout="vertical" margin={{left:8,right:70,top:4,bottom:4}}>
             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb"/>
             <XAxis type="number" hide/>
             <YAxis dataKey="segment" type="category" axisLine={false} tickLine={false} fontSize={11} width={yAxisW} tick={{fill:'#374151'}}/>
             <Tooltip contentStyle={{borderRadius:'12px',border:'none',boxShadow:'0 10px 15px -3px rgb(0 0 0/0.1)'}} formatter={(v:number)=>[v.toLocaleString(),'周搜索量']}/>
             <Bar dataKey="totalVolume" radius={[0,6,6,0]} barSize={22} label={{position:'right',fontSize:10,formatter:(v:number)=>v>=1000?`${(v/1000).toFixed(0)}k`:String(v)}}>
-              {segs.map((_,i)=><Cell key={i} fill={SC[i%SC.length]}/>)}
+              {segsByVol.map((_,i)=><Cell key={i} fill={SC[i%SC.length]}/>)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -212,6 +357,7 @@ function OvTab({hasSeg,segs,tStat}:{hasSeg:boolean;segs:SegStat[];tStat:{name:st
 
 // ─── QdTab ───────────────────────────────────────────────────────────────────
 function QdTab({scat,segs,setSeg,setTab,onShowQInfo}:{scat:(SegStat&{x:number;y:number;z:number;color:string})[];segs:SegStat[];setSeg:(s:string|null)=>void;setTab:(t:'ov'|'qd'|'dd'|'ai')=>void;onShowQInfo:()=>void}){
+  const ranked = useMemo(()=>[...segs].sort((a,b)=>b.opportunityScore-a.opportunityScore),[segs]);
   return(<div className="space-y-6">
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       {Object.entries(QI).map(([k,q])=>(
@@ -221,6 +367,41 @@ function QdTab({scat,segs,setSeg,setTab,onShowQInfo}:{scat:(SegStat&{x:number;y:
         </div>
       ))}
     </div>
+
+    {/* 细分机会排行榜 */}
+    <Card className="border-none shadow-sm overflow-hidden">
+      <CardHeader className="bg-gradient-to-r from-emerald-50 via-amber-50 to-rose-50 border-b border-black/5">
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <Trophy className="w-4 h-4 text-amber-500"/>细分机会排行榜
+          <span className="text-xs font-normal text-[#86868b] ml-1">综合「CVR / CPC / 需求量 / 头部分散 / 难度」5 维评分</span>
+          <span className="ml-auto text-[10px] text-[#86868b] bg-white/70 px-2 py-0.5 rounded-full">利润优先权重</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="divide-y divide-black/5">
+          {ranked.map((s,i)=>(
+            <button key={s.segment} onClick={()=>{setSeg(s.segment);setTab('dd');}} className="w-full flex items-center gap-3 px-5 py-3 hover:bg-[#f5f5f7]/50 transition-colors text-left">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${i<3?'bg-gradient-to-br from-amber-400 to-amber-500 text-white shadow-md':'bg-[#f5f5f7] text-[#86868b]'}`}>
+                <span className="text-sm font-bold">{i+1}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-[#1d1d1f] text-sm truncate">{s.segment}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border" style={{background:`${QI[s.quadrant]?.color}15`,color:QI[s.quadrant]?.color,borderColor:`${QI[s.quadrant]?.color}33`}}>{QI[s.quadrant]?.label||s.quadrant}</span>
+                  <span className="text-[10px] text-[#86868b]">{s.count}个词 · {s.totalVolume.toLocaleString()}/周</span>
+                </div>
+                <div className="text-xs text-[#86868b] mt-1 truncate">{s.scoreReason}</div>
+              </div>
+              <div className={`flex flex-col items-center justify-center w-16 h-12 rounded-xl ${scoreBg(s.opportunityScore)} shrink-0`}>
+                <span className="text-xl font-bold" style={{color:scoreColor(s.opportunityScore)}}>{s.opportunityScore}</span>
+                <span className="text-[9px] text-[#86868b] -mt-0.5">分</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+
     <Card className="border-none shadow-sm">
       <CardHeader>
         <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -257,41 +438,74 @@ function QdTab({scat,segs,setSeg,setTab,onShowQInfo}:{scat:(SegStat&{x:number;y:
 }
 
 // ─── DdTab ───────────────────────────────────────────────────────────────────
-function DdTab({segs,seg,setSeg,keywords}:{segs:SegStat[];seg:string|null;setSeg:(s:string|null)=>void;keywords:Keyword[]}){
+function DdTab({segs,seg,setSeg,keywords,onOpenSegMgr}:{segs:SegStat[];seg:string|null;setSeg:(s:string|null)=>void;keywords:Keyword[];onOpenSegMgr:()=>void}){
   const [showAll, setShowAll] = useState(false);
-  const [sortCol, setSortCol] = useState<'weeklySearchVolume'|'cpcBid'|'conversionRate'|'difficulty'>('weeklySearchVolume');
+  type SortKey = 'weeklySearchVolume'|'cpcBid'|'conversionRate'|'difficulty'|'value';
+  const [sortCol, setSortCol] = useState<SortKey>('weeklySearchVolume');
   const [sortAsc, setSortAsc] = useState(false);
   const stat=segs.find(s=>s.segment===seg);
-  const words=useMemo(()=>keywords.filter(k=>k.wordTag?.trim()===seg).sort((a,b)=>sortAsc?a[sortCol]-b[sortCol]:b[sortCol]-a[sortCol]),[keywords,seg,sortCol,sortAsc]);
+  const words=useMemo(()=>{
+    const list = keywords.filter(k=>k.wordTag?.trim()===seg);
+    const getVal = (k:Keyword) => {
+      if (sortCol==='value') return calcKwValueDensity(k);
+      return k[sortCol] as number;
+    };
+    return list.sort((a,b)=> sortAsc ? getVal(a)-getVal(b) : getVal(b)-getVal(a));
+  },[keywords,seg,sortCol,sortAsc]);
   const shown=showAll?words:words.slice(0,50);
 
-  const toggleSort=(col:typeof sortCol)=>{
+  const toggleSort=(col:SortKey)=>{
     if(sortCol===col) setSortAsc(v=>!v);
     else { setSortCol(col); setSortAsc(false); }
   };
 
   return(<div className="space-y-6">
-    <div className="flex flex-wrap gap-2">
-      {segs.map((s,i)=>(
-        <button key={s.segment} onClick={()=>setSeg(s.segment)}
-          title={s.segment}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${seg===s.segment?'text-white border-transparent shadow-md':'bg-white border-black/10 text-[#86868b] hover:border-indigo-300'}`}
-          style={seg===s.segment?{background:SC[i%SC.length]}:{}}>
-          <span className="max-w-[120px] truncate">{s.segment}</span>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${seg===s.segment?'bg-white/20 text-white':'bg-[#f5f5f7] text-[#86868b]'}`}>{QI[s.quadrant]?.label??s.quadrant}</span>
-        </button>
-      ))}
+    <div className="flex items-center justify-between gap-2 flex-wrap">
+      <div className="flex flex-wrap gap-2">
+        {segs.map((s,i)=>(
+          <button key={s.segment} onClick={()=>setSeg(s.segment)}
+            title={`${s.segment}｜机会评分 ${s.opportunityScore}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${seg===s.segment?'text-white border-transparent shadow-md':'bg-white border-black/10 text-[#86868b] hover:border-indigo-300'}`}
+            style={seg===s.segment?{background:SC[i%SC.length]}:{}}>
+            <span className="max-w-[120px] truncate">{s.segment}</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-bold ${seg===s.segment?'bg-white/20 text-white':''}`} style={seg===s.segment?{}:{background:`${scoreColor(s.opportunityScore)}18`,color:scoreColor(s.opportunityScore)}}>{s.opportunityScore}</span>
+          </button>
+        ))}
+      </div>
+      <button onClick={onOpenSegMgr} className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 border border-violet-100 rounded-xl text-xs font-medium text-violet-600 hover:bg-violet-100 transition-colors shrink-0"><Layers className="w-3.5 h-3.5"/>管理细分</button>
     </div>
     {!seg&&<div className="bg-[#f5f5f7] rounded-2xl p-8 text-center text-[#86868b] text-sm">请在上方选择一个细分方向查看详情</div>}
     {seg&&stat&&<>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[{l:'周搜索量',v:stat.totalVolume.toLocaleString(),c:'text-indigo-600'},{l:'平均CPC',v:`$${stat.avgCpc.toFixed(2)}`,c:'text-rose-500'},{l:'平均转化率',v:`${(stat.avgCvr*100).toFixed(1)}%`,c:'text-emerald-600'},{l:'关键词数',v:String(stat.count),c:'text-amber-500'}].map(m=>(
-          <div key={m.l} className="bg-white border border-black/5 rounded-2xl p-4 shadow-sm"><div className="text-xs text-[#86868b] uppercase tracking-wider mb-1">{m.l}</div><div className={`text-2xl font-bold ${m.c}`}>{m.v}</div></div>
-        ))}
+      {/* 评分大卡片 */}
+      <div className={`flex items-center gap-4 px-5 py-4 rounded-2xl border border-black/5 ${scoreBg(stat.opportunityScore)}`}>
+        <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex flex-col items-center justify-center shrink-0">
+          <span className="text-2xl font-black" style={{color:scoreColor(stat.opportunityScore)}}>{stat.opportunityScore}</span>
+          <span className="text-[10px] text-[#86868b] -mt-1">机会分</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-bold" style={{color:QI[stat.quadrant]?.color??'#86868b'}}>{QI[stat.quadrant]?.label??stat.quadrant}</span>
+            <span className="text-xs text-[#86868b]">{QI[stat.quadrant]?.desc}</span>
+          </div>
+          <div className="text-xs text-[#1d1d1f]">{stat.scoreReason}</div>
+        </div>
       </div>
-      <div className={`flex items-center gap-2 px-4 py-3 rounded-2xl border border-black/5 ${QI[stat.quadrant]?.bg??'bg-[#f5f5f7]'} w-fit`}>
-        <span className="text-sm font-bold" style={{color:QI[stat.quadrant]?.color??'#86868b'}}>{QI[stat.quadrant]?.label??stat.quadrant}</span>
-        <span className="text-xs text-[#86868b] ml-1">{QI[stat.quadrant]?.desc}</span>
+
+      {/* 6个核心指标卡 */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {[
+          {l:'周搜索量',v:stat.totalVolume.toLocaleString(),c:'text-indigo-600'},
+          {l:'平均CPC',v:`$${stat.avgCpc.toFixed(2)}`,c:stat.avgCpc<=0.5?'text-emerald-600':stat.avgCpc<=1.5?'text-amber-500':'text-rose-500'},
+          {l:'平均CVR',v:`${(stat.avgCvr*100).toFixed(1)}%`,c:stat.avgCvr>=0.1?'text-emerald-600':stat.avgCvr>=0.05?'text-amber-500':'text-rose-500'},
+          {l:'平均难度',v:stat.avgDifficulty.toFixed(0),c:stat.avgDifficulty<=40?'text-emerald-600':stat.avgDifficulty<=70?'text-amber-500':'text-rose-500'},
+          {l:'价值密度',v:fmtNum(stat.valueDensity),c:'text-violet-600'},
+          {l:'关键词数',v:String(stat.count),c:'text-amber-500'},
+        ].map(m=>(
+          <div key={m.l} className="bg-white border border-black/5 rounded-2xl p-3 shadow-sm">
+            <div className="text-[10px] text-[#86868b] uppercase tracking-wider mb-1 truncate" title={m.l}>{m.l}</div>
+            <div className={`text-xl font-bold ${m.c}`}>{m.v}</div>
+          </div>
+        ))}
       </div>
       {stat.topKeywords.length>0&&(
         <div className="flex flex-wrap gap-2 items-center">
@@ -321,16 +535,20 @@ function DdTab({segs,seg,setSeg,keywords}:{segs:SegStat[];seg:string|null;setSeg
                   <th className="px-5 py-3 font-medium text-right cursor-pointer hover:text-indigo-600 select-none" onClick={()=>toggleSort('conversionRate')}>
                     <span className="flex items-center justify-end gap-1">转化率<ArrowUpDown className="w-3 h-3"/></span>
                   </th>
+                  <th className="px-5 py-3 font-medium text-right cursor-pointer hover:text-indigo-600 select-none" onClick={()=>toggleSort('value')} title="价值密度 = 周搜索量 × 转化率">
+                    <span className="flex items-center justify-end gap-1">价值密度<ArrowUpDown className="w-3 h-3"/></span>
+                  </th>
                   <th className="px-5 py-3 font-medium text-right cursor-pointer hover:text-indigo-600 select-none" onClick={()=>toggleSort('difficulty')}>
                     <span className="flex items-center justify-end gap-1">难度<ArrowUpDown className="w-3 h-3"/></span>
                   </th>
-                  <th className="px-5 py-3 font-medium text-right">自然滚动率</th>
                   <th className="px-5 py-3 font-medium text-right">Top3点击</th>
                   <th className="px-5 py-3 font-medium">词类标签</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/5">
-                {shown.map(kw=>(
+                {shown.map(kw=>{
+                  const val = calcKwValueDensity(kw);
+                  return (
                   <tr key={kw.id} className="hover:bg-[#f5f5f7]/50">
                     <td className="px-5 py-3">
                       <div className="font-medium text-[#1d1d1f]">{kw.keyword}</div>
@@ -342,12 +560,12 @@ function DdTab({segs,seg,setSeg,keywords}:{segs:SegStat[];seg:string|null;setSeg
                       {kw.cpcBidRange&&<div className="text-[10px] text-[#86868b]">{kw.cpcBidRange}</div>}
                     </td>
                     <td className="px-5 py-3 text-right font-mono">{(kw.conversionRate*100).toFixed(2)}%</td>
+                    <td className="px-5 py-3 text-right font-mono text-xs text-violet-600">{fmtNum(val)}</td>
                     <td className="px-5 py-3 text-right">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                         kw.difficulty>=70?'bg-rose-50 text-rose-600':kw.difficulty>=40?'bg-amber-50 text-amber-600':'bg-emerald-50 text-emerald-600'
                       }`}>{kw.difficulty.toFixed(0)}</span>
                     </td>
-                    <td className="px-5 py-3 text-right font-mono text-xs">{(kw.organicScrollRate*100).toFixed(1)}%</td>
                     <td className="px-5 py-3 text-right font-mono text-xs">{(kw.top3ClickShare*100).toFixed(1)}%</td>
                     <td className="px-5 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -355,7 +573,8 @@ function DdTab({segs,seg,setSeg,keywords}:{segs:SegStat[];seg:string|null;setSeg
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
