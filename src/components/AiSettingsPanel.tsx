@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText } from 'lucide-react';
+import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText, Plus, Globe } from 'lucide-react';
 import {
   AI_PROVIDERS,
   AiProvider,
   AiSettings,
   getProviderConfig,
+  getEffectiveModels,
+  buildEndpoint,
+  resolveCustomApiUrl,
+  isBareDomainUrl,
+  suggestFullApiUrl,
   generateText,
 } from '../utils/aiConfig';
 import { toast } from 'sonner';
@@ -25,7 +30,8 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
 }) => {
   const initialProvider = settings?.provider ?? 'gemini';
   const initialCfg = getProviderConfig(initialProvider);
-  const initialModel = settings?.model && initialCfg.models.includes(settings.model)
+  const initialModels = getEffectiveModels(settings ?? { provider: initialProvider, apiKey: '', model: '' }, initialProvider);
+  const initialModel = settings?.model && initialModels.includes(settings.model)
     ? settings.model
     : initialCfg.defaultModel;
 
@@ -33,43 +39,94 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   const [provider, setProvider] = useState<AiProvider>(initialProvider);
   const [model, setModel] = useState<string>(initialModel);
   const [apiKey, setApiKey] = useState(settings?.apiKey ?? '');
+  const [apiUrls, setApiUrls] = useState<Partial<Record<AiProvider, string>>>(settings?.apiUrls ?? {});
+  const [customModels, setCustomModels] = useState<Partial<Record<AiProvider, string[]>>>(settings?.customModels ?? {});
+  const [newCustomModelName, setNewCustomModelName] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
 
   useEffect(() => {
     const p = settings?.provider ?? 'gemini';
     const cfg = getProviderConfig(p);
+    const allModels = getEffectiveModels(settings ?? { provider: p, apiKey: '', model: '' }, p);
     const m =
-      settings?.model && cfg.models.includes(settings.model)
+      settings?.model && allModels.includes(settings.model)
         ? settings.model
         : cfg.defaultModel;
     setProvider(p);
     setModel(m);
     setApiKey(settings?.apiKey ?? '');
+    setApiUrls(settings?.apiUrls ?? {});
+    setCustomModels(settings?.customModels ?? {});
     setTestResult(null);
   }, [settings]);
 
   const cfg = getProviderConfig(provider);
+  const currentApiUrl = apiUrls[provider] ?? '';
+  const currentCustomModels = customModels[provider] ?? [];
+  const allModels = [...cfg.models, ...currentCustomModels];
 
   const handleProviderChange = (p: AiProvider) => {
     const nextCfg = getProviderConfig(p);
+    const nextAllModels = [
+      ...nextCfg.models,
+      ...(customModels[p] ?? []),
+    ];
     setProvider(p);
-    setModel((prev) => (nextCfg.models.includes(prev) ? prev : nextCfg.defaultModel));
+    setModel((prev) => (nextAllModels.includes(prev) ? prev : nextCfg.defaultModel));
     setTestResult(null);
+  };
+
+  const handleAddCustomModel = () => {
+    const name = newCustomModelName.trim();
+    if (!name) { toast.error('请输入模型名称'); return; }
+    const current = customModels[provider] ?? [];
+    if (current.includes(name)) { toast.error('该自定义模型已存在'); return; }
+    if (cfg.models.includes(name)) { toast.error('该模型已存在于默认列表中'); return; }
+    setCustomModels(prev => ({
+      ...prev,
+      [provider]: [...(prev[provider] ?? []), name],
+    }));
+    setNewCustomModelName('');
+    toast.success(`已添加自定义模型：${name}`);
+  };
+
+  const handleRemoveCustomModel = (name: string) => {
+    setCustomModels(prev => ({
+      ...prev,
+      [provider]: (prev[provider] ?? []).filter(m => m !== name),
+    }));
+    // 如果当前选中的是被删除的模型，则切换到默认模型
+    if (model === name) {
+      setModel(cfg.defaultModel);
+    }
   };
 
   const handleTest = async () => {
     if (!apiKey.trim()) { toast.error('请先填写 API Key'); return; }
+
     setIsTesting(true);
     setTestResult(null);
     try {
-      const tmp: AiSettings = { provider, apiKey: apiKey.trim(), model };
+      const tmp: AiSettings = {
+        provider,
+        apiKey: apiKey.trim(),
+        model,
+        apiUrls,
+        customModels,
+      };
       await generateText('你好，请回复"ok"', tmp);
       setTestResult('ok');
       toast.success('API Key 验证成功！');
     } catch (e: any) {
       setTestResult('fail');
-      toast.error(`验证失败：${e?.message ?? '未知错误'}`);
+      // 构造实际请求的 endpoint 以便排查
+      const testSettings: AiSettings = { provider, apiKey: apiKey.trim(), model, apiUrls, customModels };
+      let endpointUrl = '(未知)';
+      try { endpointUrl = buildEndpoint(testSettings, provider); } catch {}
+      toast.error(
+        `验证失败：${e?.message ?? '未知错误'}\n\n请求地址：${endpointUrl}`
+      );
     } finally {
       setIsTesting(false);
     }
@@ -77,10 +134,23 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
 
   const handleSave = () => {
     if (!apiKey.trim()) { toast.error('请填写 API Key'); return; }
-    onSave({ provider, apiKey: apiKey.trim(), model });
+    onSave({
+      provider,
+      apiKey: apiKey.trim(),
+      model,
+      apiUrls,
+      customModels,
+    });
     toast.success('AI 设置已保存');
     onClose();
   };
+
+  const defaultApiUrl = cfg.baseUrl;
+  const trimmedApiUrl = currentApiUrl.trim().replace(/\/+$/, '');
+  const resolvedApiUrl = trimmedApiUrl ? resolveCustomApiUrl(currentApiUrl, provider) : '';
+  const urlWillAutoComplete = Boolean(trimmedApiUrl && resolvedApiUrl !== trimmedApiUrl);
+  const urlLooksIncomplete = Boolean(trimmedApiUrl && isBareDomainUrl(currentApiUrl));
+  const suggestedApiUrl = trimmedApiUrl ? suggestFullApiUrl(currentApiUrl, provider) : '';
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -127,6 +197,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
         <div className="p-6 flex-1 min-h-0 flex flex-col overflow-hidden">
           {tab === 'api' ? (
             <div className="space-y-6 overflow-y-auto">
+              {/* 供应商选择 */}
               <div className="space-y-3">
                 <label className="text-sm font-bold text-[#1d1d1f]">选择 AI 供应商</label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -147,6 +218,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                 </div>
               </div>
 
+              {/* 模型选择 + 自定义模型 */}
               <div className="space-y-2">
                 <label className="text-sm font-bold text-[#1d1d1f]" htmlFor="ai-model-select">
                   模型
@@ -163,9 +235,114 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                       {m}
                     </option>
                   ))}
+                  {currentCustomModels.length > 0 && (
+                    <optgroup label="── 自定义模型 ──">
+                      {currentCustomModels.map((m) => (
+                        <option key={`custom-${m}`} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
+
+                {/* 自定义模型管理 */}
+                <div className="mt-2 p-3 bg-[#f5f5f7] rounded-xl border border-black/5">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={newCustomModelName}
+                      onChange={(e) => setNewCustomModelName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleAddCustomModel(); }}
+                      placeholder="输入自定义模型名称..."
+                      className="flex-1 px-3 py-2 bg-white border border-black/10 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomModel}
+                      className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors whitespace-nowrap flex items-center gap-1"
+                    >
+                      <Plus className="w-4 h-4" />
+                      添加
+                    </button>
+                  </div>
+                  {currentCustomModels.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {currentCustomModels.map((m) => (
+                        <span
+                          key={m}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium"
+                        >
+                          {m}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCustomModel(m)}
+                            className="hover:text-rose-600 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-1.5 text-xs text-[#86868b]">
+                    添加自定义模型名称后，它将出现在上方的模型下拉列表中。
+                  </p>
+                </div>
               </div>
 
+              {/* API URL（自定义） */}
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-[#1d1d1f] flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-indigo-600" />
+                  API 请求地址
+                </label>
+                <p className="text-xs text-[#86868b]">
+                  使用中转 API 时<strong>必填</strong>。可填中转平台给的基础地址（如 <code className="bg-black/5 px-1 py-0.5 rounded">https://openrouter.fans/v1</code>），
+                  系统会自动补全为 <code className="bg-black/5 px-1 py-0.5 rounded">/v1/chat/completions</code>，<strong>不会重复添加 /v1</strong>。
+                  留空则使用默认代理地址（<code className="bg-black/5 px-1.5 py-0.5 rounded text-indigo-600">{defaultApiUrl}</code>）。
+                </p>
+                <input
+                  type="text"
+                  value={currentApiUrl}
+                  onChange={(e) => {
+                    setApiUrls(prev => ({ ...prev, [provider]: e.target.value }));
+                    setTestResult(null);
+                  }}
+                  placeholder="https://openrouter.fans/v1"
+                  className="w-full px-4 py-2.5 bg-[#f5f5f7] border border-black/5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                />
+                {urlWillAutoComplete && !urlLooksIncomplete && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                    <p className="text-xs text-blue-800">
+                      实际请求地址：
+                      <code className="font-mono text-blue-900 break-all">{resolvedApiUrl}</code>
+                    </p>
+                  </div>
+                )}
+                {urlLooksIncomplete && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                    <p className="text-xs text-amber-800">
+                      ⚠️ 当前地址像是网站首页，无法调用 AI。请改为完整 API 地址，例如：
+                      <br />
+                      <code className="font-mono text-amber-900">{suggestedApiUrl}</code>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setApiUrls(prev => ({ ...prev, [provider]: suggestedApiUrl }));
+                        setTestResult(null);
+                        toast.success('已补全为标准 API 路径');
+                      }}
+                      className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-semibold hover:bg-amber-700 transition-colors"
+                    >
+                      一键补全路径
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* API Key */}
               <div className="space-y-2">
                 <label className="text-sm font-bold text-[#1d1d1f] flex items-center gap-2">
                   <Key className="w-4 h-4 text-indigo-600" />

@@ -275,22 +275,12 @@ export const TitleWordCloudModal: React.FC<TitleWordCloudModalProps> = ({
                   <button
                     type="button"
                     disabled={kwLoading}
-                    onClick={() => void runCoreKeywordAi(false)}
+                    onClick={() => void runCoreKeywordAi(Boolean(coreKeywords?.length))}
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
                   >
                     {kwLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                     {coreKeywords?.length ? '再次提炼' : '智能提炼'}
                   </button>
-                  {coreKeywords?.length ? (
-                    <button
-                      type="button"
-                      disabled={kwLoading}
-                      onClick={() => void runCoreKeywordAi(true)}
-                      className="px-3 py-2 rounded-xl text-xs font-semibold text-indigo-700 border border-indigo-200 hover:bg-white disabled:opacity-50"
-                    >
-                      强制重新分析
-                    </button>
-                  ) : null}
                 </div>
               </div>
               {coreKeywords && coreKeywords.length > 0 && (

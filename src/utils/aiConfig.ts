@@ -74,6 +74,22 @@ export interface AiSettings {
   provider: AiProvider;
   apiKey: string;
   model: string;
+  /** 自定义 API URL（按供应商存储） */
+  apiUrls?: Partial<Record<AiProvider, string>>;
+  /** 自定义模型名列表（按供应商存储） */
+  customModels?: Partial<Record<AiProvider, string[]>>;
+}
+
+/** 获取某个供应商生效的 API URL（优先使用自定义 URL，否则返回默认 URL） */
+export function getEffectiveApiUrl(settings: AiSettings, provider: AiProvider): string {
+  return settings.apiUrls?.[provider]?.trim() || getProviderConfig(provider).baseUrl;
+}
+
+/** 获取某个供应商的完整模型列表（默认模型 + 自定义模型） */
+export function getEffectiveModels(settings: AiSettings, provider: AiProvider): string[] {
+  const cfg = getProviderConfig(provider);
+  const customs = settings.customModels?.[provider] || [];
+  return [...cfg.models, ...customs];
 }
 
 const AI_SETTINGS_KEY = 'amzdev_ai_settings';
@@ -149,7 +165,8 @@ function normalizeAiError(providerName: string, status: number, rawMessage: stri
  */
 function resolveModel(settings: AiSettings): string {
   if (settings.model && settings.model.trim()) return settings.model.trim();
-  return getProviderConfig(settings.provider).defaultModel;
+  const allModels = getEffectiveModels(settings, settings.provider);
+  return allModels[0] || getProviderConfig(settings.provider).defaultModel;
 }
 
 export async function generateText(
@@ -172,7 +189,17 @@ async function callGemini(
   opts: { systemPrompt?: string; jsonMode?: boolean }
 ): Promise<string> {
   const fullPrompt = opts.systemPrompt ? `${opts.systemPrompt}\n\n${prompt}` : prompt;
-  const url = `/api-proxy/gemini/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`;
+  const customUrl = settings.apiUrls?.[settings.provider]?.trim();
+  let url: string;
+  if (customUrl) {
+    url = customUrl;
+    if (!/[?&]key=/.test(url)) {
+      url += `${url.includes('?') ? '&' : '?'}key=${encodeURIComponent(settings.apiKey)}`;
+    }
+  } else {
+    const baseUrl = getProviderConfig('gemini').baseUrl.replace(/\/+$/, '');
+    url = `${baseUrl}/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`;
+  }
 
   const body: Record<string, unknown> = {
     contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
@@ -211,6 +238,114 @@ async function callGemini(
   throw new Error('Gemini 请求失败，请稍后重试。');
 }
 
+/** 是否填写了自定义 API URL */
+export function hasCustomApiUrl(settings: AiSettings, provider: AiProvider): boolean {
+  return Boolean(settings.apiUrls?.[provider]?.trim());
+}
+
+/** 将用户填写的中转 API 地址补全为可请求的完整 endpoint（不会重复添加 /v1） */
+export function resolveCustomApiUrl(url: string, provider: AiProvider): string {
+  const cleaned = url.trim().replace(/\/+$/, '');
+  if (!cleaned) return cleaned;
+
+  if (provider === 'gemini') {
+    if (/\/models\/.*:generateContent$/i.test(cleaned) || /\/generateContent$/i.test(cleaned)) {
+      return cleaned;
+    }
+    return cleaned;
+  }
+
+  if (/\/chat\/completions$/i.test(cleaned)) return cleaned;
+
+  if (provider === 'zhipu') {
+    if (/\/api\/paas\/v4\/chat\/completions$/i.test(cleaned)) return cleaned;
+    if (/\/api\/paas\/v4$/i.test(cleaned)) return `${cleaned}/chat/completions`;
+    try {
+      const path = new URL(cleaned).pathname.replace(/\/+$/, '') || '/';
+      if (path === '/' || path === '') return `${cleaned}/api/paas/v4/chat/completions`;
+    } catch {}
+    return cleaned;
+  }
+
+  // 中转 API 常见：.../v1 → 只补 /chat/completions
+  if (/\/v1$/i.test(cleaned)) return `${cleaned}/chat/completions`;
+
+  // 只有域名：.../v1/chat/completions
+  try {
+    const path = new URL(cleaned).pathname.replace(/\/+$/, '') || '/';
+    if (path === '/' || path === '') return `${cleaned}/v1/chat/completions`;
+  } catch {}
+
+  return cleaned;
+}
+
+/** 判断是否为网站首页（只有域名，没有 API 路径） */
+export function isBareDomainUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  try {
+    const path = new URL(trimmed).pathname.replace(/\/+$/, '') || '/';
+    return path === '/' || path === '';
+  } catch {
+    return true;
+  }
+}
+
+/** @deprecated 使用 resolveCustomApiUrl */
+export function isIncompleteApiUrl(url: string): boolean {
+  return isBareDomainUrl(url);
+}
+
+/** 根据基础地址补全为标准 API 路径 */
+export function suggestFullApiUrl(baseUrl: string, provider: AiProvider = 'openai'): string {
+  return resolveCustomApiUrl(baseUrl, provider);
+}
+
+function parseOpenAICompatResponse(text: string, endpoint: string): string {
+  const trimmed = text.trim();
+  if (/^<!doctype/i.test(trimmed) || /^<html/i.test(trimmed)) {
+    throw new Error(
+      `请求地址返回了网页而不是 API 数据。您可能只填了网站域名，请填写完整 API 地址，例如：${suggestFullApiUrl(endpoint)}`
+    );
+  }
+  try {
+    const data = JSON.parse(text);
+    return data.choices?.[0]?.message?.content ?? '';
+  } catch {
+    throw new Error(`API 返回了无法识别的格式，请确认请求地址是否正确。当前地址：${endpoint}`);
+  }
+}
+
+/** 构建 API endpoint */
+export function buildEndpoint(settings: AiSettings, provider: AiProvider): string {
+  const customUrl = settings.apiUrls?.[provider]?.trim();
+  if (customUrl) {
+    return resolveCustomApiUrl(customUrl, provider);
+  }
+
+  const baseUrl = getProviderConfig(provider).baseUrl.replace(/\/+$/, '');
+  if (provider === 'zhipu') {
+    return `${baseUrl}/api/paas/v4/chat/completions`;
+  }
+  return `${baseUrl}/v1/chat/completions`;
+}
+
+/** 构建请求头：中转 API（自定义 URL）统一用 Bearer；Claude 官方接口用 x-api-key */
+function buildRequestHeaders(settings: AiSettings): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${settings.apiKey}`,
+  };
+
+  if (settings.provider === 'claude' && !hasCustomApiUrl(settings, settings.provider)) {
+    headers['x-api-key'] = settings.apiKey;
+    headers['anthropic-version'] = '2023-06-01';
+    delete headers['Authorization'];
+  }
+
+  return headers;
+}
+
 // \u2500\u2500\u2500 OpenAI-Compatible (OpenAI / DeepSeek / Qwen / Moonshot / Zhipu) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 async function callOpenAICompat(
   prompt: string,
@@ -218,9 +353,7 @@ async function callOpenAICompat(
   opts: { systemPrompt?: string; jsonMode?: boolean }
 ): Promise<string> {
   const cfg = getProviderConfig(settings.provider);
-  const endpoint = settings.provider === 'zhipu'
-    ? `${cfg.baseUrl}/api/paas/v4/chat/completions`
-    : `${cfg.baseUrl}/v1/chat/completions`;
+  const endpoint = buildEndpoint(settings, settings.provider);
 
   const messages: { role: string; content: string }[] = [];
   if (opts.systemPrompt) {
@@ -236,16 +369,7 @@ async function callOpenAICompat(
     body.response_format = { type: 'json_object' };
   }
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${settings.apiKey}`,
-  };
-
-  if (settings.provider === 'claude') {
-    headers['x-api-key'] = settings.apiKey;
-    headers['anthropic-version'] = '2023-06-01';
-    delete headers['Authorization'];
-  }
+  const headers = buildRequestHeaders(settings);
 
   const providerName = cfg.name || 'AI';
   const maxAttempts = 2;
@@ -257,8 +381,8 @@ async function callOpenAICompat(
     });
 
     if (res.ok) {
-      const data = await res.json();
-      return data.choices?.[0]?.message?.content ?? '';
+      const text = await res.text();
+      return parseOpenAICompatResponse(text, endpoint);
     }
 
     const text = await res.text();
@@ -292,23 +416,13 @@ export async function* streamText(
   }
 
   const cfg = getProviderConfig(settings.provider);
-  const endpoint = settings.provider === 'zhipu'
-    ? `${cfg.baseUrl}/api/paas/v4/chat/completions`
-    : `${cfg.baseUrl}/v1/chat/completions`;
+  const endpoint = buildEndpoint(settings, settings.provider);
 
   const messages: { role: string; content: string }[] = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   messages.push({ role: 'user', content: prompt });
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${settings.apiKey}`,
-  };
-  if (settings.provider === 'claude') {
-    headers['x-api-key'] = settings.apiKey;
-    headers['anthropic-version'] = '2023-06-01';
-    delete headers['Authorization'];
-  }
+  const headers = buildRequestHeaders(settings);
 
   const res = await fetch(endpoint, {
     method: 'POST',
