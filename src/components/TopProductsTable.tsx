@@ -43,10 +43,11 @@ interface TopProductsTableProps {
   domain?: string;
   asinToSegment?: Record<string, string>;
   asinToSubSegment?: Record<string, string>;
+  asinToLevel3Segment?: Record<string, string>;
 }
 
 export const TopProductsTable = React.memo(function TopProductsTable({
-  products, history = [], months = [], domain = 'amazon.com', asinToSegment = {}, asinToSubSegment = {}
+  products, history = [], months = [], domain = 'amazon.com', asinToSegment = {}, asinToSubSegment = {}, asinToLevel3Segment = {}
 }: TopProductsTableProps) {
   const cur = getCurrencySymbol(domain);
   const [currentPage, setCurrentPage] = useState(1);
@@ -231,7 +232,7 @@ export const TopProductsTable = React.memo(function TopProductsTable({
                     </td>
                     <td className="px-4 py-3">
                       {asinToSegment[product.asin]
-                        ? <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-medium whitespace-nowrap">{formatSegmentLabel(asinToSegment[product.asin], asinToSubSegment[product.asin])}</span>
+                        ? <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-medium whitespace-nowrap">{formatSegmentLabel(asinToSegment[product.asin], asinToSubSegment[product.asin], asinToLevel3Segment[product.asin])}</span>
                         : <span className="text-[10px] text-[#86868b]">未分类</span>}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">{cur}{product.price.toFixed(2)}</td>

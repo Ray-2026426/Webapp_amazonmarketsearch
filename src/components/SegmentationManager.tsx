@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { X, Plus, Trash2, Sparkles, Loader2, ChevronLeft, ChevronRight, Search, Check, ExternalLink, Users, Cloud, Ban, Download } from 'lucide-react';
+import { X, Plus, Trash2, Sparkles, Loader2, ChevronLeft, ChevronRight, Search, Check, ExternalLink, Users, Cloud, Ban, Download, Layers } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/Card';
 import { Product } from '../utils/parser';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
@@ -13,7 +13,15 @@ import {
   matchesIncludeTerms,
   matchesExcludeRule,
 } from '../utils/segmentFilter';
-import { makeSubSegmentKey, parseSubSegmentKey, formatSegmentLabel } from '../utils/subSegments';
+import {
+  makeLevel2Key,
+  makeLevel3Key,
+  makeLevel2ParentKey,
+  parseSegmentPathKey,
+  formatSegmentLabel,
+  productMatchesSegmentFilter,
+  type SegmentDepth,
+} from '../utils/subSegments';
 
 /** 仅用于筛选态：与真实细分市场名称区分，表示「尚未打标」 */
 const UNCATEGORIZED_FILTER_KEY = '__uncategorized__';
@@ -31,6 +39,10 @@ interface SegmentationManagerProps {
   asinToSubSegment: Record<string, string>;
   segmentDescriptions: Record<string, SegmentDescription>;
   segmentSubDescriptions: Record<string, SegmentDescription>;
+  segmentDepth: SegmentDepth;
+  segmentLevel3Children: Record<string, string[]>;
+  asinToLevel3Segment: Record<string, string>;
+  segmentLevel3Descriptions: Record<string, SegmentDescription>;
   domain: string;
   onUpdateSegments: (segments: string[]) => void;
   onUpdateAsinToSegment: (mapping: Record<string, string>) => void;
@@ -38,6 +50,10 @@ interface SegmentationManagerProps {
   onUpdateAsinToSubSegment: (mapping: Record<string, string>) => void;
   onUpdateSegmentDescriptions: (descriptions: Record<string, SegmentDescription>) => void;
   onUpdateSegmentSubDescriptions: (descriptions: Record<string, SegmentDescription>) => void;
+  onUpdateSegmentDepth: (depth: SegmentDepth) => void;
+  onUpdateSegmentLevel3Children: (mapping: Record<string, string[]>) => void;
+  onUpdateAsinToLevel3Segment: (mapping: Record<string, string>) => void;
+  onUpdateSegmentLevel3Descriptions: (descriptions: Record<string, SegmentDescription>) => void;
   onGenerateReport: () => void;
   onAiRunningChange?: (running: boolean) => void;
   onClose: () => void;
@@ -57,6 +73,10 @@ export const SegmentationManager = React.memo(function SegmentationManager({
   asinToSubSegment,
   segmentDescriptions,
   segmentSubDescriptions,
+  segmentDepth,
+  segmentLevel3Children,
+  asinToLevel3Segment,
+  segmentLevel3Descriptions,
   domain,
   onUpdateSegments, 
   onUpdateAsinToSegment,
@@ -64,6 +84,10 @@ export const SegmentationManager = React.memo(function SegmentationManager({
   onUpdateAsinToSubSegment,
   onUpdateSegmentDescriptions,
   onUpdateSegmentSubDescriptions,
+  onUpdateSegmentDepth,
+  onUpdateSegmentLevel3Children,
+  onUpdateAsinToLevel3Segment,
+  onUpdateSegmentLevel3Descriptions,
   onGenerateReport,
   onAiRunningChange,
   onClose 
@@ -84,11 +108,33 @@ export const SegmentationManager = React.memo(function SegmentationManager({
   const [editingSegment, setEditingSegment] = useState<{oldName: string, newName: string} | null>(null);
   const [editingChildSegment, setEditingChildSegment] = useState<{parent: string, oldName: string, newName: string} | null>(null);
   const [newChildDraft, setNewChildDraft] = useState<Record<string, string>>({});
-  const [childAiRunningFor, setChildAiRunningFor] = useState<string | null>(null);
   const [subTaggingParent, setSubTaggingParent] = useState<string>('');
   const [expandedChildPanels, setExpandedChildPanels] = useState<Record<string, boolean>>({});
+  const [expandedLevel3Panels, setExpandedLevel3Panels] = useState<Record<string, boolean>>({});
+  const [editingLevel3Segment, setEditingLevel3Segment] = useState<{ l1: string; l2: string; oldName: string; newName: string } | null>(null);
+  const [newLevel3Draft, setNewLevel3Draft] = useState<Record<string, string>>({});
+  const [level2TaggingParent, setLevel2TaggingParent] = useState<string>('');
+  const [depthMenuOpen, setDepthMenuOpen] = useState(false);
+  const depthMenuRef = useRef<HTMLDivElement>(null);
   
   const pageSize = 50;
+
+  useEffect(() => {
+    if (!depthMenuOpen) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (depthMenuRef.current && !depthMenuRef.current.contains(e.target as Node)) {
+        setDepthMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [depthMenuOpen]);
+
+  const depthMenuHints: Record<SegmentDepth, string> = {
+    1: '仅层级 1 大类',
+    2: '层级 1 + 层级 2',
+    3: '层级 1 + 2 + 3',
+  };
 
   const handleEditSegment = (oldName: string, newName: string) => {
     const trimmedNewName = newName.trim();
@@ -130,13 +176,38 @@ export const SegmentationManager = React.memo(function SegmentationManager({
     Object.keys(newSubDesc).forEach((key) => {
       if (key.startsWith(`sub::${oldName}::`)) {
         const child = key.slice(`sub::${oldName}::`.length);
-        newSubDesc[makeSubSegmentKey(trimmedNewName, child)] = newSubDesc[key];
+        newSubDesc[makeLevel2Key(trimmedNewName, child)] = newSubDesc[key];
         delete newSubDesc[key];
       }
     });
     if (Object.keys(newSubDesc).length !== Object.keys(segmentSubDescriptions).length) {
       onUpdateSegmentSubDescriptions(newSubDesc);
     }
+
+    const nextL3Children = { ...segmentLevel3Children };
+    const nextL3Desc = { ...segmentLevel3Descriptions };
+    Object.keys(nextL3Children).forEach((key) => {
+      if (key.startsWith(`${oldName}::`)) {
+        const l2 = key.slice(oldName.length + 2);
+        const newKey = makeLevel2ParentKey(trimmedNewName, l2);
+        nextL3Children[newKey] = nextL3Children[key];
+        delete nextL3Children[key];
+      }
+    });
+    Object.keys(nextL3Desc).forEach((key) => {
+      const parsed = parseSegmentPathKey(key);
+      if (parsed?.level1 === oldName) {
+        const newKey = parsed.depth === 3
+          ? makeLevel3Key(trimmedNewName, parsed.level2!, parsed.level3!)
+          : parsed.depth === 2
+            ? makeLevel2Key(trimmedNewName, parsed.level2!)
+            : key;
+        nextL3Desc[newKey] = nextL3Desc[key];
+        delete nextL3Desc[key];
+      }
+    });
+    onUpdateSegmentLevel3Children(nextL3Children);
+    onUpdateSegmentLevel3Descriptions(nextL3Desc);
 
     // Update segmentDescriptions
     const newDescriptions = { ...segmentDescriptions };
@@ -155,23 +226,35 @@ export const SegmentationManager = React.memo(function SegmentationManager({
   };
   
   const subSegmentOptions = useMemo(
-    () => segments.flatMap((parent) => (segmentChildren[parent] || []).map((child) => ({
-      key: makeSubSegmentKey(parent, child),
-      parent,
-      child,
-      label: formatSegmentLabel(parent, child),
+    () => segments.flatMap((l1) => (segmentChildren[l1] || []).map((l2) => ({
+      key: makeLevel2Key(l1, l2),
+      l1,
+      l2,
+      label: formatSegmentLabel(l1, l2),
     }))),
     [segments, segmentChildren]
   );
 
-  const getProductTagLabel = (asin: string) => {
-    const parent = asinToSegment[asin];
-    const child = asinToSubSegment[asin];
-    return formatSegmentLabel(parent, child || '');
-  };
+  const level3SegmentOptions = useMemo(
+    () => segments.flatMap((l1) =>
+      (segmentChildren[l1] || []).flatMap((l2) =>
+        (segmentLevel3Children[makeLevel2ParentKey(l1, l2)] || []).map((l3) => ({
+          key: makeLevel3Key(l1, l2, l3),
+          l1,
+          l2,
+          l3,
+          label: formatSegmentLabel(l1, l2, l3),
+        }))
+      )
+    ),
+    [segments, segmentChildren, segmentLevel3Children]
+  );
 
-  const selectedManagerSubInfo = useMemo(
-    () => parseSubSegmentKey(selectedManagerSegment),
+  const getProductTagLabel = (asin: string) =>
+    formatSegmentLabel(asinToSegment[asin], asinToSubSegment[asin], asinToLevel3Segment[asin]);
+
+  const selectedManagerPath = useMemo(
+    () => parseSegmentPathKey(selectedManagerSegment),
     [selectedManagerSegment]
   );
 
@@ -180,25 +263,49 @@ export const SegmentationManager = React.memo(function SegmentationManager({
     if (!trimmed) return;
     const children = segmentChildren[parent] || [];
     if (children.includes(trimmed)) {
-      toast.error('该子层级名称已存在');
+      toast.error('该层级 2 名称已存在');
       return;
     }
     onUpdateSegmentChildren({ ...segmentChildren, [parent]: [...children, trimmed] });
     setNewChildDraft((prev) => ({ ...prev, [parent]: '' }));
-    toast.success(`已在 ${parent} 下新增子层级 ${trimmed}`);
+    toast.success(`已在「${parent}」下新增层级 2：${trimmed}`);
   };
 
   const removeChildSegment = (parent: string, child: string) => {
+    const l3Key = makeLevel2ParentKey(parent, child);
+    const l3Names = segmentLevel3Children[l3Key] || [];
+    const msg = l3Names.length > 0
+      ? `删除层级 2「${child}」将同时删除其下 ${l3Names.length} 个层级 3 及所有相关打标，是否继续？`
+      : `确定删除层级 2「${child}」？`;
+    if (!window.confirm(msg)) return;
+
     const nextChildren = { ...segmentChildren, [parent]: (segmentChildren[parent] || []).filter((item) => item !== child) };
     const nextSubMap = { ...asinToSubSegment };
+    const nextL3Map = { ...asinToLevel3Segment };
     Object.keys(nextSubMap).forEach((asin) => {
-      if (asinToSegment[asin] === parent && nextSubMap[asin] === child) delete nextSubMap[asin];
+      if (asinToSegment[asin] === parent && nextSubMap[asin] === child) {
+        delete nextSubMap[asin];
+        delete nextL3Map[asin];
+      }
     });
     const nextSubDesc = { ...segmentSubDescriptions };
-    delete nextSubDesc[makeSubSegmentKey(parent, child)];
+    delete nextSubDesc[makeLevel2Key(parent, child)];
+    const nextL3Children = { ...segmentLevel3Children };
+    delete nextL3Children[l3Key];
+    const nextL3Desc = { ...segmentLevel3Descriptions };
+    Object.keys(nextL3Desc).forEach((key) => {
+      const parsed = parseSegmentPathKey(key);
+      if (parsed?.level1 === parent && parsed.level2 === child) delete nextL3Desc[key];
+    });
     onUpdateSegmentChildren(nextChildren);
     onUpdateAsinToSubSegment(nextSubMap);
+    onUpdateAsinToLevel3Segment(nextL3Map);
     onUpdateSegmentSubDescriptions(nextSubDesc);
+    onUpdateSegmentLevel3Children(nextL3Children);
+    onUpdateSegmentLevel3Descriptions(nextL3Desc);
+    if (selectedManagerSegment && parseSegmentPathKey(selectedManagerSegment)?.level2 === child && parseSegmentPathKey(selectedManagerSegment)?.level1 === parent) {
+      setSelectedManagerSegment(parent);
+    }
   };
 
   const handleEditChildSegment = (parent: string, oldName: string, newName: string) => {
@@ -209,7 +316,7 @@ export const SegmentationManager = React.memo(function SegmentationManager({
     }
     const children = segmentChildren[parent] || [];
     if (children.includes(trimmedNewName)) {
-      toast.error('该子层级名称已存在');
+      toast.error('该层级 2 名称已存在');
       setEditingChildSegment(null);
       return;
     }
@@ -228,8 +335,28 @@ export const SegmentationManager = React.memo(function SegmentationManager({
     onUpdateAsinToSubSegment(nextSubMap);
 
     const nextSubDesc = { ...segmentSubDescriptions };
-    const oldKey = makeSubSegmentKey(parent, oldName);
-    const newKey = makeSubSegmentKey(parent, trimmedNewName);
+    const oldKey = makeLevel2Key(parent, oldName);
+    const newKey = makeLevel2Key(parent, trimmedNewName);
+    const oldL3ParentKey = makeLevel2ParentKey(parent, oldName);
+    const newL3ParentKey = makeLevel2ParentKey(parent, trimmedNewName);
+    const nextL3Children = { ...segmentLevel3Children };
+    if (nextL3Children[oldL3ParentKey]) {
+      nextL3Children[newL3ParentKey] = nextL3Children[oldL3ParentKey];
+      delete nextL3Children[oldL3ParentKey];
+      onUpdateSegmentLevel3Children(nextL3Children);
+    }
+    const nextL3Desc = { ...segmentLevel3Descriptions };
+    Object.keys(nextL3Desc).forEach((key) => {
+      const parsed = parseSegmentPathKey(key);
+      if (parsed?.level1 === parent && parsed.level2 === oldName) {
+        const nk = parsed.depth === 3
+          ? makeLevel3Key(parent, trimmedNewName, parsed.level3!)
+          : makeLevel2Key(parent, trimmedNewName);
+        nextL3Desc[nk] = nextL3Desc[key];
+        delete nextL3Desc[key];
+      }
+    });
+    onUpdateSegmentLevel3Descriptions(nextL3Desc);
     if (nextSubDesc[oldKey]) {
       nextSubDesc[newKey] = nextSubDesc[oldKey];
       delete nextSubDesc[oldKey];
@@ -240,7 +367,76 @@ export const SegmentationManager = React.memo(function SegmentationManager({
       setSelectedManagerSegment(newKey);
     }
     setEditingChildSegment(null);
-    toast.success(`子层级 "${oldName}" 已重命名为 "${trimmedNewName}"`);
+    toast.success(`层级 2「${oldName}」已重命名为「${trimmedNewName}」`);
+  };
+
+  const addLevel3Segment = (l1: string, l2: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const parentKey = makeLevel2ParentKey(l1, l2);
+    const list = segmentLevel3Children[parentKey] || [];
+    if (list.includes(trimmed)) {
+      toast.error('该层级 3 名称已存在');
+      return;
+    }
+    onUpdateSegmentLevel3Children({ ...segmentLevel3Children, [parentKey]: [...list, trimmed] });
+    setNewLevel3Draft((prev) => ({ ...prev, [parentKey]: '' }));
+    toast.success(`已在「${l1} / ${l2}」下新增层级 3：${trimmed}`);
+  };
+
+  const removeLevel3Segment = (l1: string, l2: string, l3: string) => {
+    if (!window.confirm(`确定删除层级 3「${l3}」？`)) return;
+    const parentKey = makeLevel2ParentKey(l1, l2);
+    const nextList = { ...segmentLevel3Children, [parentKey]: (segmentLevel3Children[parentKey] || []).filter((x) => x !== l3) };
+    const nextL3Map = { ...asinToLevel3Segment };
+    Object.keys(nextL3Map).forEach((asin) => {
+      if (asinToSegment[asin] === l1 && asinToSubSegment[asin] === l2 && nextL3Map[asin] === l3) delete nextL3Map[asin];
+    });
+    const nextDesc = { ...segmentLevel3Descriptions };
+    delete nextDesc[makeLevel3Key(l1, l2, l3)];
+    onUpdateSegmentLevel3Children(nextList);
+    onUpdateAsinToLevel3Segment(nextL3Map);
+    onUpdateSegmentLevel3Descriptions(nextDesc);
+    if (selectedManagerSegment === makeLevel3Key(l1, l2, l3)) {
+      setSelectedManagerSegment(makeLevel2Key(l1, l2));
+    }
+  };
+
+  const handleEditLevel3Segment = (l1: string, l2: string, oldName: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) {
+      setEditingLevel3Segment(null);
+      return;
+    }
+    const parentKey = makeLevel2ParentKey(l1, l2);
+    const list = segmentLevel3Children[parentKey] || [];
+    if (list.includes(trimmed)) {
+      toast.error('该层级 3 名称已存在');
+      setEditingLevel3Segment(null);
+      return;
+    }
+    onUpdateSegmentLevel3Children({
+      ...segmentLevel3Children,
+      [parentKey]: list.map((x) => (x === oldName ? trimmed : x)),
+    });
+    const nextL3Map = { ...asinToLevel3Segment };
+    Object.keys(nextL3Map).forEach((asin) => {
+      if (asinToSegment[asin] === l1 && asinToSubSegment[asin] === l2 && nextL3Map[asin] === oldName) {
+        nextL3Map[asin] = trimmed;
+      }
+    });
+    onUpdateAsinToLevel3Segment(nextL3Map);
+    const oldKey = makeLevel3Key(l1, l2, oldName);
+    const newKey = makeLevel3Key(l1, l2, trimmed);
+    const nextDesc = { ...segmentLevel3Descriptions };
+    if (nextDesc[oldKey]) {
+      nextDesc[newKey] = nextDesc[oldKey];
+      delete nextDesc[oldKey];
+      onUpdateSegmentLevel3Descriptions(nextDesc);
+    }
+    if (selectedManagerSegment === oldKey) setSelectedManagerSegment(newKey);
+    setEditingLevel3Segment(null);
+    toast.success(`层级 3「${oldName}」已重命名为「${trimmed}」`);
   };
 
   /** 左侧分类范围内的产品（词云统计用，不受搜索/排除影响） */
@@ -249,22 +445,22 @@ export const SegmentationManager = React.memo(function SegmentationManager({
     if (selectedManagerSegment === UNCATEGORIZED_FILTER_KEY) {
       return products.filter(p => isUncategorizedAsin(p.asin, asinToSegment));
     }
-    if (selectedManagerSubInfo) {
-      return products.filter(
-        p => asinToSegment[p.asin] === selectedManagerSubInfo.parent && asinToSubSegment[p.asin] === selectedManagerSubInfo.child
+    if (selectedManagerPath) {
+      return products.filter((p) =>
+        productMatchesSegmentFilter(p.asin, selectedManagerSegment!, asinToSegment, asinToSubSegment, asinToLevel3Segment)
       );
     }
     return products.filter(p => asinToSegment[p.asin] === selectedManagerSegment);
-  }, [products, selectedManagerSegment, selectedManagerSubInfo, asinToSegment, asinToSubSegment]);
+  }, [products, selectedManagerSegment, selectedManagerPath, asinToSegment, asinToSubSegment, asinToLevel3Segment]);
 
   const filteredProducts = useMemo(() => {
     let base = products;
     if (selectedManagerSegment) {
       if (selectedManagerSegment === UNCATEGORIZED_FILTER_KEY) {
         base = products.filter(p => isUncategorizedAsin(p.asin, asinToSegment));
-      } else if (selectedManagerSubInfo) {
-        base = products.filter(
-          p => asinToSegment[p.asin] === selectedManagerSubInfo.parent && asinToSubSegment[p.asin] === selectedManagerSubInfo.child
+      } else if (selectedManagerPath) {
+        base = products.filter((p) =>
+          productMatchesSegmentFilter(p.asin, selectedManagerSegment!, asinToSegment, asinToSubSegment, asinToLevel3Segment)
         );
       } else {
         base = products.filter(p => asinToSegment[p.asin] === selectedManagerSegment);
@@ -284,9 +480,10 @@ export const SegmentationManager = React.memo(function SegmentationManager({
     includeMode,
     excludeMode,
     selectedManagerSegment,
-    selectedManagerSubInfo,
+    selectedManagerPath,
     asinToSegment,
     asinToSubSegment,
+    asinToLevel3Segment,
   ]);
 
   const allFilteredSelected =
@@ -315,14 +512,17 @@ export const SegmentationManager = React.memo(function SegmentationManager({
     
     const newMapping = { ...asinToSegment };
     const nextSubMap = { ...asinToSubSegment };
+    const nextL3Map = { ...asinToLevel3Segment };
     Object.keys(newMapping).forEach(asin => {
       if (newMapping[asin] === segment) {
         delete newMapping[asin];
         delete nextSubMap[asin];
+        delete nextL3Map[asin];
       }
     });
     onUpdateAsinToSegment(newMapping);
     onUpdateAsinToSubSegment(nextSubMap);
+    onUpdateAsinToLevel3Segment(nextL3Map);
 
     const newDescriptions = { ...segmentDescriptions };
     delete newDescriptions[segment];
@@ -337,31 +537,83 @@ export const SegmentationManager = React.memo(function SegmentationManager({
       if (key.startsWith(`sub::${segment}::`)) delete nextSubDesc[key];
     });
     onUpdateSegmentSubDescriptions(nextSubDesc);
+
+    const nextL3Children = { ...segmentLevel3Children };
+    Object.keys(nextL3Children).forEach((key) => {
+      if (key.startsWith(`${segment}::`)) delete nextL3Children[key];
+    });
+    onUpdateSegmentLevel3Children(nextL3Children);
+    const nextL3Desc = { ...segmentLevel3Descriptions };
+    Object.keys(nextL3Desc).forEach((key) => {
+      const parsed = parseSegmentPathKey(key);
+      if (parsed?.level1 === segment) delete nextL3Desc[key];
+    });
+    onUpdateSegmentLevel3Descriptions(nextL3Desc);
   };
 
   const handleTagProduct = (asin: string, segment: string) => {
     const nextParent = { ...asinToSegment };
     const nextSub = { ...asinToSubSegment };
+    const nextL3 = { ...asinToLevel3Segment };
     if (!segment) {
       delete nextParent[asin];
       delete nextSub[asin];
+      delete nextL3[asin];
     } else {
       nextParent[asin] = segment;
-      if (nextSub[asin] && asinToSegment[asin] !== segment) delete nextSub[asin];
+      if (nextSub[asin] && asinToSegment[asin] !== segment) {
+        delete nextSub[asin];
+        delete nextL3[asin];
+      }
     }
     onUpdateAsinToSegment(nextParent);
     onUpdateAsinToSubSegment(nextSub);
+    onUpdateAsinToLevel3Segment(nextL3);
   };
 
   const handleSubTagProduct = (asin: string, parent: string, child: string) => {
     if (!parent || asinToSegment[asin] !== parent) {
-      toast.error('请先为该 ASIN 打上对应的父层级标签');
+      toast.error('请先为该 ASIN 打上对应的层级 1 标签');
       return;
     }
     const nextSub = { ...asinToSubSegment };
-    if (!child) delete nextSub[asin];
-    else nextSub[asin] = child;
+    const nextL3 = { ...asinToLevel3Segment };
+    if (!child) {
+      delete nextSub[asin];
+      delete nextL3[asin];
+    } else {
+      nextSub[asin] = child;
+      if (nextL3[asin] && asinToSubSegment[asin] !== child) delete nextL3[asin];
+    }
     onUpdateAsinToSubSegment(nextSub);
+    onUpdateAsinToLevel3Segment(nextL3);
+  };
+
+  const handleLevel3TagProduct = (asin: string, l1: string, l2: string, l3: string) => {
+    if (asinToSegment[asin] !== l1 || asinToSubSegment[asin] !== l2) {
+      toast.error('请先为该 ASIN 打上对应的层级 1、层级 2 标签');
+      return;
+    }
+    const nextL3 = { ...asinToLevel3Segment };
+    if (!l3) delete nextL3[asin];
+    else nextL3[asin] = l3;
+    onUpdateAsinToLevel3Segment(nextL3);
+  };
+
+  const handleBulkLevel3Tag = (l1: string, l2: string, l3: string) => {
+    if (!l1 || !l2 || !l3 || selectedAsins.size === 0) return;
+    const eligible = [...selectedAsins].filter(
+      (asin) => asinToSegment[asin] === l1 && asinToSubSegment[asin] === l2
+    );
+    if (eligible.length === 0) {
+      toast.error(`所选 ASIN 需先属于「${l1} / ${l2}」`);
+      return;
+    }
+    const nextL3 = { ...asinToLevel3Segment };
+    eligible.forEach((asin) => { nextL3[asin] = l3; });
+    onUpdateAsinToLevel3Segment(nextL3);
+    setSelectedAsins(new Set());
+    toast.success(`已为 ${eligible.length} 个产品打上层级 3「${l3}」`);
   };
 
   const handleBulkTag = (segment: string) => {
@@ -369,17 +621,23 @@ export const SegmentationManager = React.memo(function SegmentationManager({
     const count = selectedAsins.size;
     const newMapping = { ...asinToSegment };
     const newSub = { ...asinToSubSegment };
+    const newL3 = { ...asinToLevel3Segment };
     selectedAsins.forEach(asin => {
       if (!segment) {
         delete newMapping[asin];
         delete newSub[asin];
+        delete newL3[asin];
       } else {
         newMapping[asin] = segment;
-        if (newSub[asin] && asinToSegment[asin] !== segment) delete newSub[asin];
+        if (newSub[asin] && asinToSegment[asin] !== segment) {
+          delete newSub[asin];
+          delete newL3[asin];
+        }
       }
     });
     onUpdateAsinToSegment(newMapping);
     onUpdateAsinToSubSegment(newSub);
+    onUpdateAsinToLevel3Segment(newL3);
     setSelectedAsins(new Set());
     toast.success(`已成功为 ${count} 个产品打标为 "${segment || '未分类'}"`);
   };
@@ -388,14 +646,14 @@ export const SegmentationManager = React.memo(function SegmentationManager({
     if (!parent || !child || selectedAsins.size === 0) return;
     const eligible = [...selectedAsins].filter((asin) => asinToSegment[asin] === parent);
     if (eligible.length === 0) {
-      toast.error(`所选 ASIN 需先属于父层级「${parent}」`);
+      toast.error(`所选 ASIN 需先属于层级 1「${parent}」`);
       return;
     }
     const nextSub = { ...asinToSubSegment };
     eligible.forEach((asin) => { nextSub[asin] = child; });
     onUpdateAsinToSubSegment(nextSub);
     setSelectedAsins(new Set());
-    toast.success(`已为 ${eligible.length} 个产品打上子层级「${child}」`);
+    toast.success(`已为 ${eligible.length} 个产品打上层级 2「${child}」`);
   };
 
   /** 全选 / 取消全选：针对当前筛选结果的全部行（跨页），而非仅当前页 */
@@ -591,156 +849,31 @@ ${batchInfo}`;
     }
   };
 
-  const runAiChildCategorization = async (parent: string) => {
-    const aiSettings = loadAiSettings();
-    if (!aiSettings?.apiKey) {
-      toast.error('请先在「AI 设置」中配置 API Key');
-      return;
-    }
-    const parentProducts = products.filter((p) => asinToSegment[p.asin] === parent);
-    const sampleProducts = parentProducts.length > 0 ? parentProducts : products;
-    setChildAiRunningFor(parent);
-    onAiRunningChange?.(true);
-    setAiStatus(`正在为「${parent}」生成子层级建议...`);
-    try {
-      const parentDesc = segmentDescriptions[parent];
-      const prompt = `你是一位亚马逊市场分析专家。请为父级细分市场「${parent}」进一步拆分子层级。
-${parentDesc ? `父级画像：人群=${parentDesc.people}；场景=${parentDesc.scenarios}；诉求=${parentDesc.needs}` : ''}
-
-要求：
-1. 子层级名称使用简体中文，2-8 个字为宜。
-2. 建议 2-5 个子层级，彼此区分明显。
-3. 每个子层级附简要画像。
-
-请返回 JSON：
-{
-  "children": ["子层级A", "子层级B"],
-  "descriptions": {
-    "子层级A": { "people": "...", "scenarios": "...", "needs": "..." }
-  }
-}
-
-产品标题示例（${sampleProducts.length} 个）：
-${sampleProducts.slice(0, 60).map((p) => p.title).join('\n')}`;
-
-      const responseText = await generateText(prompt, aiSettings, { jsonMode: true });
-      const jsonMatch = responseText.match(/\{.*\}/s);
-      const result = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
-      const children: string[] = Array.isArray(result.children) ? result.children.map((c: string) => String(c).trim()).filter(Boolean) : [];
-      if (children.length === 0) {
-        toast.error('AI 未返回有效子层级，请重试');
-        return;
-      }
-      const existing = segmentChildren[parent] || [];
-      const merged = [...existing];
-      children.forEach((c) => { if (!merged.includes(c)) merged.push(c); });
-      onUpdateSegmentChildren({ ...segmentChildren, [parent]: merged });
-
-      const nextSubDesc = { ...segmentSubDescriptions };
-      const descs = result.descriptions || {};
-      children.forEach((c) => {
-        if (descs[c]) nextSubDesc[makeSubSegmentKey(parent, c)] = descs[c];
-      });
-      onUpdateSegmentSubDescriptions(nextSubDesc);
-      toast.success(`已为「${parent}」生成 ${children.length} 个子层级建议`);
-    } catch (error) {
-      console.error('AI child categorization error:', error);
-      toast.error(`AI 生成子层级失败：${error instanceof Error ? error.message : '请重试'}`);
-    } finally {
-      setChildAiRunningFor(null);
-      onAiRunningChange?.(isAiCategorizing || isAiTagging);
-      setAiStatus('');
-    }
-  };
-
-  const runAiSubTagging = async (parent: string) => {
-    const children = segmentChildren[parent] || [];
-    if (children.length === 0) {
-      toast.error('请先为父层级添加子层级');
-      return;
-    }
-    const aiSettings = loadAiSettings();
-    if (!aiSettings?.apiKey) {
-      toast.error('请先在「AI 设置」中配置 API Key');
-      return;
-    }
-    const targetProducts = products.filter((p) => asinToSegment[p.asin] === parent);
-    if (targetProducts.length === 0) {
-      toast.error(`请先将 ASIN 打上父层级「${parent}」`);
-      return;
-    }
-
-    setIsAiTagging(true);
-    onAiRunningChange?.(true);
-    setProgress(0);
-    setAiStatus(`正在为「${parent}」下的产品打子层级标...`);
-
-    try {
-      const nextSub = { ...asinToSubSegment };
-      const batchSize = 25;
-      const totalToTag = Math.min(targetProducts.length, 500);
-      const batches = [];
-      for (let i = 0; i < totalToTag; i += batchSize) {
-        batches.push(targetProducts.slice(i, i + batchSize));
-      }
-      let completedCount = 0;
-      for (const batch of batches) {
-        const batchInfo = batch.map((p) => `ASIN: ${p.asin}, Title: ${p.title}`).join('\n');
-        const prompt = `将以下产品分配到父级「${parent}」下最合适的子层级。
-可用子层级：${children.join(', ')}
-
-请仅返回 JSON，键为 ASIN，值为子层级名称（必须与可用列表完全一致）。不要修改父级标签。
-
-产品列表：
-${batchInfo}`;
-        try {
-          const responseText = await generateText(prompt, aiSettings, { jsonMode: true });
-          const jsonMatch = responseText.match(/\{.*\}/s);
-          const batchTags = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
-          Object.entries(batchTags).forEach(([asin, child]) => {
-            const childName = String(child).trim();
-            if (children.includes(childName) && asinToSegment[asin] === parent) {
-              nextSub[asin] = childName;
-            }
-          });
-        } catch (batchError) {
-          console.error('Error processing sub batch:', batchError);
-        }
-        completedCount += batch.length;
-        const pct = Math.round((completedCount / totalToTag) * 100);
-        setProgress(pct);
-        setAiStatus(`子层级打标: ${completedCount}/${totalToTag} (${pct}%)`);
-        if (completedCount < totalToTag) await new Promise((r) => setTimeout(r, 300));
-      }
-      onUpdateAsinToSubSegment(nextSub);
-      setProgress(100);
-      toast.success(`「${parent}」子层级 AI 打标完成`);
-    } catch (error) {
-      console.error('AI sub tagging error:', error);
-      toast.error(`子层级 AI 打标失败：${error instanceof Error ? error.message : '请重试'}`);
-    } finally {
-      setIsAiTagging(false);
-      onAiRunningChange?.(isAiCategorizing || !!childAiRunningFor);
-      setTimeout(() => { setAiStatus(''); setProgress(0); }, 3000);
-    }
-  };
-
   const selectedDescription = useMemo(() => {
     if (!selectedManagerSegment || selectedManagerSegment === UNCATEGORIZED_FILTER_KEY) return null;
-    if (selectedManagerSubInfo) {
-      return segmentSubDescriptions[selectedManagerSegment] || segmentDescriptions[selectedManagerSubInfo.parent] || null;
+    if (selectedManagerPath?.depth === 3) {
+      return segmentLevel3Descriptions[selectedManagerSegment] || segmentSubDescriptions[makeLevel2Key(selectedManagerPath.level1, selectedManagerPath.level2!)] || null;
+    }
+    if (selectedManagerPath?.depth === 2) {
+      return segmentSubDescriptions[selectedManagerSegment] || segmentDescriptions[selectedManagerPath.level1] || null;
     }
     return segmentDescriptions[selectedManagerSegment] || null;
-  }, [selectedManagerSegment, selectedManagerSubInfo, segmentDescriptions, segmentSubDescriptions]);
+  }, [selectedManagerSegment, selectedManagerPath, segmentDescriptions, segmentSubDescriptions, segmentLevel3Descriptions]);
 
-  const selectedDescriptionLabel = selectedManagerSubInfo
-    ? formatSegmentLabel(selectedManagerSubInfo.parent, selectedManagerSubInfo.child)
+  const selectedDescriptionLabel = selectedManagerPath
+    ? formatSegmentLabel(selectedManagerPath.level1, selectedManagerPath.level2, selectedManagerPath.level3)
     : selectedManagerSegment;
 
   const bulkSubParent = subTaggingParent
-    || selectedManagerSubInfo?.parent
+    || selectedManagerPath?.level1
     || (segments.includes(selectedManagerSegment || '') ? selectedManagerSegment! : segments[0] || '');
-  const bulkSubChildren = bulkSubParent ? (segmentChildren[bulkSubParent] || []) : [];
+  const bulkSubChildren = segmentDepth >= 2 && bulkSubParent ? (segmentChildren[bulkSubParent] || []) : [];
+  const bulkL3ParentKey = selectedManagerPath?.level2
+    ? makeLevel2ParentKey(selectedManagerPath.level1, selectedManagerPath.level2)
+    : level2TaggingParent;
+  const bulkLevel3List = segmentDepth >= 3 && bulkL3ParentKey ? (segmentLevel3Children[bulkL3ParentKey] || []) : [];
+  const bulkL3L1 = selectedManagerPath?.level1 || (bulkL3ParentKey ? bulkL3ParentKey.split('::')[0] : '');
+  const bulkL3L2 = selectedManagerPath?.level2 || (bulkL3ParentKey ? bulkL3ParentKey.slice(bulkL3ParentKey.indexOf('::') + 2) : '');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -754,7 +887,7 @@ ${batchInfo}`;
             <CardDescription>定义细分市场并为 ASIN 打标，以便在仪表盘中进行深度分析。</CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            {(isAiCategorizing || isAiTagging || childAiRunningFor) && (
+            {(isAiCategorizing || isAiTagging) && (
               <button
                 onClick={onClose}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-semibold hover:bg-indigo-100 transition-colors"
@@ -773,7 +906,57 @@ ${batchInfo}`;
         <CardContent className="flex-1 overflow-hidden p-0 flex flex-col md:flex-row">
           {/* Left Panel */}
           <div className="w-full md:w-80 border-r border-black/5 bg-[#f5f5f7]/30 p-6 flex flex-col overflow-y-auto">
-            <h3 className="text-sm font-semibold text-[#1d1d1f] uppercase tracking-wider mb-4">细分分类</h3>
+            <div className="flex items-center gap-2 mb-4">
+              <h3 className="text-sm font-semibold text-[#1d1d1f] uppercase tracking-wider">细分分类</h3>
+              <div className="relative" ref={depthMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setDepthMenuOpen((o) => !o)}
+                  className={`p-1 rounded-md transition-colors ${
+                    depthMenuOpen
+                      ? 'bg-indigo-100 text-indigo-700'
+                      : 'text-[#86868b] hover:bg-indigo-50 hover:text-indigo-600'
+                  }`}
+                  title={`细分层级：当前 ${segmentDepth} 层（点击切换）`}
+                  aria-label={`细分层级，当前 ${segmentDepth} 层`}
+                  aria-expanded={depthMenuOpen}
+                  aria-haspopup="menu"
+                >
+                  <Layers className="w-4 h-4" />
+                </button>
+                {depthMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute left-0 top-full mt-1 z-30 w-44 py-1 bg-white rounded-xl border border-black/10 shadow-lg animate-in fade-in zoom-in-95 duration-150"
+                  >
+                    <div className="px-3 py-1.5 text-[10px] font-semibold text-[#86868b] uppercase tracking-wide border-b border-black/5">
+                      细分层级
+                    </div>
+                    {([1, 2, 3] as const).map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={segmentDepth === d}
+                        onClick={() => {
+                          onUpdateSegmentDepth(d);
+                          setDepthMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-xs transition-colors ${
+                          segmentDepth === d
+                            ? 'bg-indigo-50 text-indigo-700 font-semibold'
+                            : 'text-[#1d1d1f] hover:bg-[#f5f5f7]'
+                        }`}
+                      >
+                        <span>{d} 层</span>
+                        <span className="block text-[10px] font-normal text-[#86868b] mt-0.5">{depthMenuHints[d]}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <span className="text-[10px] text-[#86868b] font-medium">{segmentDepth} 层</span>
+            </div>
             
             <div className="flex gap-2 mb-6">
               <input 
@@ -841,6 +1024,7 @@ ${batchInfo}`;
                     
                     {!editingSegment || editingSegment.oldName !== s ? (
                       <div className="flex items-center gap-0.5 shrink-0">
+                        {segmentDepth >= 2 && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -852,10 +1036,11 @@ ${batchInfo}`;
                               ? 'bg-white/20 text-white hover:bg-white/30'
                               : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
                           }`}
-                          title={expandedChildPanels[s] ? '收起子层级' : '展开子层级管理'}
+                          title={expandedChildPanels[s] ? '收起层级 2' : '展开层级 2 管理'}
                         >
-                          {expandedChildPanels[s] ? '收起' : '子层级'}
+                          {expandedChildPanels[s] ? '收起' : '层级 2'}
                         </button>
+                        )}
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleRemoveSegment(s); }}
                           className={`p-1 transition-all ${selectedManagerSegment === s ? 'text-white/70 hover:text-white' : 'text-[#86868b] hover:text-rose-600 opacity-0 group-hover:opacity-100'}`}
@@ -866,62 +1051,138 @@ ${batchInfo}`;
                     ) : null}
                   </div>
 
-                  {expandedChildPanels[s] && (
+                  {segmentDepth >= 2 && expandedChildPanels[s] && (
                   <div className="ml-3 pl-3 border-l-2 border-indigo-100 space-y-1.5" onClick={(e) => e.stopPropagation()}>
                       <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
                         {(segmentChildren[s] || []).map((child) => {
-                          const childKey = makeSubSegmentKey(s, child);
+                          const childKey = makeLevel2Key(s, child);
+                          const l3ParentKey = makeLevel2ParentKey(s, child);
                           const isEditingChild =
                             editingChildSegment?.parent === s && editingChildSegment.oldName === child;
                           return (
-                            <div
-                              key={`${s}-${child}`}
-                              onClick={() => {
-                                if (!isEditingChild) {
-                                  setSelectedManagerSegment(childKey);
-                                  setSubTaggingParent(s);
-                                }
-                              }}
-                              className={`flex items-center gap-1 group/child px-2 py-1 rounded-lg cursor-pointer ${
-                                selectedManagerSegment === childKey
-                                  ? 'bg-violet-100 text-violet-800'
-                                  : 'hover:bg-white text-[#86868b]'
-                              }`}
-                            >
-                              {isEditingChild ? (
-                                <input
-                                  type="text"
-                                  value={editingChildSegment.newName}
-                                  onChange={(e) => setEditingChildSegment({ ...editingChildSegment, newName: e.target.value })}
-                                  onBlur={() => handleEditChildSegment(s, child, editingChildSegment.newName)}
-                                  onKeyPress={(e) => e.key === 'Enter' && handleEditChildSegment(s, child, editingChildSegment.newName)}
-                                  className="flex-1 min-w-0 px-2 py-1 text-[11px] bg-white text-black rounded border border-violet-300 focus:outline-none"
-                                  autoFocus
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                              ) : (
-                                <span
-                                  className="text-[11px] truncate flex-1"
-                                  title="点击筛选；双击编辑名称"
-                                  onDoubleClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingChildSegment({ parent: s, oldName: child, newName: child });
-                                  }}
-                                >
-                                  ↳ {child}
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeChildSegment(s, child);
+                            <div key={`${s}-${child}`} className="space-y-1">
+                              <div
+                                onClick={() => {
+                                  if (!isEditingChild) {
+                                    setSelectedManagerSegment(childKey);
+                                    setSubTaggingParent(s);
+                                    setLevel2TaggingParent(l3ParentKey);
+                                  }
                                 }}
-                                className="p-0.5 text-[#86868b] hover:text-rose-600 opacity-0 group-hover/child:opacity-100"
-                                title="删除子层级"
+                                className={`flex items-center gap-1 group/child px-2 py-1 rounded-lg cursor-pointer ${
+                                  selectedManagerSegment === childKey
+                                    ? 'bg-violet-100 text-violet-800'
+                                    : 'hover:bg-white text-[#86868b]'
+                                }`}
                               >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
+                                {isEditingChild ? (
+                                  <input
+                                    type="text"
+                                    value={editingChildSegment.newName}
+                                    onChange={(e) => setEditingChildSegment({ ...editingChildSegment, newName: e.target.value })}
+                                    onBlur={() => handleEditChildSegment(s, child, editingChildSegment.newName)}
+                                    onKeyPress={(e) => e.key === 'Enter' && handleEditChildSegment(s, child, editingChildSegment.newName)}
+                                    className="flex-1 min-w-0 px-2 py-1 text-[11px] bg-white text-black rounded border border-violet-300 focus:outline-none"
+                                    autoFocus
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                ) : (
+                                  <span
+                                    className="text-[11px] truncate flex-1"
+                                    title="点击筛选；双击编辑名称"
+                                    onDoubleClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingChildSegment({ parent: s, oldName: child, newName: child });
+                                    }}
+                                  >
+                                    ↳ {child}
+                                  </span>
+                                )}
+                                {segmentDepth >= 3 && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedLevel3Panels((prev) => ({ ...prev, [l3ParentKey]: !prev[l3ParentKey] }));
+                                    }}
+                                    className="px-1 py-0.5 text-[9px] font-semibold rounded bg-sky-50 text-sky-700 hover:bg-sky-100"
+                                  >
+                                    {expandedLevel3Panels[l3ParentKey] ? '收起' : '层级 3'}
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeChildSegment(s, child);
+                                  }}
+                                  className="p-0.5 text-[#86868b] hover:text-rose-600 opacity-0 group-hover/child:opacity-100"
+                                  title="删除层级 2"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                              {segmentDepth >= 3 && expandedLevel3Panels[l3ParentKey] && (
+                                <div className="ml-3 pl-2 border-l-2 border-sky-100 space-y-1" onClick={(e) => e.stopPropagation()}>
+                                  {(segmentLevel3Children[l3ParentKey] || []).map((l3) => {
+                                    const l3Key = makeLevel3Key(s, child, l3);
+                                    const isEditingL3 =
+                                      editingLevel3Segment?.l1 === s && editingLevel3Segment?.l2 === child && editingLevel3Segment.oldName === l3;
+                                    return (
+                                      <div
+                                        key={l3Key}
+                                        onClick={() => {
+                                          if (!isEditingL3) setSelectedManagerSegment(l3Key);
+                                        }}
+                                        className={`flex items-center gap-1 px-2 py-0.5 rounded cursor-pointer text-[10px] ${
+                                          selectedManagerSegment === l3Key ? 'bg-sky-100 text-sky-900' : 'text-[#86868b] hover:bg-white'
+                                        }`}
+                                      >
+                                        {isEditingL3 ? (
+                                          <input
+                                            type="text"
+                                            value={editingLevel3Segment.newName}
+                                            onChange={(e) => setEditingLevel3Segment({ ...editingLevel3Segment, newName: e.target.value })}
+                                            onBlur={() => handleEditLevel3Segment(s, child, l3, editingLevel3Segment.newName)}
+                                            onKeyPress={(e) => e.key === 'Enter' && handleEditLevel3Segment(s, child, l3, editingLevel3Segment.newName)}
+                                            className="flex-1 min-w-0 px-1 py-0.5 text-[10px] bg-white border border-sky-300 rounded"
+                                            autoFocus
+                                            onClick={(e) => e.stopPropagation()}
+                                          />
+                                        ) : (
+                                          <span
+                                            className="flex-1 truncate"
+                                            onDoubleClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingLevel3Segment({ l1: s, l2: child, oldName: l3, newName: l3 });
+                                            }}
+                                          >
+                                            ↳ {l3}
+                                          </span>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); removeLevel3Segment(s, child, l3); }}
+                                          className="p-0.5 hover:text-rose-600"
+                                        >
+                                          <Trash2 className="w-2.5 h-2.5" />
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                  <div className="flex gap-1">
+                                    <input
+                                      type="text"
+                                      value={newLevel3Draft[l3ParentKey] || ''}
+                                      onChange={(e) => setNewLevel3Draft((prev) => ({ ...prev, [l3ParentKey]: e.target.value }))}
+                                      placeholder="层级 3 名称"
+                                      className="flex-1 min-w-0 px-2 py-0.5 text-[10px] bg-white border border-black/10 rounded"
+                                      onKeyPress={(e) => e.key === 'Enter' && addLevel3Segment(s, child, newLevel3Draft[l3ParentKey] || '')}
+                                    />
+                                    <button type="button" onClick={() => addLevel3Segment(s, child, newLevel3Draft[l3ParentKey] || '')} className="px-1.5 py-0.5 text-[9px] font-semibold bg-sky-50 text-sky-700 rounded">添加</button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -930,7 +1191,7 @@ ${batchInfo}`;
                             type="text"
                             value={newChildDraft[s] || ''}
                             onChange={(e) => setNewChildDraft((prev) => ({ ...prev, [s]: e.target.value }))}
-                            placeholder="子层级名称"
+                            placeholder="层级 2 名称"
                             className="flex-1 min-w-0 px-2 py-1 text-[11px] bg-white border border-black/10 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-400"
                             onKeyPress={(e) => e.key === 'Enter' && addChildSegment(s, newChildDraft[s] || '')}
                           />
@@ -940,24 +1201,6 @@ ${batchInfo}`;
                             className="px-2 py-1 text-[10px] font-semibold bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100"
                           >
                             添加
-                          </button>
-                        </div>
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            disabled={childAiRunningFor === s || isAiCategorizing || isAiTagging}
-                            onClick={() => void runAiChildCategorization(s)}
-                            className="flex-1 px-2 py-1 text-[10px] font-semibold bg-violet-50 text-violet-700 rounded-lg hover:bg-violet-100 disabled:opacity-50"
-                          >
-                            {childAiRunningFor === s ? 'AI中...' : 'AI子层级'}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!(segmentChildren[s]?.length) || isAiTagging || childAiRunningFor === s}
-                            onClick={() => void runAiSubTagging(s)}
-                            className="flex-1 px-2 py-1 text-[10px] font-semibold bg-sky-50 text-sky-700 rounded-lg hover:bg-sky-100 disabled:opacity-50"
-                          >
-                            AI子打标
                           </button>
                         </div>
                       </div>
@@ -982,7 +1225,7 @@ ${batchInfo}`;
                 className="w-full py-3 bg-white border border-indigo-200 text-indigo-700 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all disabled:opacity-50"
               >
                 {isAiTagging ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}
-                {isAiTagging ? '打标中...' : '自动打标'}
+                {isAiTagging ? '打标中...' : 'AI 自动打标'}
               </button>
               {segments.length > 0 && (
                 <button 
@@ -998,7 +1241,7 @@ ${batchInfo}`;
               )}
             </div>
             
-            {(isAiCategorizing || isAiTagging || childAiRunningFor) && (
+            {(isAiCategorizing || isAiTagging) && (
               <div className="mt-4 space-y-2">
                 <div className="w-full bg-black/5 rounded-full h-1.5 overflow-hidden">
                   <div 
@@ -1039,9 +1282,11 @@ ${batchInfo}`;
                         setSubTaggingParent('');
                       } else {
                         setSelectedManagerSegment(v);
-                        const subInfo = parseSubSegmentKey(v);
-                        if (subInfo) setSubTaggingParent(subInfo.parent);
-                        else if (segments.includes(v)) setSubTaggingParent(v);
+                        const path = parseSegmentPathKey(v);
+                        if (path) {
+                          setSubTaggingParent(path.level1);
+                          if (path.level2) setLevel2TaggingParent(makeLevel2ParentKey(path.level1, path.level2));
+                        } else if (segments.includes(v)) setSubTaggingParent(v);
                       }
                       setCurrentPage(1);
                     }}
@@ -1052,7 +1297,10 @@ ${batchInfo}`;
                     {segments.map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
-                    {subSegmentOptions.map((opt) => (
+                    {segmentDepth >= 2 && subSegmentOptions.map((opt) => (
+                      <option key={opt.key} value={opt.key}>{opt.label}</option>
+                    ))}
+                    {segmentDepth >= 3 && level3SegmentOptions.map((opt) => (
                       <option key={opt.key} value={opt.key}>{opt.label}</option>
                     ))}
                   </select>
@@ -1177,7 +1425,7 @@ ${batchInfo}`;
                       <option value="">未分类</option>
                       {segments.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
-                    {bulkSubChildren.length > 0 && (
+                    {segmentDepth >= 2 && bulkSubChildren.length > 0 && (
                       <select
                         onChange={(e) => {
                           if (e.target.value) handleBulkSubTag(bulkSubParent, e.target.value);
@@ -1186,9 +1434,24 @@ ${batchInfo}`;
                         className="px-3 py-2 bg-violet-600 text-white rounded-xl text-sm font-medium focus:outline-none cursor-pointer shadow-sm"
                         value=""
                       >
-                        <option value="" disabled>批量打子层级...</option>
+                        <option value="" disabled>批量打层级 2...</option>
                         {bulkSubChildren.map((c) => (
                           <option key={c} value={c}>{bulkSubParent} / {c}</option>
+                        ))}
+                      </select>
+                    )}
+                    {bulkLevel3List.length > 0 && bulkL3L1 && bulkL3L2 && (
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) handleBulkLevel3Tag(bulkL3L1, bulkL3L2, e.target.value);
+                          e.target.value = '';
+                        }}
+                        className="px-3 py-2 bg-sky-600 text-white rounded-xl text-sm font-medium focus:outline-none cursor-pointer shadow-sm"
+                        value=""
+                      >
+                        <option value="" disabled>批量打层级 3...</option>
+                        {bulkLevel3List.map((l3) => (
+                          <option key={l3} value={l3}>{formatSegmentLabel(bulkL3L1, bulkL3L2, l3)}</option>
                         ))}
                       </select>
                     )}
@@ -1243,8 +1506,9 @@ ${batchInfo}`;
                       />
                     </th>
                     <th className="px-6 py-3 font-medium">产品信息</th>
-                    <th className="px-6 py-3 font-medium">父层级</th>
-                    <th className="px-6 py-3 font-medium">子层级</th>
+                    <th className="px-6 py-3 font-medium">层级 1</th>
+                    {segmentDepth >= 2 && <th className="px-6 py-3 font-medium">层级 2</th>}
+                    {segmentDepth >= 3 && <th className="px-6 py-3 font-medium">层级 3</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/5">
@@ -1292,6 +1556,7 @@ ${batchInfo}`;
                           {segments.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </td>
+                      {segmentDepth >= 2 && (
                       <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                         <select
                           value={asinToSubSegment[p.asin] || ''}
@@ -1305,6 +1570,22 @@ ${batchInfo}`;
                           ))}
                         </select>
                       </td>
+                      )}
+                      {segmentDepth >= 3 && (
+                      <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                        <select
+                          value={asinToLevel3Segment[p.asin] || ''}
+                          disabled={!asinToSegment[p.asin] || !asinToSubSegment[p.asin]}
+                          onChange={(e) => handleLevel3TagProduct(p.asin, asinToSegment[p.asin], asinToSubSegment[p.asin], e.target.value)}
+                          className="w-full max-w-[140px] px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none cursor-pointer disabled:opacity-40"
+                        >
+                          <option value="">无</option>
+                          {(segmentLevel3Children[makeLevel2ParentKey(asinToSegment[p.asin], asinToSubSegment[p.asin])] || []).map((l3) => (
+                            <option key={l3} value={l3}>{l3}</option>
+                          ))}
+                        </select>
+                      </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

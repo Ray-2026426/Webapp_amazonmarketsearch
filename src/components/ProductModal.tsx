@@ -16,6 +16,7 @@ interface ProductModalProps {
   domain: string;
   asinToSegment?: Record<string, string>;
   asinToSubSegment?: Record<string, string>;
+  asinToLevel3Segment?: Record<string, string>;
   history?: HistoryRecord[];
   months?: string[];
   title?: string;
@@ -32,7 +33,7 @@ function SortBtn({ col, current, dir, onClick }: { col: SortKey; current: SortKe
 
 export const ProductModal = React.memo(function ProductModal({
   products, onClose, domain,
-  asinToSegment = {}, asinToSubSegment = {}, history = [], months = [], title = 'ASIN 列表',
+  asinToSegment = {}, asinToSubSegment = {}, asinToLevel3Segment = {}, history = [], months = [], title = 'ASIN 列表',
 }: ProductModalProps) {
   const cur = getCurrencySymbol(domain);
   const [selectedAsin, setSelectedAsin] = useState<string | null>(null);
@@ -192,7 +193,7 @@ ${historyLines}
                 <td className="px-3 py-2">{p.image ? <img src={p.image} alt={p.asin} className="w-9 h-9 object-cover rounded shadow-sm" referrerPolicy="no-referrer"/> : <div className="w-9 h-9 bg-gray-100 rounded flex items-center justify-center text-[10px] text-gray-400">无图</div>}</td>
                 <td className="px-3 py-2 font-mono text-xs text-[#1d1d1f]"><div className="flex items-center gap-1"><span>{p.asin}</span><a href={`https://www.${domain}/dp/${p.asin}`} target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:text-indigo-700"><ExternalLink className="w-3 h-3"/></a></div></td>
                 <td className="px-3 py-2 truncate max-w-[150px]" title={p.title}>{p.title}</td>
-                <td className="px-3 py-2">{seg ? <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-medium whitespace-nowrap">{formatSegmentLabel(seg, asinToSubSegment[p.asin])}</span> : <span className="text-[10px] text-[#86868b]">未分类</span>}</td>
+                <td className="px-3 py-2">{seg ? <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-medium whitespace-nowrap">{formatSegmentLabel(seg, asinToSubSegment[p.asin], asinToLevel3Segment[p.asin])}</span> : <span className="text-[10px] text-[#86868b]">未分类</span>}</td>
                 <td className="px-3 py-2 text-right">{cur}{p.price.toFixed(2)}</td>
                 <td className="px-3 py-2 text-right">{p.monthlySales.toLocaleString()}</td>
                 <td className="px-3 py-2 text-right font-medium text-emerald-600">{cur}{Math.round(p.monthlyRevenue).toLocaleString()}</td>

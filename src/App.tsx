@@ -38,7 +38,16 @@ import { AvatarSettingsModal } from './components/AvatarSettingsModal';
 import { AnchorAnnotationsLayer } from './components/AnchorAnnotationsLayer';
 import type { AnchorAnnotation } from './utils/anchorAnnotations';
 import { normalizeAnchorAnnotations } from './utils/anchorAnnotations';
-import { makeSubSegmentKey, parseSubSegmentKey } from './utils/subSegments';
+import {
+  makeLevel2Key,
+  makeLevel3Key,
+  parseSegmentPathKey,
+  formatSegmentLabel,
+  inferSegmentDepth,
+  productMatchesSegmentFilter,
+  coerceSegmentFilterKey,
+  type SegmentDepth,
+} from './utils/subSegments';
 interface ErrorBoundaryProps {
   children: ReactNode;
 }
@@ -150,6 +159,10 @@ export default function App() {
   const [asinToSubSegment, setAsinToSubSegment] = useState<Record<string, string>>({});
   const [segmentDescriptions, setSegmentDescriptions] = useState<Record<string, { people: string, scenarios: string, needs: string }>>({});
   const [segmentSubDescriptions, setSegmentSubDescriptions] = useState<Record<string, { people: string, scenarios: string, needs: string }>>({});
+  const [segmentDepth, setSegmentDepth] = useState<SegmentDepth>(1);
+  const [segmentLevel3Children, setSegmentLevel3Children] = useState<Record<string, string[]>>({});
+  const [asinToLevel3Segment, setAsinToLevel3Segment] = useState<Record<string, string>>({});
+  const [segmentLevel3Descriptions, setSegmentLevel3Descriptions] = useState<Record<string, { people: string, scenarios: string, needs: string }>>({});
   const [selectedSegment, setSelectedSegment] = useState<string>('all');
   const [isSegmentationOpen, setIsSegmentationOpen] = useState(false);
   const [isSegAiRunning, setIsSegAiRunning] = useState(false);
@@ -173,9 +186,13 @@ export default function App() {
       segmentDescriptions,
       segmentChildren,
       asinToSubSegment,
-      segmentSubDescriptions
+      segmentSubDescriptions,
+      segmentLevel3Children,
+      asinToLevel3Segment,
+      segmentLevel3Descriptions,
+      segmentDepth
     ),
-    [products, segments, asinToSegment, segmentDescriptions, segmentChildren, asinToSubSegment, segmentSubDescriptions]
+    [products, segments, asinToSegment, segmentDescriptions, segmentChildren, asinToSubSegment, segmentSubDescriptions, segmentLevel3Children, asinToLevel3Segment, segmentLevel3Descriptions, segmentDepth]
   );
 
   const handlePersistMarketReport = useCallback((body: string) => {
@@ -226,6 +243,10 @@ export default function App() {
       await set('asinToSubSegment', snap.asinToSubSegment ?? {});
       await set('segmentDescriptions', snap.segmentDescriptions);
       await set('segmentSubDescriptions', snap.segmentSubDescriptions ?? {});
+      await set('segmentDepth', snap.segmentDepth ?? inferSegmentDepth(snap.segmentChildren ?? {}, snap.asinToSubSegment ?? {}, snap.segmentLevel3Children ?? {}, snap.asinToLevel3Segment ?? {}));
+      await set('segmentLevel3Children', snap.segmentLevel3Children ?? {});
+      await set('asinToLevel3Segment', snap.asinToLevel3Segment ?? {});
+      await set('segmentLevel3Descriptions', snap.segmentLevel3Descriptions ?? {});
       await set('selectedSegment', snap.selectedSegment);
       await set('reviews', snap.reviews);
       await set('persona', snap.persona);
@@ -245,7 +266,12 @@ export default function App() {
       setAsinToSubSegment(snap.asinToSubSegment ?? {});
       setSegmentDescriptions(snap.segmentDescriptions);
       setSegmentSubDescriptions(snap.segmentSubDescriptions ?? {});
-      setSelectedSegment(snap.selectedSegment);
+      const restoredDepth = snap.segmentDepth ?? inferSegmentDepth(snap.segmentChildren ?? {}, snap.asinToSubSegment ?? {}, snap.segmentLevel3Children ?? {}, snap.asinToLevel3Segment ?? {});
+      setSegmentDepth(restoredDepth);
+      setSegmentLevel3Children(snap.segmentLevel3Children ?? {});
+      setAsinToLevel3Segment(snap.asinToLevel3Segment ?? {});
+      setSegmentLevel3Descriptions(snap.segmentLevel3Descriptions ?? {});
+      setSelectedSegment(coerceSegmentFilterKey(snap.selectedSegment, restoredDepth));
       setSelectedKpiMonths(snap.selectedKpiMonths);
       setPreviousKpiMonths(snap.previousKpiMonths);
       setLastYearKpiMonths(snap.lastYearKpiMonths);
@@ -290,6 +316,10 @@ export default function App() {
       asinToSubSegment,
       segmentDescriptions,
       segmentSubDescriptions,
+      segmentDepth,
+      segmentLevel3Children,
+      asinToLevel3Segment,
+      segmentLevel3Descriptions,
       selectedSegment,
       selectedKpiMonths,
       previousKpiMonths,
@@ -319,6 +349,10 @@ export default function App() {
     asinToSubSegment,
     segmentDescriptions,
     segmentSubDescriptions,
+    segmentDepth,
+    segmentLevel3Children,
+    asinToLevel3Segment,
+    segmentLevel3Descriptions,
     selectedSegment,
     selectedKpiMonths,
     previousKpiMonths,
@@ -495,12 +529,14 @@ export default function App() {
             const [
               savedHistory, savedMonths, savedSegments,
               savedAsinToSegment, savedSegmentChildren, savedAsinToSubSegment, savedSegmentDescriptions, savedSegmentSubDescriptions,
+              savedSegmentDepth, savedSegmentLevel3Children, savedAsinToLevel3Segment, savedSegmentLevel3Descriptions,
               savedReviews, savedPersona, savedKeywords, savedSelectedSegment,
               savedMarketReportCache, savedHistorySourceLabel, savedAnchorAnnotations,
               savedSelectedKpiMonths, savedPreviousKpiMonths, savedLastYearKpiMonths,
             ] = await Promise.all([
               get('history'), get('months'), get('segments'),
               get('asinToSegment'), get('segmentChildren'), get('asinToSubSegment'), get('segmentDescriptions'), get('segmentSubDescriptions'),
+              get('segmentDepth'), get('segmentLevel3Children'), get('asinToLevel3Segment'), get('segmentLevel3Descriptions'),
               get('reviews'), get('persona'), get('keywords'), get('selectedSegment'),
               get('marketReportCache'),
               get('historySourceLabel'),
@@ -518,10 +554,23 @@ export default function App() {
             if (savedAsinToSubSegment) setAsinToSubSegment(savedAsinToSubSegment);
             if (savedSegmentDescriptions) setSegmentDescriptions(savedSegmentDescriptions);
             if (savedSegmentSubDescriptions) setSegmentSubDescriptions(savedSegmentSubDescriptions);
+            const loadedChildren = savedSegmentChildren || {};
+            const loadedSub = savedAsinToSubSegment || {};
+            const loadedL3Children = savedSegmentLevel3Children || {};
+            const loadedL3Tags = savedAsinToLevel3Segment || {};
+            const loadedDepth = (typeof savedSegmentDepth === 'number' && [1, 2, 3].includes(savedSegmentDepth))
+              ? (savedSegmentDepth as SegmentDepth)
+              : inferSegmentDepth(loadedChildren, loadedSub, loadedL3Children, loadedL3Tags);
+            setSegmentDepth(loadedDepth);
+            if (savedSegmentLevel3Children) setSegmentLevel3Children(savedSegmentLevel3Children);
+            if (savedAsinToLevel3Segment) setAsinToLevel3Segment(savedAsinToLevel3Segment);
+            if (savedSegmentLevel3Descriptions) setSegmentLevel3Descriptions(savedSegmentLevel3Descriptions);
             if (savedReviews) setReviews(savedReviews);
             if (savedPersona) setPersona(savedPersona);
             if (savedKeywords) setKeywords(savedKeywords);
-            if (savedSelectedSegment) setSelectedSegment(savedSelectedSegment);
+            if (savedSelectedSegment) {
+              setSelectedSegment(coerceSegmentFilterKey(String(savedSelectedSegment), loadedDepth));
+            }
             if (
               savedMarketReportCache &&
               typeof savedMarketReportCache === 'object' &&
@@ -623,6 +672,10 @@ export default function App() {
         await set('asinToSubSegment', asinToSubSegment);
         await set('segmentDescriptions', segmentDescriptions);
         await set('segmentSubDescriptions', segmentSubDescriptions);
+        await set('segmentDepth', segmentDepth);
+        await set('segmentLevel3Children', segmentLevel3Children);
+        await set('asinToLevel3Segment', asinToLevel3Segment);
+        await set('segmentLevel3Descriptions', segmentLevel3Descriptions);
         await set('selectedSegment', selectedSegment);
         await set('selectedKpiMonths', selectedKpiMonths);
         await set('previousKpiMonths', previousKpiMonths);
@@ -647,32 +700,44 @@ export default function App() {
   }, [
     marketplace, isInitializing, activeView, isDataLoaded,
     products, history, months, segments, asinToSegment, segmentChildren, asinToSubSegment, segmentDescriptions, segmentSubDescriptions,
+    segmentDepth, segmentLevel3Children, asinToLevel3Segment, segmentLevel3Descriptions,
     selectedSegment, selectedKpiMonths, previousKpiMonths, lastYearKpiMonths,
     reviews, persona, keywords, marketReportCache, historySourceLabel, anchorAnnotations
   ]);
 
   const segmentFilterOptions = useMemo(() => {
     const options: Array<{ value: string; label: string }> = [{ value: 'all', label: '全部细分' }];
-    segments.forEach((parent) => {
-      options.push({ value: parent, label: parent });
-      (segmentChildren[parent] || []).forEach((child) => {
-        options.push({ value: makeSubSegmentKey(parent, child), label: `↳ ${parent} / ${child}` });
+    segments.forEach((l1) => {
+      options.push({ value: l1, label: l1 });
+      if (segmentDepth < 2) return;
+      (segmentChildren[l1] || []).forEach((l2) => {
+        options.push({ value: makeLevel2Key(l1, l2), label: `↳ ${formatSegmentLabel(l1, l2)}` });
+        if (segmentDepth < 3) return;
+        const l3List = segmentLevel3Children[`${l1}::${l2}`] || [];
+        l3List.forEach((l3) => {
+          options.push({
+            value: makeLevel3Key(l1, l2, l3),
+            label: `↳ ${formatSegmentLabel(l1, l2, l3)}`,
+          });
+        });
       });
     });
     return options;
-  }, [segments, segmentChildren]);
+  }, [segments, segmentChildren, segmentLevel3Children, segmentDepth]);
 
-  const selectedSubSegmentInfo = useMemo(() => parseSubSegmentKey(selectedSegment), [selectedSegment]);
+  const selectedSegmentPath = useMemo(() => parseSegmentPathKey(selectedSegment), [selectedSegment]);
 
   const filteredProducts = useMemo(() => {
     if (selectedSegment === 'all') return products;
-    if (selectedSubSegmentInfo) {
-      return products.filter(
-        p => asinToSegment[p.asin] === selectedSubSegmentInfo.parent && asinToSubSegment[p.asin] === selectedSubSegmentInfo.child
-      );
-    }
-    return products.filter(p => asinToSegment[p.asin] === selectedSegment);
-  }, [products, asinToSegment, asinToSubSegment, selectedSegment, selectedSubSegmentInfo]);
+    return products.filter((p) =>
+      productMatchesSegmentFilter(p.asin, selectedSegment, asinToSegment, asinToSubSegment, asinToLevel3Segment)
+    );
+  }, [products, asinToSegment, asinToSubSegment, asinToLevel3Segment, selectedSegment]);
+
+  const handleSegmentDepthChange = useCallback((next: SegmentDepth) => {
+    setSegmentDepth(next);
+    setSelectedSegment((prev) => coerceSegmentFilterKey(prev, next));
+  }, []);
 
   const filteredHistory = useMemo(() => {
     if (selectedSegment === 'all') return history;
@@ -1184,12 +1249,14 @@ export default function App() {
 
                   {/* Segment Persona Card in Dashboard */}
                   {selectedSegment !== 'all' && (() => {
-                    const subInfo = selectedSubSegmentInfo;
-                    const activeDesc = subInfo
-                      ? segmentSubDescriptions[makeSubSegmentKey(subInfo.parent, subInfo.child)]
-                      : segmentDescriptions[selectedSegment];
-                    const activeLabel = subInfo
-                      ? `${subInfo.parent} / ${subInfo.child}`
+                    const path = selectedSegmentPath;
+                    const activeDesc = path?.depth === 3
+                      ? segmentLevel3Descriptions[selectedSegment]
+                      : path?.depth === 2
+                        ? segmentSubDescriptions[selectedSegment]
+                        : segmentDescriptions[selectedSegment];
+                    const activeLabel = path
+                      ? formatSegmentLabel(path.level1, path.level2, path.level3)
                       : selectedSegment;
                     if (!activeDesc) return null;
                     return (
@@ -1298,7 +1365,7 @@ export default function App() {
                   </div>
                   <SellerLocationChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
                   <div id="asin-list" data-annotate-anchor="market-asin-list">
-                    <TopProductsTable products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} asinToSubSegment={asinToSubSegment} />
+                    <TopProductsTable products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} asinToSubSegment={asinToSubSegment} asinToLevel3Segment={asinToLevel3Segment} />
                   </div>
                 </div>
               </div>
@@ -1365,6 +1432,10 @@ export default function App() {
             asinToSubSegment={asinToSubSegment}
             segmentDescriptions={segmentDescriptions}
             segmentSubDescriptions={segmentSubDescriptions}
+            segmentDepth={segmentDepth}
+            segmentLevel3Children={segmentLevel3Children}
+            asinToLevel3Segment={asinToLevel3Segment}
+            segmentLevel3Descriptions={segmentLevel3Descriptions}
             domain={marketplace.domain}
             onUpdateSegments={setSegments}
             onUpdateAsinToSegment={setAsinToSegment}
@@ -1372,6 +1443,10 @@ export default function App() {
             onUpdateAsinToSubSegment={setAsinToSubSegment}
             onUpdateSegmentDescriptions={setSegmentDescriptions}
             onUpdateSegmentSubDescriptions={setSegmentSubDescriptions}
+            onUpdateSegmentDepth={handleSegmentDepthChange}
+            onUpdateSegmentLevel3Children={setSegmentLevel3Children}
+            onUpdateAsinToLevel3Segment={setAsinToLevel3Segment}
+            onUpdateSegmentLevel3Descriptions={setSegmentLevel3Descriptions}
             onGenerateReport={openMarketReport}
             onAiRunningChange={setIsSegAiRunning}
             onClose={handleCloseSegmentation}
