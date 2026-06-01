@@ -38,6 +38,7 @@ import { AvatarSettingsModal } from './components/AvatarSettingsModal';
 import { AnchorAnnotationsLayer } from './components/AnchorAnnotationsLayer';
 import type { AnchorAnnotation } from './utils/anchorAnnotations';
 import { normalizeAnchorAnnotations } from './utils/anchorAnnotations';
+import { makeSubSegmentKey, parseSubSegmentKey } from './utils/subSegments';
 interface ErrorBoundaryProps {
   children: ReactNode;
 }
@@ -145,7 +146,10 @@ export default function App() {
   // Segmentation State
   const [segments, setSegments] = useState<string[]>([]);
   const [asinToSegment, setAsinToSegment] = useState<Record<string, string>>({});
+  const [segmentChildren, setSegmentChildren] = useState<Record<string, string[]>>({});
+  const [asinToSubSegment, setAsinToSubSegment] = useState<Record<string, string>>({});
   const [segmentDescriptions, setSegmentDescriptions] = useState<Record<string, { people: string, scenarios: string, needs: string }>>({});
+  const [segmentSubDescriptions, setSegmentSubDescriptions] = useState<Record<string, { people: string, scenarios: string, needs: string }>>({});
   const [selectedSegment, setSelectedSegment] = useState<string>('all');
   const [isSegmentationOpen, setIsSegmentationOpen] = useState(false);
   const [isSegAiRunning, setIsSegAiRunning] = useState(false);
@@ -162,8 +166,16 @@ export default function App() {
   const [confirmAction, setConfirmAction] = useState<{ action: 'reupload' | 'reset', message: string } | null>(null);
 
   const reportDataFingerprint = useMemo(
-    () => computeMarketReportFingerprint(products, segments, asinToSegment, segmentDescriptions),
-    [products, segments, asinToSegment, segmentDescriptions]
+    () => computeMarketReportFingerprint(
+      products,
+      segments,
+      asinToSegment,
+      segmentDescriptions,
+      segmentChildren,
+      asinToSubSegment,
+      segmentSubDescriptions
+    ),
+    [products, segments, asinToSegment, segmentDescriptions, segmentChildren, asinToSubSegment, segmentSubDescriptions]
   );
 
   const handlePersistMarketReport = useCallback((body: string) => {
@@ -210,7 +222,10 @@ export default function App() {
       await set('isDataLoaded', true);
       await set('segments', snap.segments);
       await set('asinToSegment', snap.asinToSegment);
+      await set('segmentChildren', snap.segmentChildren ?? {});
+      await set('asinToSubSegment', snap.asinToSubSegment ?? {});
       await set('segmentDescriptions', snap.segmentDescriptions);
+      await set('segmentSubDescriptions', snap.segmentSubDescriptions ?? {});
       await set('selectedSegment', snap.selectedSegment);
       await set('reviews', snap.reviews);
       await set('persona', snap.persona);
@@ -226,7 +241,10 @@ export default function App() {
       setMonths(snap.months);
       setSegments(snap.segments);
       setAsinToSegment(snap.asinToSegment);
+      setSegmentChildren(snap.segmentChildren ?? {});
+      setAsinToSubSegment(snap.asinToSubSegment ?? {});
       setSegmentDescriptions(snap.segmentDescriptions);
+      setSegmentSubDescriptions(snap.segmentSubDescriptions ?? {});
       setSelectedSegment(snap.selectedSegment);
       setSelectedKpiMonths(snap.selectedKpiMonths);
       setPreviousKpiMonths(snap.previousKpiMonths);
@@ -268,7 +286,10 @@ export default function App() {
       months,
       segments,
       asinToSegment,
+      segmentChildren,
+      asinToSubSegment,
       segmentDescriptions,
+      segmentSubDescriptions,
       selectedSegment,
       selectedKpiMonths,
       previousKpiMonths,
@@ -294,7 +315,10 @@ export default function App() {
     months,
     segments,
     asinToSegment,
+    segmentChildren,
+    asinToSubSegment,
     segmentDescriptions,
+    segmentSubDescriptions,
     selectedSegment,
     selectedKpiMonths,
     previousKpiMonths,
@@ -353,8 +377,11 @@ export default function App() {
     setReviews([]);
     setKeywords([]);
     setAsinToSegment({});
+    setSegmentChildren({});
+    setAsinToSubSegment({});
     setSegments([]);
     setSegmentDescriptions({});
+    setSegmentSubDescriptions({});
     setSelectedSegment('all');
     setPersona(null);
     setMarketReportCache(null);
@@ -466,14 +493,14 @@ export default function App() {
             
             // Load other data only if products exist
             const [
-              savedHistory, savedMonths, savedSegments, 
-              savedAsinToSegment, savedSegmentDescriptions,
+              savedHistory, savedMonths, savedSegments,
+              savedAsinToSegment, savedSegmentChildren, savedAsinToSubSegment, savedSegmentDescriptions, savedSegmentSubDescriptions,
               savedReviews, savedPersona, savedKeywords, savedSelectedSegment,
               savedMarketReportCache, savedHistorySourceLabel, savedAnchorAnnotations,
               savedSelectedKpiMonths, savedPreviousKpiMonths, savedLastYearKpiMonths,
             ] = await Promise.all([
               get('history'), get('months'), get('segments'),
-              get('asinToSegment'), get('segmentDescriptions'),
+              get('asinToSegment'), get('segmentChildren'), get('asinToSubSegment'), get('segmentDescriptions'), get('segmentSubDescriptions'),
               get('reviews'), get('persona'), get('keywords'), get('selectedSegment'),
               get('marketReportCache'),
               get('historySourceLabel'),
@@ -487,7 +514,10 @@ export default function App() {
             if (savedMonths) setMonths(savedMonths);
             if (savedSegments) setSegments(savedSegments);
             if (savedAsinToSegment) setAsinToSegment(savedAsinToSegment);
+            if (savedSegmentChildren) setSegmentChildren(savedSegmentChildren);
+            if (savedAsinToSubSegment) setAsinToSubSegment(savedAsinToSubSegment);
             if (savedSegmentDescriptions) setSegmentDescriptions(savedSegmentDescriptions);
+            if (savedSegmentSubDescriptions) setSegmentSubDescriptions(savedSegmentSubDescriptions);
             if (savedReviews) setReviews(savedReviews);
             if (savedPersona) setPersona(savedPersona);
             if (savedKeywords) setKeywords(savedKeywords);
@@ -589,7 +619,10 @@ export default function App() {
         // Segment state
         await set('segments', segments);
         await set('asinToSegment', asinToSegment);
+        await set('segmentChildren', segmentChildren);
+        await set('asinToSubSegment', asinToSubSegment);
         await set('segmentDescriptions', segmentDescriptions);
+        await set('segmentSubDescriptions', segmentSubDescriptions);
         await set('selectedSegment', selectedSegment);
         await set('selectedKpiMonths', selectedKpiMonths);
         await set('previousKpiMonths', previousKpiMonths);
@@ -613,15 +646,33 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [
     marketplace, isInitializing, activeView, isDataLoaded,
-    products, history, months, segments, asinToSegment, segmentDescriptions,
+    products, history, months, segments, asinToSegment, segmentChildren, asinToSubSegment, segmentDescriptions, segmentSubDescriptions,
     selectedSegment, selectedKpiMonths, previousKpiMonths, lastYearKpiMonths,
     reviews, persona, keywords, marketReportCache, historySourceLabel, anchorAnnotations
   ]);
 
+  const segmentFilterOptions = useMemo(() => {
+    const options: Array<{ value: string; label: string }> = [{ value: 'all', label: '全部细分' }];
+    segments.forEach((parent) => {
+      options.push({ value: parent, label: parent });
+      (segmentChildren[parent] || []).forEach((child) => {
+        options.push({ value: makeSubSegmentKey(parent, child), label: `↳ ${parent} / ${child}` });
+      });
+    });
+    return options;
+  }, [segments, segmentChildren]);
+
+  const selectedSubSegmentInfo = useMemo(() => parseSubSegmentKey(selectedSegment), [selectedSegment]);
+
   const filteredProducts = useMemo(() => {
     if (selectedSegment === 'all') return products;
+    if (selectedSubSegmentInfo) {
+      return products.filter(
+        p => asinToSegment[p.asin] === selectedSubSegmentInfo.parent && asinToSubSegment[p.asin] === selectedSubSegmentInfo.child
+      );
+    }
     return products.filter(p => asinToSegment[p.asin] === selectedSegment);
-  }, [products, asinToSegment, selectedSegment]);
+  }, [products, asinToSegment, asinToSubSegment, selectedSegment, selectedSubSegmentInfo]);
 
   const filteredHistory = useMemo(() => {
     if (selectedSegment === 'all') return history;
@@ -738,7 +789,10 @@ export default function App() {
       // Update state in chunks to avoid blocking main thread and potential OOM/Crash
       setSegments([]);
       setAsinToSegment({});
+      setSegmentChildren({});
+      setAsinToSubSegment({});
       setSegmentDescriptions({});
+      setSegmentSubDescriptions({});
       setSelectedSegment('all');
       setAnchorAnnotations([]);
       setAnnotateMode(false);
@@ -1069,9 +1123,8 @@ export default function App() {
                   onChange={(e) => setSelectedSegment(e.target.value)}
                   className="bg-transparent text-sm font-medium focus:outline-none cursor-pointer"
                 >
-                  <option value="all">全部细分</option>
-                  {segments.map(s => (
-                    <option key={s} value={s}>{s}</option>
+                  {segmentFilterOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
               </div>
@@ -1130,28 +1183,38 @@ export default function App() {
                   </div>
 
                   {/* Segment Persona Card in Dashboard */}
-                  {selectedSegment !== 'all' && segmentDescriptions[selectedSegment] && (
-                    <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm animate-in fade-in slide-in-from-top-2">
-                      <div className="flex items-center gap-2 mb-4">
-                        <Users className="w-5 h-5 text-indigo-600" />
-                        <h3 className="text-lg font-semibold text-[#1d1d1f]">细分市场画像：{selectedSegment}</h3>
+                  {selectedSegment !== 'all' && (() => {
+                    const subInfo = selectedSubSegmentInfo;
+                    const activeDesc = subInfo
+                      ? segmentSubDescriptions[makeSubSegmentKey(subInfo.parent, subInfo.child)]
+                      : segmentDescriptions[selectedSegment];
+                    const activeLabel = subInfo
+                      ? `${subInfo.parent} / ${subInfo.child}`
+                      : selectedSegment;
+                    if (!activeDesc) return null;
+                    return (
+                      <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm animate-in fade-in slide-in-from-top-2">
+                        <div className="flex items-center gap-2 mb-4">
+                          <Users className="w-5 h-5 text-indigo-600" />
+                          <h3 className="text-lg font-semibold text-[#1d1d1f]">细分市场画像：{activeLabel}</h3>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                          <div className="space-y-1">
+                            <div className="text-[11px] font-bold text-[#86868b] uppercase tracking-widest">目标人群</div>
+                            <p className="text-[14px] text-[#1d1d1f] leading-relaxed">{activeDesc.people}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-[11px] font-bold text-[#86868b] uppercase tracking-widest">使用场景</div>
+                            <p className="text-[14px] text-[#1d1d1f] leading-relaxed">{activeDesc.scenarios}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="text-[11px] font-bold text-[#86868b] uppercase tracking-widest">核心诉求与痛点</div>
+                            <p className="text-[14px] text-[#1d1d1f] leading-relaxed">{activeDesc.needs}</p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                        <div className="space-y-1">
-                          <div className="text-[11px] font-bold text-[#86868b] uppercase tracking-widest">目标人群</div>
-                          <p className="text-[14px] text-[#1d1d1f] leading-relaxed">{segmentDescriptions[selectedSegment].people}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-[11px] font-bold text-[#86868b] uppercase tracking-widest">使用场景</div>
-                          <p className="text-[14px] text-[#1d1d1f] leading-relaxed">{segmentDescriptions[selectedSegment].scenarios}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-[11px] font-bold text-[#86868b] uppercase tracking-widest">核心诉求与痛点</div>
-                          <p className="text-[14px] text-[#1d1d1f] leading-relaxed">{segmentDescriptions[selectedSegment].needs}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
 
                 {/* KPI Cards - 第一行：核心3指标，突出显示 */}
@@ -1235,7 +1298,7 @@ export default function App() {
                   </div>
                   <SellerLocationChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
                   <div id="asin-list" data-annotate-anchor="market-asin-list">
-                    <TopProductsTable products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
+                    <TopProductsTable products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} asinToSubSegment={asinToSubSegment} />
                   </div>
                 </div>
               </div>
@@ -1298,11 +1361,17 @@ export default function App() {
             products={products}
             segments={segments}
             asinToSegment={asinToSegment}
+            segmentChildren={segmentChildren}
+            asinToSubSegment={asinToSubSegment}
             segmentDescriptions={segmentDescriptions}
+            segmentSubDescriptions={segmentSubDescriptions}
             domain={marketplace.domain}
             onUpdateSegments={setSegments}
             onUpdateAsinToSegment={setAsinToSegment}
+            onUpdateSegmentChildren={setSegmentChildren}
+            onUpdateAsinToSubSegment={setAsinToSubSegment}
             onUpdateSegmentDescriptions={setSegmentDescriptions}
+            onUpdateSegmentSubDescriptions={setSegmentSubDescriptions}
             onGenerateReport={openMarketReport}
             onAiRunningChange={setIsSegAiRunning}
             onClose={handleCloseSegmentation}

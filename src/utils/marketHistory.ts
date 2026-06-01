@@ -28,7 +28,10 @@ export interface MarketHistorySnapshot {
   months: string[];
   segments: string[];
   asinToSegment: Record<string, string>;
+  segmentChildren?: Record<string, string[]>;
+  asinToSubSegment?: Record<string, string>;
   segmentDescriptions: Record<string, { people: string; scenarios: string; needs: string }>;
+  segmentSubDescriptions?: Record<string, { people: string; scenarios: string; needs: string }>;
   selectedSegment: string;
   selectedKpiMonths: string[];
   previousKpiMonths: string[];
@@ -137,7 +140,10 @@ export async function saveMarketSnapshot(
       months: input.months,
       segments: input.segments,
       asinToSegment: input.asinToSegment,
+      segmentChildren: input.segmentChildren ?? {},
+      asinToSubSegment: input.asinToSubSegment ?? {},
       segmentDescriptions: input.segmentDescriptions,
+      segmentSubDescriptions: input.segmentSubDescriptions ?? {},
       selectedSegment: input.selectedSegment,
       selectedKpiMonths: input.selectedKpiMonths,
       previousKpiMonths: input.previousKpiMonths,

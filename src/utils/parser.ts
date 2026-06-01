@@ -930,7 +930,10 @@ export function computeMarketReportFingerprint(
   products: Product[],
   segments: string[],
   asinToSegment: Record<string, string>,
-  segmentDescriptions: Record<string, { people: string; scenarios: string; needs: string }>
+  segmentDescriptions: Record<string, { people: string; scenarios: string; needs: string }>,
+  segmentChildren: Record<string, string[]> = {},
+  asinToSubSegment: Record<string, string> = {},
+  segmentSubDescriptions: Record<string, { people: string; scenarios: string; needs: string }> = {}
 ): string {
   const rows = [...products]
     .sort((a, b) => a.asin.localeCompare(b.asin))
@@ -944,7 +947,16 @@ export function computeMarketReportFingerprint(
     o[k] = asinToSegment[k];
     return o;
   }, {});
-  const raw = `${rows.join('\n')}|${segKey}|${JSON.stringify(mapNorm)}|${JSON.stringify(segmentDescriptions)}`;
+  const childNorm = Object.keys(segmentChildren).sort().reduce<Record<string, string[]>>((o, k) => {
+    o[k] = [...(segmentChildren[k] || [])].sort();
+    return o;
+  }, {});
+  const sortedSubAsins = Object.keys(asinToSubSegment).sort();
+  const subMapNorm = sortedSubAsins.reduce<Record<string, string>>((o, k) => {
+    o[k] = asinToSubSegment[k];
+    return o;
+  }, {});
+  const raw = `${rows.join('\n')}|${segKey}|${JSON.stringify(mapNorm)}|${JSON.stringify(segmentDescriptions)}|${JSON.stringify(childNorm)}|${JSON.stringify(subMapNorm)}|${JSON.stringify(segmentSubDescriptions)}`;
   let h = 5381;
   for (let i = 0; i < raw.length; i++) {
     h = (h * 33) ^ raw.charCodeAt(i);

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
+import { formatSegmentLabel } from '../utils/subSegments';
 import { Star, ExternalLink, TrendingUp, X, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, Sparkles, Loader2, Search } from 'lucide-react';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
@@ -41,10 +42,11 @@ interface TopProductsTableProps {
   months?: string[];
   domain?: string;
   asinToSegment?: Record<string, string>;
+  asinToSubSegment?: Record<string, string>;
 }
 
 export const TopProductsTable = React.memo(function TopProductsTable({
-  products, history = [], months = [], domain = 'amazon.com', asinToSegment = {}
+  products, history = [], months = [], domain = 'amazon.com', asinToSegment = {}, asinToSubSegment = {}
 }: TopProductsTableProps) {
   const cur = getCurrencySymbol(domain);
   const [currentPage, setCurrentPage] = useState(1);
@@ -229,7 +231,7 @@ export const TopProductsTable = React.memo(function TopProductsTable({
                     </td>
                     <td className="px-4 py-3">
                       {asinToSegment[product.asin]
-                        ? <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-medium whitespace-nowrap">{asinToSegment[product.asin]}</span>
+                        ? <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-medium whitespace-nowrap">{formatSegmentLabel(asinToSegment[product.asin], asinToSubSegment[product.asin])}</span>
                         : <span className="text-[10px] text-[#86868b]">未分类</span>}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">{cur}{product.price.toFixed(2)}</td>
