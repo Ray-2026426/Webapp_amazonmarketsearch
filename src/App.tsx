@@ -1360,10 +1360,10 @@ export default function App() {
                   <LaunchDateChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
                   <NewVsOldChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <RatingDistributionChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
-                    <SellerTypeChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
+                    <RatingDistributionChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} asinToSegment={asinToSegment} />
+                    <SellerTypeChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} asinToSegment={asinToSegment} />
                   </div>
-                  <SellerLocationChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
+                  <SellerLocationChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} asinToSegment={asinToSegment} />
                   <div id="asin-list" data-annotate-anchor="market-asin-list">
                     <TopProductsTable products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} asinToSubSegment={asinToSubSegment} asinToLevel3Segment={asinToLevel3Segment} />
                   </div>

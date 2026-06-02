@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { Product, HistoryRecord } from '../utils/parser';
-import { TrendingUp, TrendingDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react';
 import { DateRangeSelector } from './DateRangeSelector';
 import { ProductModal } from './ProductModal';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
@@ -12,6 +12,31 @@ interface BrandLeaderboardProps {
   months: string[];
   domain?: string;
   asinToSegment?: Record<string, string>;
+}
+
+const EFFECTIVE_ASIN_HINT = '在所选时间段内，销量大于 0 的不重复 ASIN 数量。';
+
+function ColumnHeaderHint({ text }: { text: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="flex justify-center">
+      <span className="relative inline-block pr-3.5">
+        有效ASIN数量
+        <span
+          className="absolute -top-1.5 right-0 inline-flex"
+          onMouseEnter={() => setShow(true)}
+          onMouseLeave={() => setShow(false)}
+        >
+          <HelpCircle className="w-3 h-3 text-[#b0b0b8] hover:text-[#6366f1] cursor-help transition-colors" />
+          {show && (
+            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-black/10 rounded-2xl shadow-2xl p-3 w-56 text-xs text-[#1d1d1f] leading-relaxed text-left normal-case font-normal whitespace-normal pointer-events-none">
+              {text}
+            </div>
+          )}
+        </span>
+      </span>
+    </div>
+  );
 }
 
 // Product positioning classification based on price and sales
@@ -37,7 +62,8 @@ export const BrandLeaderboard = React.memo(function BrandLeaderboard({ products,
   const asinToBrand = useMemo(() => new Map(products.map(p => [p.asin, p.brand])), [products]);
 
   const calculateBrandStats = (targetMonths: string[]) => {
-    const brandMap = new Map<string, { sales: number, revenue: number, count: number }>();
+    const brandMap = new Map<string, { sales: number, revenue: number, count: number, effectiveCount: number }>();
+    const effectiveAsinSets = new Map<string, Set<string>>();
     let totalMarketRevenue = 0;
 
     if (targetMonths.length === 0) {
@@ -46,19 +72,31 @@ export const BrandLeaderboard = React.memo(function BrandLeaderboard({ products,
 
     history.forEach(h => {
       const brand = asinToBrand.get(h.asin) || 'Unknown';
+      let periodSales = 0;
       targetMonths.forEach(m => {
         const monthData = h.history[m];
         if (monthData) {
-          const current = brandMap.get(brand) || { sales: 0, revenue: 0, count: 0 };
+          const current = brandMap.get(brand) || { sales: 0, revenue: 0, count: 0, effectiveCount: 0 };
           brandMap.set(brand, {
             sales: current.sales + monthData.sales,
             revenue: current.revenue + monthData.revenue,
             count: current.count + 1,
+            effectiveCount: current.effectiveCount,
           });
+          periodSales += monthData.sales;
           totalMarketRevenue += monthData.revenue;
         }
       });
+      if (periodSales > 0) {
+        if (!effectiveAsinSets.has(brand)) effectiveAsinSets.set(brand, new Set());
+        effectiveAsinSets.get(brand)!.add(h.asin);
+      }
     });
+
+    brandMap.forEach((stats, brand) => {
+      stats.effectiveCount = effectiveAsinSets.get(brand)?.size ?? 0;
+    });
+
     return { brandMap, totalMarketRevenue };
   };
 
@@ -72,11 +110,11 @@ export const BrandLeaderboard = React.memo(function BrandLeaderboard({ products,
         const share = currentStats.totalMarketRevenue > 0 ? (stats.revenue / currentStats.totalMarketRevenue) * 100 : 0;
         
         // Previous period calculations
-        const prevBrandStats = prevStats.brandMap.get(brand) || { sales: 0, revenue: 0, count: 0 };
+        const prevBrandStats = prevStats.brandMap.get(brand) || { sales: 0, revenue: 0, count: 0, effectiveCount: 0 };
         const prevShare = prevStats.totalMarketRevenue > 0 ? (prevBrandStats.revenue / prevStats.totalMarketRevenue) * 100 : 0;
         
         // Last year calculations
-        const lyBrandStats = lastYearStats.brandMap.get(brand) || { sales: 0, revenue: 0, count: 0 };
+        const lyBrandStats = lastYearStats.brandMap.get(brand) || { sales: 0, revenue: 0, count: 0, effectiveCount: 0 };
         const lyShare = lastYearStats.totalMarketRevenue > 0 ? (lyBrandStats.revenue / lastYearStats.totalMarketRevenue) * 100 : 0;
 
         // YoY and MoM for Sales (Relative %)
@@ -112,8 +150,19 @@ export const BrandLeaderboard = React.memo(function BrandLeaderboard({ products,
 
   const brandProducts = useMemo(() => {
     if (!modalBrand) return [];
-    return products.filter(p => p.brand === modalBrand).sort((a, b) => b.monthlyRevenue - a.monthlyRevenue);
-  }, [products, modalBrand]);
+    const list = products.filter(p => p.brand === modalBrand);
+    if (selectedMonths.length === 0) {
+      return list.sort((a, b) => b.monthlyRevenue - a.monthlyRevenue);
+    }
+    const revenueOf = (asin: string) => {
+      let rev = 0;
+      const rec = history.find(h => h.asin === asin);
+      if (!rec) return 0;
+      selectedMonths.forEach(m => { rev += rec.history[m]?.revenue ?? 0; });
+      return rev;
+    };
+    return list.sort((a, b) => revenueOf(b.asin) - revenueOf(a.asin));
+  }, [products, modalBrand, selectedMonths, history]);
 
   const renderTrend = (value: number | undefined, isAbsolute = false) => {
     if (value === undefined) return null;
@@ -165,6 +214,9 @@ export const BrandLeaderboard = React.memo(function BrandLeaderboard({ products,
                   <th scope="col" className="px-4 py-3 font-medium">排名</th>
                   <th scope="col" className="px-4 py-3 font-medium">品牌</th>
                   <th scope="col" className="px-4 py-3 font-medium text-right">ASIN数量</th>
+                  <th scope="col" className="px-4 py-3 font-medium text-center">
+                    <ColumnHeaderHint text={EFFECTIVE_ASIN_HINT} />
+                  </th>
                   <th scope="col" className="px-4 py-3 font-medium text-right">销量</th>
                   <th scope="col" className="px-4 py-3 font-medium text-right">销售额</th>
                   <th scope="col" className="px-4 py-3 font-medium text-right">市场份额</th>
@@ -191,6 +243,7 @@ export const BrandLeaderboard = React.memo(function BrandLeaderboard({ products,
                     </td>
                     <td className="px-4 py-3 font-medium text-indigo-600 hover:underline">{brand.brand}</td>
                     <td className="px-4 py-3 text-right">{brand.count}</td>
+                    <td className="px-4 py-3 text-center">{brand.effectiveCount}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex flex-col items-end">
                         <span>{brand.sales.toLocaleString()}</span>
@@ -258,6 +311,7 @@ export const BrandLeaderboard = React.memo(function BrandLeaderboard({ products,
           asinToSegment={asinToSegment}
           history={history}
           months={months}
+          selectedMonths={selectedMonths}
           title={`品牌详情: ${modalBrand}`}
         />
       )}

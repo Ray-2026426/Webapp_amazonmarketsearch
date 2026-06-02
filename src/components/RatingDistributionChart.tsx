@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 import { Product, HistoryRecord, formatRevenue } from '../utils/parser';
+import { buildAsinPeriodStatsMap, getAsinPeriodStats } from '../utils/chartHistory';
 import { ProductModal } from './ProductModal';
 
 interface RatingDistributionChartProps {
@@ -9,16 +10,18 @@ interface RatingDistributionChartProps {
   domain?: string;
   history?: HistoryRecord[];
   months?: string[];
+  selectedMonths?: string[];
   asinToSegment?: Record<string, string>;
 }
 
-export const RatingDistributionChart = React.memo(function RatingDistributionChart({ products, domain = 'amazon.com', history = [], months = [], asinToSegment = {} }: RatingDistributionChartProps) {
+export const RatingDistributionChart = React.memo(function RatingDistributionChart({ products, domain = 'amazon.com', history = [], months = [], selectedMonths = [], asinToSegment = {} }: RatingDistributionChartProps) {
   const [metric, setMetric] = useState<'sales' | 'revenue'>('sales');
   const [step, setStep] = useState<number>(0.2);
   const [selectedProducts, setSelectedProducts] = useState<Product[] | null>(null);
 
   const data = useMemo(() => {
     const bucketsMap = new Map<string, { count: number, sales: number, revenue: number, products: Product[] }>();
+    const asinStats = buildAsinPeriodStatsMap(products, history, selectedMonths);
     
     // Create buckets from 1.0 to 5.0 based on step
     for (let i = 1.0; i <= 5.0; i += step) {
@@ -29,6 +32,9 @@ export const RatingDistributionChart = React.memo(function RatingDistributionCha
 
     products.forEach(p => {
       if (p.rating === 0) return; // Skip unrated products
+
+      const period = getAsinPeriodStats(asinStats, p.asin);
+      if (period.sales === 0 && period.revenue === 0) return;
       
       let rating = p.rating;
       if (rating < 1.0) rating = 1.0;
@@ -45,8 +51,8 @@ export const RatingDistributionChart = React.memo(function RatingDistributionCha
       
       if (bucket) {
         bucket.count++;
-        bucket.sales += p.monthlySales;
-        bucket.revenue += p.monthlyRevenue;
+        bucket.sales += period.sales;
+        bucket.revenue += period.revenue;
         bucket.products.push(p);
       }
     });
@@ -79,7 +85,7 @@ export const RatingDistributionChart = React.memo(function RatingDistributionCha
     }
 
     return result;
-  }, [products, step]);
+  }, [products, history, selectedMonths, step]);
 
   return (
     <>

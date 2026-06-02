@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { X, ExternalLink, Star, TrendingUp, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, Sparkles, Loader2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/Card';
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
+import { buildAsinPeriodStatsMap, getAsinPeriodStats } from '../utils/chartHistory';
 import { formatSegmentLabel } from '../utils/subSegments';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
@@ -19,6 +20,7 @@ interface ProductModalProps {
   asinToLevel3Segment?: Record<string, string>;
   history?: HistoryRecord[];
   months?: string[];
+  selectedMonths?: string[];
   title?: string;
 }
 
@@ -33,9 +35,17 @@ function SortBtn({ col, current, dir, onClick }: { col: SortKey; current: SortKe
 
 export const ProductModal = React.memo(function ProductModal({
   products, onClose, domain,
-  asinToSegment = {}, asinToSubSegment = {}, asinToLevel3Segment = {}, history = [], months = [], title = 'ASIN 列表',
+  asinToSegment = {}, asinToSubSegment = {}, asinToLevel3Segment = {}, history = [], months = [], selectedMonths = [], title = 'ASIN 列表',
 }: ProductModalProps) {
   const cur = getCurrencySymbol(domain);
+  const usePeriodStats = selectedMonths.length > 0;
+  const asinPeriodStats = useMemo(
+    () => (usePeriodStats ? buildAsinPeriodStatsMap(products, history, selectedMonths) : new Map()),
+    [products, history, selectedMonths, usePeriodStats]
+  );
+
+  const getSales = (p: Product) => usePeriodStats ? getAsinPeriodStats(asinPeriodStats, p.asin).sales : p.monthlySales;
+  const getRevenue = (p: Product) => usePeriodStats ? getAsinPeriodStats(asinPeriodStats, p.asin).revenue : p.monthlyRevenue;
   const [selectedAsin, setSelectedAsin] = useState<string | null>(null);
   const [aggregation, setAggregation] = useState<'month' | 'quarter' | 'year'>('month');
   const [page, setPage] = useState(1);
@@ -58,13 +68,17 @@ export const ProductModal = React.memo(function ProductModal({
       if (sortKey === 'launchDate') {
         av = a.launchDate ? new Date(a.launchDate).getTime() : 0;
         bv = b.launchDate ? new Date(b.launchDate).getTime() : 0;
+      } else if (sortKey === 'monthlySales') {
+        av = getSales(a); bv = getSales(b);
+      } else if (sortKey === 'monthlyRevenue') {
+        av = getRevenue(a); bv = getRevenue(b);
       } else {
         av = (a[sortKey] as number) || 0;
         bv = (b[sortKey] as number) || 0;
       }
       return sortDir === 'asc' ? av - bv : bv - av;
     });
-  }, [products, sortKey, sortDir]);
+  }, [products, sortKey, sortDir, asinPeriodStats, usePeriodStats]);
 
   const totalPages = Math.ceil(sorted.length / pageSize);
   const paged = sorted.slice((page - 1) * pageSize, page * pageSize);
@@ -117,6 +131,11 @@ export const ProductModal = React.memo(function ProductModal({
           }).join('\n')
         : '无历史数据';
 
+      const periodSales = getSales(selectedProduct);
+      const periodRevenue = getRevenue(selectedProduct);
+      const salesLabel = usePeriodStats ? '所选时段销量' : '月销量';
+      const revenueLabel = usePeriodStats ? '所选时段销售额' : '月销售额';
+
       const prompt = `你是一位资深亚马逊运营专家，请对以下单个ASIN进行深度分析。
 
 ## ASIN基本信息
@@ -124,8 +143,8 @@ export const ProductModal = React.memo(function ProductModal({
 - 标题: ${selectedProduct.title || '未知'}
 - 品牌: ${selectedProduct.brand}
 - 当前价格: ${cur}${selectedProduct.price.toFixed(2)}
-- 月销量: ${selectedProduct.monthlySales.toLocaleString()}
-- 月销售额: ${cur}${Math.round(selectedProduct.monthlyRevenue).toLocaleString()}
+- ${salesLabel}: ${periodSales.toLocaleString()}
+- ${revenueLabel}: ${cur}${Math.round(periodRevenue).toLocaleString()}
 - 评分: ${selectedProduct.rating.toFixed(1)} (${selectedProduct.reviewCount.toLocaleString()} 条评论)
 - FBA费用: ${selectedProduct.fbaFee > 0 ? cur + selectedProduct.fbaFee.toFixed(2) : '未知'}
 - 小类BSR: ${selectedProduct.subBsr > 0 ? '#' + selectedProduct.subBsr.toLocaleString() : '未知'}
@@ -165,7 +184,7 @@ ${historyLines}
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <Card className="w-full max-w-6xl max-h-[88vh] flex flex-col shadow-2xl rounded-[24px]">
         <CardHeader className="flex flex-row items-center justify-between border-b border-black/5 pb-4 bg-[#f5f5f7]/50 rounded-t-[24px] shrink-0">
-          <div><CardTitle className="text-xl">{title}</CardTitle><CardDescription>共 {products.length} 个 ASIN</CardDescription></div>
+          <div><CardTitle className="text-xl">{title}</CardTitle><CardDescription>共 {products.length} 个 ASIN{usePeriodStats ? ` · 数据时段：${selectedMonths.length === 1 ? selectedMonths[0] : `${selectedMonths[0]} ~ ${selectedMonths[selectedMonths.length - 1]}`}` : ''}</CardDescription></div>
           <div className="flex items-center gap-3">
             {totalPages > 1 && (<div className="flex items-center gap-1 text-xs text-[#86868b]"><button onClick={() => setPage(p => Math.max(1,p-1))} disabled={page===1} className="p-1 hover:bg-black/5 rounded disabled:opacity-30"><ChevronLeft className="w-4 h-4"/></button><span>{page}/{totalPages}</span><button onClick={() => setPage(p => Math.min(totalPages,p+1))} disabled={page===totalPages} className="p-1 hover:bg-black/5 rounded disabled:opacity-30"><ChevronRight className="w-4 h-4"/></button></div>)}
             <button onClick={onClose} className="p-2 hover:bg-black/5 rounded-full"><X className="w-5 h-5 text-[#86868b]"/></button>
@@ -195,8 +214,8 @@ ${historyLines}
                 <td className="px-3 py-2 truncate max-w-[150px]" title={p.title}>{p.title}</td>
                 <td className="px-3 py-2">{seg ? <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-medium whitespace-nowrap">{formatSegmentLabel(seg, asinToSubSegment[p.asin], asinToLevel3Segment[p.asin])}</span> : <span className="text-[10px] text-[#86868b]">未分类</span>}</td>
                 <td className="px-3 py-2 text-right">{cur}{p.price.toFixed(2)}</td>
-                <td className="px-3 py-2 text-right">{p.monthlySales.toLocaleString()}</td>
-                <td className="px-3 py-2 text-right font-medium text-emerald-600">{cur}{Math.round(p.monthlyRevenue).toLocaleString()}</td>
+                <td className="px-3 py-2 text-right">{getSales(p).toLocaleString()}</td>
+                <td className="px-3 py-2 text-right font-medium text-emerald-600">{cur}{Math.round(getRevenue(p)).toLocaleString()}</td>
                 <td className="px-3 py-2 text-right">{p.fbaFee > 0 ? `${cur}${p.fbaFee.toFixed(2)}` : '-'}</td>
                 <td className="px-3 py-2 text-right">{p.subBsr > 0 ? <div><span className="font-medium">#{p.subBsr.toLocaleString()}</span>{p.subCategory && <span className="block text-[10px] text-[#86868b] truncate max-w-[80px]" title={p.subCategory}>{p.subCategory}</span>}</div> : '-'}</td>
                 <td className="px-3 py-2 text-right"><div className="flex items-center justify-end gap-0.5"><span>{p.rating.toFixed(1)}</span><Star className="w-3 h-3 text-amber-500 fill-amber-500"/></div></td>
@@ -229,7 +248,7 @@ ${historyLines}
             </div>
             <div className="p-6 overflow-y-auto flex-1">
               <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6">
-                {[{label:'价格',val:`${cur}${selectedProduct.price.toFixed(2)}`},{label:'销量',val:selectedProduct.monthlySales.toLocaleString()},{label:'销售额',val:`${cur}${Math.round(selectedProduct.monthlyRevenue).toLocaleString()}`},{label:'星级',val:`${selectedProduct.rating.toFixed(1)} ★`},{label:'评分数',val:selectedProduct.reviewCount.toLocaleString()},{label:'FBA费用',val:selectedProduct.fbaFee>0?`${cur}${selectedProduct.fbaFee.toFixed(2)}`:'-'}].map(item => (
+                {[{label:'价格',val:`${cur}${selectedProduct.price.toFixed(2)}`},{label: usePeriodStats ? '所选时段销量' : '销量', val:getSales(selectedProduct).toLocaleString()},{label: usePeriodStats ? '所选时段销售额' : '销售额', val:`${cur}${Math.round(getRevenue(selectedProduct)).toLocaleString()}`},{label:'星级',val:`${selectedProduct.rating.toFixed(1)} ★`},{label:'评分数',val:selectedProduct.reviewCount.toLocaleString()},{label:'FBA费用',val:selectedProduct.fbaFee>0?`${cur}${selectedProduct.fbaFee.toFixed(2)}`:'-'}].map(item => (
                   <div key={item.label} className="bg-[#f5f5f7] p-3 rounded-2xl border border-black/5"><div className="text-[10px] text-[#86868b] uppercase tracking-wider mb-1">{item.label}</div><div className="text-sm font-semibold text-[#1d1d1f]">{item.val}</div></div>
                 ))}
               </div>

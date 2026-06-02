@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ComposedChart, Line, Legend } from 'recharts';
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
+import { buildAsinPeriodStatsMap, getAsinPeriodStats } from '../utils/chartHistory';
 import { ProductModal } from './ProductModal';
 
 interface SellerLocationChartProps {
@@ -9,6 +10,7 @@ interface SellerLocationChartProps {
   domain?: string;
   history?: HistoryRecord[];
   months?: string[];
+  selectedMonths?: string[];
   asinToSegment?: Record<string, string>;
 }
 
@@ -29,21 +31,26 @@ const CustomTooltip = ({ active, payload, label, currency, metric }: any) => {
   );
 };
 
-export const SellerLocationChart = React.memo(function SellerLocationChart({ products, domain = 'amazon.com', history = [], months = [], asinToSegment = {} }: SellerLocationChartProps) {
+export const SellerLocationChart = React.memo(function SellerLocationChart({ products, domain = 'amazon.com', history = [], months = [], selectedMonths = [], asinToSegment = {} }: SellerLocationChartProps) {
   const currency = getCurrencySymbol(domain);
   const [metric, setMetric] = useState<'sales' | 'revenue'>('revenue');
   const [selectedProducts, setSelectedProducts] = useState<Product[] | null>(null);
 
   const data = useMemo(() => {
     const locationMap = new Map<string, { count: number; sales: number; revenue: number; products: Product[] }>();
+    const asinStats = buildAsinPeriodStatsMap(products, history, selectedMonths);
+
     products.forEach(p => {
+      const period = getAsinPeriodStats(asinStats, p.asin);
+      if (period.sales === 0 && period.revenue === 0) return;
+
       const loc = p.sellerLocation || '未知';
       if (!locationMap.has(loc)) locationMap.set(loc, { count: 0, sales: 0, revenue: 0, products: [] });
       const s = locationMap.get(loc)!;
-      s.count++; s.sales += p.monthlySales; s.revenue += p.monthlyRevenue; s.products.push(p);
+      s.count++; s.sales += period.sales; s.revenue += period.revenue; s.products.push(p);
     });
 
-    const total = products.reduce((s, p) => s + (metric === 'revenue' ? p.monthlyRevenue : p.monthlySales), 0);
+    const total = Array.from(locationMap.values()).reduce((s, loc) => s + (metric === 'revenue' ? loc.revenue : loc.sales), 0);
     const sorted = Array.from(locationMap.entries()).sort((a, b) => b[1][metric] - a[1][metric]);
     const top6 = sorted.slice(0, 6);
     const other = sorted.slice(6);
@@ -53,7 +60,7 @@ export const SellerLocationChart = React.memo(function SellerLocationChart({ pro
       result.push({ name: '其他', ...o, share: total > 0 ? (o[metric] / total) * 100 : 0 });
     }
     return result;
-  }, [products, metric]);
+  }, [products, history, selectedMonths, metric]);
 
   // 中国 vs 本地趋势（月度）—— 本地=与市场domain同国
   const localCountryCode = useMemo(() => {

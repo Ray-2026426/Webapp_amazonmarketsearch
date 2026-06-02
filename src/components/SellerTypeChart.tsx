@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Product, HistoryRecord, getCurrencySymbol, formatRevenue } from '../utils/parser';
+import { buildAsinPeriodStatsMap, getAsinPeriodStats } from '../utils/chartHistory';
 import { ProductModal } from './ProductModal';
 
 interface SellerTypeChartProps {
@@ -9,19 +10,21 @@ interface SellerTypeChartProps {
   domain?: string;
   history?: HistoryRecord[];
   months?: string[];
+  selectedMonths?: string[];
   asinToSegment?: Record<string, string>;
 }
 
 const COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6'];
 
-export const SellerTypeChart = React.memo(function SellerTypeChart({ products, domain = 'amazon.com', history = [], months = [], asinToSegment = {} }: SellerTypeChartProps) {
+export const SellerTypeChart = React.memo(function SellerTypeChart({ products, domain = 'amazon.com', history = [], months = [], selectedMonths = [], asinToSegment = {} }: SellerTypeChartProps) {
   const currency = getCurrencySymbol(domain);
   const [metric, setMetric] = useState<'sales' | 'revenue'>('sales');
   const [selectedProducts, setSelectedProducts] = useState<Product[] | null>(null);
 
   const data = useMemo(() => {
     const typeMap = new Map<string, { products: Product[], sales: number, revenue: number }>();
-    
+    const asinStats = buildAsinPeriodStatsMap(products, history, selectedMonths);
+
     const mapType = (type: string) => {
       if (type.toLowerCase().includes('fba')) return 'FBA';
       if (type.toLowerCase().includes('fbm')) return 'FBM';
@@ -30,18 +33,21 @@ export const SellerTypeChart = React.memo(function SellerTypeChart({ products, d
     };
 
     products.forEach(p => {
+      const period = getAsinPeriodStats(asinStats, p.asin);
+      if (period.sales === 0 && period.revenue === 0) return;
+
       const type = mapType(p.buyBoxType || 'Unknown');
       if (!typeMap.has(type)) {
         typeMap.set(type, { products: [], sales: 0, revenue: 0 });
       }
       const stats = typeMap.get(type)!;
       stats.products.push(p);
-      stats.sales += p.monthlySales;
-      stats.revenue += p.monthlyRevenue;
+      stats.sales += period.sales;
+      stats.revenue += period.revenue;
     });
 
     return Array.from(typeMap.entries()).map(([name, stats]) => ({ name, ...stats }));
-  }, [products]);
+  }, [products, history, selectedMonths]);
 
   return (
     <>
