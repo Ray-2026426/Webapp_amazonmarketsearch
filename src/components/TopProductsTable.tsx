@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
+import { buildAsinPeriodStatsMap, getAsinPeriodStats } from '../utils/chartHistory';
 import { formatSegmentLabel } from '../utils/subSegments';
 import { Star, ExternalLink, TrendingUp, X, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, Sparkles, Loader2, Search, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -41,6 +42,7 @@ interface TopProductsTableProps {
   products: Product[];
   history?: HistoryRecord[];
   months?: string[];
+  selectedMonths?: string[];
   domain?: string;
   asinToSegment?: Record<string, string>;
   asinToSubSegment?: Record<string, string>;
@@ -48,9 +50,16 @@ interface TopProductsTableProps {
 }
 
 export const TopProductsTable = React.memo(function TopProductsTable({
-  products, history = [], months = [], domain = 'amazon.com', asinToSegment = {}, asinToSubSegment = {}, asinToLevel3Segment = {}
+  products, history = [], months = [], selectedMonths = [], domain = 'amazon.com', asinToSegment = {}, asinToSubSegment = {}, asinToLevel3Segment = {}
 }: TopProductsTableProps) {
   const cur = getCurrencySymbol(domain);
+  const usePeriodStats = selectedMonths.length > 0;
+  const asinPeriodStats = useMemo(
+    () => (usePeriodStats ? buildAsinPeriodStatsMap(products, history, selectedMonths) : new Map()),
+    [products, history, selectedMonths, usePeriodStats]
+  );
+  const getSales = (p: Product) => usePeriodStats ? getAsinPeriodStats(asinPeriodStats, p.asin).sales : p.monthlySales;
+  const getRevenue = (p: Product) => usePeriodStats ? getAsinPeriodStats(asinPeriodStats, p.asin).revenue : p.monthlyRevenue;
   const [currentPage, setCurrentPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>('monthlyRevenue');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -60,6 +69,10 @@ export const TopProductsTable = React.memo(function TopProductsTable({
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aggregation, setAggregation] = useState<'month' | 'quarter' | 'year'>('month');
   const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedMonths]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -100,13 +113,17 @@ export const TopProductsTable = React.memo(function TopProductsTable({
       } else if (sortKey === 'salesGrowth1y') {
         av = salesGrowthMap.map1y.get(a.asin) ?? 0;
         bv = salesGrowthMap.map1y.get(b.asin) ?? 0;
+      } else if (sortKey === 'monthlySales') {
+        av = getSales(a); bv = getSales(b);
+      } else if (sortKey === 'monthlyRevenue') {
+        av = getRevenue(a); bv = getRevenue(b);
       } else {
         av = (a[sortKey as keyof Product] as number) || 0;
         bv = (b[sortKey as keyof Product] as number) || 0;
       }
       return sortDir === 'asc' ? av - bv : bv - av;
     });
-  }, [filteredProducts, sortKey, sortDir, products]);
+  }, [filteredProducts, sortKey, sortDir, salesGrowthMap, asinPeriodStats, usePeriodStats]);
 
   const totalPages = Math.max(1, Math.ceil(sortedProducts.length / itemsPerPage));
   const paginatedProducts = useMemo(() => {
@@ -129,7 +146,7 @@ export const TopProductsTable = React.memo(function TopProductsTable({
             return `${m}: 销量=${d.sales}, 销售额=${cur}${Math.round(d.revenue)}, 均价=${cur}${d.sales > 0 ? (d.revenue / d.sales).toFixed(2) : (d.price ?? 0).toFixed(2)}`;
           }).join('\n')
         : '无历史数据';
-      const prompt = `你是一位资深亚马逊运营专家，请对以下单个ASIN进行深度分析。\n\n## ASIN基本信息\n- ASIN: ${product.asin}\n- 标题: ${product.title || '未知'}\n- 品牌: ${product.brand}\n- 当前价格: ${cur}${product.price.toFixed(2)}\n- 月销量: ${product.monthlySales.toLocaleString()}\n- 月销售额: ${cur}${Math.round(product.monthlyRevenue).toLocaleString()}\n- 评分: ${product.rating.toFixed(1)} (${product.reviewCount.toLocaleString()} 条评论)\n- FBA费用: ${product.fbaFee > 0 ? cur + product.fbaFee.toFixed(2) : '未知'}\n- 小类BSR: ${product.subBsr > 0 ? '#' + product.subBsr.toLocaleString() : '未知'}\n- 上架时间: ${product.launchDate || '未知'}\n\n## 历史月度数据\n${historyLines}\n\n## 分析要求\n请按以下结构输出分析报告（Markdown格式）：\n\n### 1. 产品定位解读\n基于标题关键词，分析该产品的核心卖点、目标人群、使用场景和差异化定位。\n\n### 2. 销售趋势分析\n分析历史销量和销售额的变化趋势，识别增长、下降或季节性规律。\n\n### 3. 价格策略分析\n分析价格变化对销量的影响，评估当前定价是否合理。\n\n### 4. 竞争力评估\n基于评分、评论数、BSR排名，评估该ASIN的市场竞争力。\n\n### 5. 增长机会与风险\n指出该ASIN的潜在增长机会和主要风险点。\n\n### 6. 运营建议\n给出3-5条具体可执行的运营优化建议。`;
+      const prompt = `你是一位资深亚马逊运营专家，请对以下单个ASIN进行深度分析。\n\n## ASIN基本信息\n- ASIN: ${product.asin}\n- 标题: ${product.title || '未知'}\n- 品牌: ${product.brand}\n- 当前价格: ${cur}${product.price.toFixed(2)}\n- 月销量: ${getSales(product).toLocaleString()}\n- 月销售额: ${cur}${Math.round(getRevenue(product)).toLocaleString()}\n- 评分: ${product.rating.toFixed(1)} (${product.reviewCount.toLocaleString()} 条评论)\n- FBA费用: ${product.fbaFee > 0 ? cur + product.fbaFee.toFixed(2) : '未知'}\n- 小类BSR: ${product.subBsr > 0 ? '#' + product.subBsr.toLocaleString() : '未知'}\n- 上架时间: ${product.launchDate || '未知'}\n\n## 历史月度数据\n${historyLines}\n\n## 分析要求\n请按以下结构输出分析报告（Markdown格式）：\n\n### 1. 产品定位解读\n基于标题关键词，分析该产品的核心卖点、目标人群、使用场景和差异化定位。\n\n### 2. 销售趋势分析\n分析历史销量和销售额的变化趋势，识别增长、下降或季节性规律。\n\n### 3. 价格策略分析\n分析价格变化对销量的影响，评估当前定价是否合理。\n\n### 4. 竞争力评估\n基于评分、评论数、BSR排名，评估该ASIN的市场竞争力。\n\n### 5. 增长机会与风险\n指出该ASIN的潜在增长机会和主要风险点。\n\n### 6. 运营建议\n给出3-5条具体可执行的运营优化建议。`;
       const result = await generateText(prompt, aiSettings);
       setAiAnalysis(result);
     } catch (err: any) {
@@ -189,8 +206,8 @@ export const TopProductsTable = React.memo(function TopProductsTable({
       价格: p.price,
       星级: p.rating,
       评论数: p.reviewCount,
-      月销量: p.monthlySales,
-      月销售额: p.monthlyRevenue,
+      月销量: getSales(p),
+      月销售额: getRevenue(p),
       FBA费用: p.fbaFee,
       小类BSR: p.subBsr,
       小类目: p.subCategory,
@@ -217,7 +234,10 @@ export const TopProductsTable = React.memo(function TopProductsTable({
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
           <div>
             <CardTitle>ASIN 列表</CardTitle>
-            <CardDescription>展示市场中所有 ASIN 的详细指标</CardDescription>
+            <CardDescription>
+              展示市场中所有 ASIN 的详细指标
+              {usePeriodStats && ` · 数据时段：${selectedMonths.length === 1 ? selectedMonths[0] : `${selectedMonths[0]} ~ ${selectedMonths[selectedMonths.length - 1]}`}`}
+            </CardDescription>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <button
@@ -294,8 +314,8 @@ export const TopProductsTable = React.memo(function TopProductsTable({
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">{product.reviewCount.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right">{product.monthlySales.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right font-medium text-emerald-600">{cur}{Math.round(product.monthlyRevenue).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right">{getSales(product).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right font-medium text-emerald-600">{cur}{Math.round(getRevenue(product)).toLocaleString()}</td>
                     <td className="px-4 py-3 text-right">{product.fbaFee > 0 ? `${cur}${product.fbaFee.toFixed(2)}` : '-'}</td>
                     <td className="px-4 py-3 text-right">
                       {product.subBsr > 0 ? (<div><span className="font-medium">#{product.subBsr.toLocaleString()}</span>
@@ -367,8 +387,8 @@ export const TopProductsTable = React.memo(function TopProductsTable({
                 {[{label:'当前价格', val:`${cur}${selectedProduct.price.toFixed(2)}`},
                   {label:'星级', val:`${selectedProduct.rating.toFixed(1)} ★`},
                   {label:'评论数', val:selectedProduct.reviewCount.toLocaleString()},
-                  {label:'月销量', val:selectedProduct.monthlySales.toLocaleString()},
-                  {label:'月销售额', val:`${cur}${Math.round(selectedProduct.monthlyRevenue).toLocaleString()}`, green:true},
+                  {label:'月销量', val:getSales(selectedProduct).toLocaleString()},
+                  {label:'月销售额', val:`${cur}${Math.round(getRevenue(selectedProduct)).toLocaleString()}`, green:true},
                   {label:'FBA费用', val:selectedProduct.fbaFee > 0 ? `${cur}${selectedProduct.fbaFee.toFixed(2)}` : '-'},
                 ].map(item => (
                   <div key={item.label} className="bg-[#f5f5f7] p-4 rounded-2xl border border-black/5">
