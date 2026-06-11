@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
 import { formatSegmentLabel } from '../utils/subSegments';
-import { Star, ExternalLink, TrendingUp, X, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, Sparkles, Loader2, Search } from 'lucide-react';
+import { Star, ExternalLink, TrendingUp, X, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, Sparkles, Loader2, Search, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { toast } from 'sonner';
@@ -169,6 +170,47 @@ export const TopProductsTable = React.memo(function TopProductsTable({
 
   const selectedProduct = useMemo(() => products.find(p => p.asin === selectedAsin), [products, selectedAsin]);
   const asinHistoryData = useMemo(() => selectedAsin ? getAsinHistoryData(selectedAsin) : [], [selectedAsin, history, months, aggregation]);
+
+  const handleExportExcel = () => {
+    if (products.length === 0) {
+      toast.error('当前没有可导出的 ASIN 数据');
+      return;
+    }
+
+    const rows = products.map((p) => ({
+      ASIN: p.asin,
+      品牌: p.brand,
+      标题: p.title,
+      主图链接: p.image,
+      商品链接: `https://www.${domain}/dp/${p.asin}`,
+      细分市场: asinToSegment[p.asin]
+        ? formatSegmentLabel(asinToSegment[p.asin], asinToSubSegment[p.asin], asinToLevel3Segment[p.asin])
+        : '未分类',
+      价格: p.price,
+      星级: p.rating,
+      评论数: p.reviewCount,
+      月销量: p.monthlySales,
+      月销售额: p.monthlyRevenue,
+      FBA费用: p.fbaFee,
+      小类BSR: p.subBsr,
+      小类目: p.subCategory,
+      上架时间: p.launchDate,
+      评论增速: p.reviewGrowth,
+      '近3月销量增速(%)': salesGrowthMap.map3m.get(p.asin) ?? 0,
+      '近1年销量增速(%)': salesGrowthMap.map1y.get(p.asin) ?? 0,
+    }));
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'ASIN列表');
+    const date = new Date();
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    XLSX.writeFile(workbook, `市场大盘_ASIN列表_${y}${m}${d}.xlsx`);
+    toast.success(`导出成功，共 ${rows.length} 条 ASIN`);
+  };
+
   return (
     <>
       <Card>
@@ -178,6 +220,15 @@ export const TopProductsTable = React.memo(function TopProductsTable({
             <CardDescription>展示市场中所有 ASIN 的详细指标</CardDescription>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={products.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f5f5f7] border border-black/5 rounded-lg text-xs font-medium text-[#86868b] hover:text-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" />
+              导出 Excel
+            </button>
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#86868b]" />
               <input type="text" placeholder="搜索 ASIN / 标题 / 品牌" value={searchQuery}
