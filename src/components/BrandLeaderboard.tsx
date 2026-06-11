@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { Product, HistoryRecord } from '../utils/parser';
-import { TrendingUp, TrendingDown, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, ChevronLeft, ChevronRight, HelpCircle, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { toast } from 'sonner';
 import { DateRangeSelector } from './DateRangeSelector';
 import { ProductModal } from './ProductModal';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
@@ -179,6 +181,38 @@ export const BrandLeaderboard = React.memo(function BrandLeaderboard({ products,
     );
   };
 
+  const handleExportExcel = () => {
+    if (data.length === 0) {
+      toast.error('当前没有可导出的品牌数据');
+      return;
+    }
+
+    const rows = data.map((brand, index) => ({
+      排名: index + 1,
+      品牌: brand.brand,
+      ASIN数量: brand.count,
+      有效ASIN数量: brand.effectiveCount,
+      销量: brand.sales,
+      '销量同比(%)': brand.salesYoY ?? '',
+      '销量环比(%)': brand.salesMoM ?? '',
+      销售额: Math.round(brand.revenue),
+      '市场份额(%)': Number(brand.share.toFixed(1)),
+      '市场份额同比(百分点)': brand.shareYoY ?? '',
+      '市场份额环比(百分点)': brand.shareMoM ?? '',
+      市场定位: brand.marketSize,
+    }));
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, '品牌排行榜');
+    const date = new Date();
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    XLSX.writeFile(workbook, `市场大盘_品牌排行榜_${y}${m}${d}.xlsx`);
+    toast.success(`导出成功，共 ${rows.length} 个品牌`);
+  };
+
   return (
     <>
       <Card>
@@ -188,6 +222,15 @@ export const BrandLeaderboard = React.memo(function BrandLeaderboard({ products,
             <CardDescription>共 {data.length} 个品牌，按销售额排名。</CardDescription>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={data.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f5f5f7] border border-black/5 rounded-lg text-xs font-medium text-[#86868b] hover:text-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" />
+              导出 Excel
+            </button>
             {data.length > brandsPerPage && (
               <div className="flex items-center gap-1 text-xs text-[#86868b]">
                 <button onClick={() => setBrandPage(p => Math.max(1, p-1))} disabled={brandPage===1} className="p-1 hover:bg-black/5 rounded disabled:opacity-30"><ChevronLeft className="w-3 h-3"/></button>
