@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { toast } from 'sonner';
+import { DateRangeSelector } from './DateRangeSelector';
 
 type SortKey = 'price' | 'monthlySales' | 'monthlyRevenue' | 'launchDate' | 'fbaFee' | 'subBsr' | 'reviewGrowth' | 'salesGrowth3m' | 'salesGrowth1y';
 
@@ -42,7 +43,6 @@ interface TopProductsTableProps {
   products: Product[];
   history?: HistoryRecord[];
   months?: string[];
-  selectedMonths?: string[];
   domain?: string;
   asinToSegment?: Record<string, string>;
   asinToSubSegment?: Record<string, string>;
@@ -50,9 +50,10 @@ interface TopProductsTableProps {
 }
 
 export const TopProductsTable = React.memo(function TopProductsTable({
-  products, history = [], months = [], selectedMonths = [], domain = 'amazon.com', asinToSegment = {}, asinToSubSegment = {}, asinToLevel3Segment = {}
+  products, history = [], months = [], domain = 'amazon.com', asinToSegment = {}, asinToSubSegment = {}, asinToLevel3Segment = {}
 }: TopProductsTableProps) {
   const cur = getCurrencySymbol(domain);
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const usePeriodStats = selectedMonths.length > 0;
   const asinPeriodStats = useMemo(
     () => (usePeriodStats ? buildAsinPeriodStatsMap(products, history, selectedMonths) : new Map()),
@@ -260,6 +261,13 @@ export const TopProductsTable = React.memo(function TopProductsTable({
               <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-1 hover:bg-white rounded-md disabled:opacity-30 transition-all"><ChevronLeft className="w-4 h-4" /></button>
               <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-1 hover:bg-white rounded-md disabled:opacity-30 transition-all"><ChevronRight className="w-4 h-4" /></button>
             </div>
+            <DateRangeSelector
+              availableMonths={months}
+              onRangeChange={(selected) => {
+                setSelectedMonths(selected);
+                setCurrentPage(1);
+              }}
+            />
           </div>
         </CardHeader>
         <CardContent>

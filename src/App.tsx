@@ -1375,7 +1375,7 @@ export default function App() {
                   </div>
                   <SellerLocationChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} asinToSegment={asinToSegment} />
                   <div id="asin-list" data-annotate-anchor="market-asin-list">
-                    <TopProductsTable products={filteredProducts} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} domain={marketplace.domain} asinToSegment={asinToSegment} asinToSubSegment={asinToSubSegment} asinToLevel3Segment={asinToLevel3Segment} />
+                    <TopProductsTable products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} asinToSubSegment={asinToSubSegment} asinToLevel3Segment={asinToLevel3Segment} />
                   </div>
                 </div>
               </div>
