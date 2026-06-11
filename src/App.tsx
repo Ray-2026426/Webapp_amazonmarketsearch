@@ -35,7 +35,6 @@ import { BsrDistributionChart } from './components/BsrDistributionChart';
 import { PriceRatingChart } from './components/PriceRatingChart';
 import { MarketConcentrationChart } from './components/MarketConcentrationChart';
 import { AvatarSettingsModal } from './components/AvatarSettingsModal';
-import { CompetitorAnalysis } from './components/CompetitorAnalysis';
 import { AnchorAnnotationsLayer } from './components/AnchorAnnotationsLayer';
 import type { AnchorAnnotation } from './utils/anchorAnnotations';
 import { normalizeAnchorAnnotations } from './utils/anchorAnnotations';
@@ -171,7 +170,7 @@ export default function App() {
     setIsSegmentationOpen(false);
   }, []);
 
-  const [activeView, setActiveView] = useState<'market' | 'competitors' | 'insights' | 'keywords' | 'profit'>('market');
+  const [activeView, setActiveView] = useState<'market' | 'insights' | 'keywords' | 'profit'>('market');
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isReportHidden, setIsReportHidden] = useState(false);
   const [isMarketHistoryOpen, setIsMarketHistoryOpen] = useState(false);
@@ -1040,13 +1039,6 @@ export default function App() {
             <span>市场大盘</span>
           </button>
           <button 
-            onClick={() => setActiveView('competitors')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'competitors' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <Scale className="w-5 h-5" />
-            <span>竞品分析</span>
-          </button>
-          <button 
             onClick={() => setActiveView('insights')}
             className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'insights' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
           >
@@ -1141,13 +1133,11 @@ export default function App() {
           <div className="flex items-center space-x-4">
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight text-[#1d1d1f]">
-                {activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品分析' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
+                {activeView === 'market' ? '市场大盘' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
               </h1>
               <p className="text-[15px] text-[#86868b] mt-1">
                 {activeView === 'market' 
                   ? '分析市场趋势、竞争对手及产品机会。' 
-                  : activeView === 'competitors'
-                  ? '上传竞品主图、A+和五点，AI深度视觉分析与横向对比。'
                   : activeView === 'insights'
                   ? '分析竞品评论，深度解析用户真实反馈与画像。'
                   : activeView === 'keywords'
@@ -1397,12 +1387,6 @@ export default function App() {
                   />
                 </div>
               )}
-
-              {activeView === 'competitors' &&
-                <div data-annotate-anchor="competitors-root">
-                  <CompetitorAnalysis />
-                </div>
-              }
 
               {activeView === 'keywords' &&
                 <div className="max-w-7xl mx-auto" data-annotate-anchor="keywords-root">
