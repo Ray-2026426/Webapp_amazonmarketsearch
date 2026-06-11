@@ -237,10 +237,18 @@ export const TopProductsTable = React.memo(function TopProductsTable({
             <CardTitle>ASIN 列表</CardTitle>
             <CardDescription>
               展示市场中所有 ASIN 的详细指标
-              {usePeriodStats && ` · 数据时段：${selectedMonths.length === 1 ? selectedMonths[0] : `${selectedMonths[0]} ~ ${selectedMonths[selectedMonths.length - 1]}`}`}
+              {months.length === 0 && ' · 上传「历史表现」文件后可按时间段筛选销量/销售额'}
+              {usePeriodStats && months.length > 0 && ` · 数据时段：${selectedMonths.length === 1 ? selectedMonths[0] : `${selectedMonths[0]} ~ ${selectedMonths[selectedMonths.length - 1]}`}`}
             </CardDescription>
           </div>
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            <DateRangeSelector
+              availableMonths={months}
+              onRangeChange={(selected) => {
+                setSelectedMonths(selected);
+                setCurrentPage(1);
+              }}
+            />
             <button
               type="button"
               onClick={handleExportExcel}
@@ -261,13 +269,6 @@ export const TopProductsTable = React.memo(function TopProductsTable({
               <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-1 hover:bg-white rounded-md disabled:opacity-30 transition-all"><ChevronLeft className="w-4 h-4" /></button>
               <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-1 hover:bg-white rounded-md disabled:opacity-30 transition-all"><ChevronRight className="w-4 h-4" /></button>
             </div>
-            <DateRangeSelector
-              availableMonths={months}
-              onRangeChange={(selected) => {
-                setSelectedMonths(selected);
-                setCurrentPage(1);
-              }}
-            />
           </div>
         </CardHeader>
         <CardContent>
