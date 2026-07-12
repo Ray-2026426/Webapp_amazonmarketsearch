@@ -1240,7 +1240,7 @@ export default function App() {
                 {/* KPI Cards Header */}
                 <div className="flex flex-col space-y-4" data-annotate-anchor="market-kpi-header">
                   {/* ── Market Scorecard ── */}
-                  <MarketScorecard products={filteredProducts} />
+                  <MarketScorecard products={filteredProducts} history={filteredHistory} months={months} />
 
                   <div className="flex items-center justify-between">
                     <h2 className="text-[20px] font-semibold text-[#1d1d1f]">核心指标</h2>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Crosshair, ChevronRight, ChevronLeft, X } from 'lucide-react';
 
 interface NavItem {
@@ -30,9 +30,11 @@ const NAV_SECTIONS: NavItem[] = [
 export const PageQuickNav: React.FC = () => {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
+  const navLockRef = useRef(false);
 
   useEffect(() => {
     const handleScroll = () => {
+      if (navLockRef.current) return;
       const ids = NAV_SECTIONS.map(s => s.id);
       for (const id of ids) {
         const el = document.querySelector(`[data-annotate-anchor="${id}"]`);
@@ -58,8 +60,10 @@ export const PageQuickNav: React.FC = () => {
   const scrollTo = (id: string) => {
     const el = document.querySelector(`[data-annotate-anchor="${id}"]`);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       setActiveId(id);
+      navLockRef.current = true;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(() => { navLockRef.current = false; }, 800);
     }
   };
 
