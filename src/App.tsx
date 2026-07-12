@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer } from 'lucide-react';
+import { BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer, CheckSquare } from 'lucide-react';
 import { MetricCard } from './components/MetricCard';
 import { MarketTrendChart } from './components/MarketTrendChart';
 import { PriceDistributionChart } from './components/PriceDistributionChart';
@@ -38,6 +38,9 @@ import { AvatarSettingsModal } from './components/AvatarSettingsModal';
 import { AnchorAnnotationsLayer } from './components/AnchorAnnotationsLayer';
 import type { AnchorAnnotation } from './utils/anchorAnnotations';
 import { normalizeAnchorAnnotations } from './utils/anchorAnnotations';
+import { MarketScorecard } from './components/MarketScorecard';
+import { PageQuickNav } from './components/PageQuickNav';
+import { AsinCompareBar } from './components/AsinCompareBar';
 import {
   makeLevel2Key,
   makeLevel3Key,
@@ -226,8 +229,15 @@ export default function App() {
   const [anchorAnnotations, setAnchorAnnotations] = useState<AnchorAnnotation[]>([]);
   /** 是否打开「点页面添加批注」模式 */
   const [annotateMode, setAnnotateMode] = useState(false);
+  const [selectedCompareAsins, setSelectedCompareAsins] = useState<string[]>([]);
 
   const isRegisteredUser = Boolean(currentUser && currentUser.id !== 'guest');
+
+  const toggleCompareAsin = useCallback((asin: string) => {
+    setSelectedCompareAsins(prev =>
+      prev.includes(asin) ? prev.filter(a => a !== asin) : prev.length < 5 ? [...prev, asin] : prev
+    );
+  }, []);
 
   const applyMarketSnapshotFromHistory = useCallback(async (snap: MarketHistorySnapshot) => {
     setIsLoading(true);
@@ -1208,6 +1218,7 @@ export default function App() {
           data-annotate-anchor="workspace-scroll"
           className="flex-1 overflow-y-auto p-8"
         >
+          <PageQuickNav />
           {!isDataLoaded && activeView === 'market' ? (
             <div className="h-full flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-700">
               <div className="text-center space-y-2">
@@ -1228,6 +1239,9 @@ export default function App() {
                 <div className="max-w-7xl mx-auto space-y-8" data-annotate-anchor="market-root">
                 {/* KPI Cards Header */}
                 <div className="flex flex-col space-y-4" data-annotate-anchor="market-kpi-header">
+                  {/* ── Market Scorecard ── */}
+                  <MarketScorecard products={filteredProducts} />
+
                   <div className="flex items-center justify-between">
                     <h2 className="text-[20px] font-semibold text-[#1d1d1f]">核心指标</h2>
                     <div className="flex items-center gap-4">
@@ -1339,9 +1353,15 @@ export default function App() {
                     tooltip="FBA费用/价格均值：FBA费用 ÷ 售价 的平均比值。一般低于15%为健康，越高说明平台物流成本侵蚀利润越严重"/>
                 </div>
 
+                {/* ── Opportunity Scanner (P1: moved up) ── */}
+                <div data-annotate-anchor="market-opportunity-scanner">
+                  <OpportunityScanner products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
+                </div>
+
                 {/* Charts Grid */}
                 <div className="grid grid-cols-1 gap-6" data-annotate-anchor="market-charts">
-                  <SegmentShareChart 
+                  <div data-annotate-anchor="segment-share-chart">
+                    <SegmentShareChart 
                     products={products}
                     history={history}
                     months={selectedKpiMonths}
@@ -1349,23 +1369,45 @@ export default function App() {
                     asinToSegment={asinToSegment}
                     domain={marketplace.domain}
                   />
-                  <MarketTrendChart history={filteredHistory} months={months} products={filteredProducts} asinToSegment={asinToSegment} domain={marketplace.domain} />
-                  <SeasonalHeatmap history={filteredHistory} months={months} domain={marketplace.domain} />
-                  <MarketConcentrationChart products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} />
-                  <OpportunityScanner products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
-                  <BrandLeaderboard products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
-                  <BsrDistributionChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
-                  <PriceRatingChart products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
-                  <PriceDistributionChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
-                  <LaunchDateChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
-                  <NewVsOldChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <RatingDistributionChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} asinToSegment={asinToSegment} />
-                    <SellerTypeChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} asinToSegment={asinToSegment} />
                   </div>
-                  <SellerLocationChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} asinToSegment={asinToSegment} />
+                  <div data-annotate-anchor="market-trend">
+                    <MarketTrendChart history={filteredHistory} months={months} products={filteredProducts} asinToSegment={asinToSegment} domain={marketplace.domain} />
+                  </div>
+                  <div data-annotate-anchor="market-seasonal">
+                    <SeasonalHeatmap history={filteredHistory} months={months} domain={marketplace.domain} />
+                  </div>
+                  <div data-annotate-anchor="market-concentration">
+                    <MarketConcentrationChart products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} />
+                  </div>
+                  <div data-annotate-anchor="brand-leaderboard">
+                    <BrandLeaderboard products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
+                  </div>
+                  <div data-annotate-anchor="bsr-distribution">
+                    <BsrDistributionChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
+                  </div>
+                  <div data-annotate-anchor="price-rating">
+                    <PriceRatingChart products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
+                  </div>
+                  <div data-annotate-anchor="price-distribution">
+                    <PriceDistributionChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
+                  </div>
+                  <div data-annotate-anchor="launch-date">
+                    <LaunchDateChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
+                  </div>
+                  <div data-annotate-anchor="new-vs-old">
+                    <NewVsOldChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} asinToSegment={asinToSegment} />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6" data-annotate-anchor="rating-distribution">
+                    <RatingDistributionChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} asinToSegment={asinToSegment} />
+                    <div data-annotate-anchor="seller-type">
+                      <SellerTypeChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} asinToSegment={asinToSegment} />
+                    </div>
+                  </div>
+                  <div data-annotate-anchor="seller-location">
+                    <SellerLocationChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} asinToSegment={asinToSegment} />
+                  </div>
                   <div id="asin-list" data-annotate-anchor="market-asin-list">
-                    <TopProductsTable products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} asinToSubSegment={asinToSubSegment} asinToLevel3Segment={asinToLevel3Segment} />
+                    <TopProductsTable products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} asinToSubSegment={asinToSubSegment} asinToLevel3Segment={asinToLevel3Segment} selectedAsins={selectedCompareAsins} onToggleSelectAsin={toggleCompareAsin} />
                   </div>
                 </div>
               </div>
@@ -1406,6 +1448,15 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* ── ASIN Compare Bar ── */}
+      <AsinCompareBar
+        products={filteredProducts}
+        selectedAsins={selectedCompareAsins}
+        onRemove={(asin) => setSelectedCompareAsins(prev => prev.filter(a => a !== asin))}
+        onClear={() => setSelectedCompareAsins([])}
+        domain={marketplace.domain}
+      />
 
       {!isLoading && !isInitializing && !isRestoring && (
         <AnchorAnnotationsLayer

@@ -47,10 +47,13 @@ interface TopProductsTableProps {
   asinToSegment?: Record<string, string>;
   asinToSubSegment?: Record<string, string>;
   asinToLevel3Segment?: Record<string, string>;
+  selectedAsins?: string[];
+  onToggleSelectAsin?: (asin: string) => void;
 }
 
 export const TopProductsTable = React.memo(function TopProductsTable({
-  products, history = [], months = [], domain = 'amazon.com', asinToSegment = {}, asinToSubSegment = {}, asinToLevel3Segment = {}
+  products, history = [], months = [], domain = 'amazon.com', asinToSegment = {}, asinToSubSegment = {}, asinToLevel3Segment = {},
+  selectedAsins = [], onToggleSelectAsin,
 }: TopProductsTableProps) {
   const cur = getCurrencySymbol(domain);
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
@@ -276,6 +279,7 @@ export const TopProductsTable = React.memo(function TopProductsTable({
             <table className="w-full text-sm text-left text-[#86868b]">
               <thead className="text-xs text-[#1d1d1f] uppercase bg-[#f5f5f7] border-b border-black/5">
                 <tr>
+                  {onToggleSelectAsin && <th className="px-2 py-3 w-8"></th>}
                   <th className="px-4 py-3 font-medium min-w-[320px]">产品</th>
                   <th className="px-4 py-3 font-medium whitespace-nowrap">细分市场</th>
                   <th className="px-4 py-3 font-medium text-right whitespace-nowrap">价格<SortBtn col="price" current={sortKey} dir={sortDir} onClick={handleSort}/></th>
@@ -295,6 +299,16 @@ export const TopProductsTable = React.memo(function TopProductsTable({
               <tbody>
                 {paginatedProducts.map(product => (
                   <tr key={product.asin} className="border-b border-black/5 hover:bg-[#f5f5f7]/50 transition-colors">
+                    {onToggleSelectAsin && (
+                      <td className="px-2 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedAsins.includes(product.asin)}
+                          onChange={() => onToggleSelectAsin(product.asin)}
+                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="flex items-center space-x-3">
                         {product.image
