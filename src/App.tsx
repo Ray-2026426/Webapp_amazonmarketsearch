@@ -173,7 +173,7 @@ export default function App() {
     setIsSegmentationOpen(false);
   }, []);
 
-  const [activeView, setActiveView] = useState<'market' | 'insights' | 'keywords' | 'profit'>('market');
+  const [activeView, setActiveView] = useState<'market' | 'competitors' | 'insights' | 'keywords' | 'profit'>('market');
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isReportHidden, setIsReportHidden] = useState(false);
   const [isMarketHistoryOpen, setIsMarketHistoryOpen] = useState(false);
@@ -1426,6 +1426,7 @@ export default function App() {
                     persona={persona}
                     setPersona={setPersona}
                     insightsUiActive={activeView === 'insights'}
+                    marketplaceCode={marketplace.code}
                   />
                 </div>
               )}
@@ -1434,7 +1435,9 @@ export default function App() {
                 <div className="max-w-7xl mx-auto" data-annotate-anchor="keywords-root">
                   <KeywordAnalysis 
                     keywords={keywords} 
-                    setKeywords={setKeywords} 
+                    setKeywords={setKeywords}
+                    marketplaceCode={marketplace.code}
+                    suggestAsins={products.slice(0, 8).map((p) => p.asin).filter(Boolean)}
                   />
                 </div>
               }

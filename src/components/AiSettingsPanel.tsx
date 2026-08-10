@@ -28,7 +28,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   onSave,
   onClose,
 }) => {
-  const initialProvider = settings?.provider ?? 'gemini';
+  const initialProvider = settings?.provider ?? 'deepseek';
   const initialCfg = getProviderConfig(initialProvider);
   const initialModels = getEffectiveModels(settings ?? { provider: initialProvider, apiKey: '', model: '' }, initialProvider);
   const initialModel = settings?.model && initialModels.includes(settings.model)
@@ -46,7 +46,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
 
   useEffect(() => {
-    const p = settings?.provider ?? 'gemini';
+    const p = settings?.provider ?? 'deepseek';
     const cfg = getProviderConfig(p);
     const allModels = getEffectiveModels(settings ?? { provider: p, apiKey: '', model: '' }, p);
     const m =

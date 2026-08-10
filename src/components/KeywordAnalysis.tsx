@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Keyword, parseKeywords } from '../utils/parser';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
+import { fetchKeywordsFromMcp } from '../utils/sellerspriteApi';
 import { toast } from 'sonner';
 import { KwView } from './KeywordAnalysisView';
+import { McpFetchPanel } from './McpFetchPanel';
 import * as XLSX from 'xlsx';
 
 export const TAGS = ['人群词','场景词','品牌词','尺寸词','数量词','颜色词','材质词','功能词'];
@@ -170,9 +172,19 @@ export function exportKeywordsToExcel(keywords: Keyword[]) {
   XLSX.writeFile(wb, `关键词分析_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
-interface Props { keywords: Keyword[]; setKeywords: React.Dispatch<React.SetStateAction<Keyword[]>>; }
+interface Props {
+  keywords: Keyword[];
+  setKeywords: React.Dispatch<React.SetStateAction<Keyword[]>>;
+  marketplaceCode?: string;
+  suggestAsins?: string[];
+}
 
-export const KeywordAnalysis = React.memo(function KeywordAnalysis({ keywords, setKeywords }: Props) {
+export const KeywordAnalysis = React.memo(function KeywordAnalysis({
+  keywords,
+  setKeywords,
+  marketplaceCode = 'US',
+  suggestAsins = [],
+}: Props) {
   const [isAI, setIsAI]     = useState(false);
   const [prog, setProg]     = useState({ c: 0, t: 0 });
   const [q, setQ]           = useState('');
@@ -208,6 +220,45 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({ keywords, s
     try { const d = await parseKeywords(f); setKeywords(d); setSeg(null); setIns(null); toast.success(`已导入 ${d.length} 个关键词`); }
     catch { toast.error('解析失败，请检查格式。'); }
     e.target.value = '';
+  };
+
+  const handleMcpFetchKeywords = async (params: {
+    asins: string[];
+    marketplace: string;
+    maxPages: number;
+    replace: boolean;
+    onProgress: (msg: string) => void;
+  }) => {
+    const all: Keyword[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < params.asins.length; i++) {
+      const asin = params.asins[i];
+      params.onProgress(`(${i + 1}/${params.asins.length}) 抓取 ${asin} 流量词…`);
+      const chunk = await fetchKeywordsFromMcp({
+        asin,
+        marketplace: params.marketplace,
+        maxPages: params.maxPages,
+        onProgress: params.onProgress,
+      });
+      for (const k of chunk) {
+        const key = k.keyword.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        all.push(k);
+      }
+    }
+    if (!all.length) {
+      toast.error('未抓到关键词，请换 ASIN/站点后重试');
+      throw new Error('未抓到关键词');
+    }
+    setKeywords((prev) => {
+      if (params.replace) return all;
+      const exist = new Set(prev.map((k) => k.keyword.toLowerCase()));
+      return [...prev, ...all.filter((k) => !exist.has(k.keyword.toLowerCase()))];
+    });
+    setSeg(null);
+    setIns(null);
+    toast.success(`已从卖家精灵抓取 ${all.length} 个关键词（${params.asins.length} 个 ASIN）`);
   };
 
   const runAI = async () => {
@@ -425,6 +476,14 @@ ${batch.map((k,n) => `${n+1}. ${k.keyword}（${k.translation}）`).join('\n')}
       onMergeSegments={mergeSegments}
       onRenameSegment={renameSegment}
       onDeleteSegment={deleteSegment}
+      headerExtra={
+        <McpFetchPanel
+          mode="keywords"
+          defaultMarketplace={marketplaceCode}
+          suggestAsins={suggestAsins}
+          onFetch={handleMcpFetchKeywords}
+        />
+      }
     />
   );
 }); 

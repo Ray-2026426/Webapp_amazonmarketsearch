@@ -8,6 +8,8 @@ import {
   type Review,
 } from '../utils/parser';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
+import { fetchReviewsFromMcp } from '../utils/sellerspriteApi';
+import { McpFetchPanel } from './McpFetchPanel';
 import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
 import Markdown from 'react-markdown';
@@ -29,6 +31,8 @@ interface UserInsightsProps {
   setPersona: React.Dispatch<React.SetStateAction<{ people: string; scenarios: string; needs: string } | null>>;
   /** 为 false 时不挂载 Recharts，避免父级 `hidden` 下图表与 React DOM 冲突（insertBefore 报错）。App 传 `activeView === 'insights'`。 */
   insightsUiActive?: boolean;
+  /** 当前市场站点，用于在线抓取默认值 */
+  marketplaceCode?: string;
 }
 
 const COLORS = ['#6366f1','#8b5cf6','#ec4899','#f43f5e','#f59e0b','#10b981','#06b6d4','#3b82f6','#84cc16','#f97316'];
@@ -336,7 +340,7 @@ function parseTagLinesFromInput(text: string): string[] {
   return out;
 }
 
-export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products, reviews, setReviews, persona, setPersona, insightsUiActive = true }) => {
+export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products, reviews, setReviews, persona, setPersona, insightsUiActive = true, marketplaceCode = 'US' }) => {
   // ── State ──────────────────────────────────────────────
   const [step, setStep] = useState<'idle'|'step1'|'step2'|'done'>('idle');
   const [stepProgress, setStepProgress] = useState('');
@@ -636,6 +640,36 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
     };
   }, [filteredReviews, products]);
 
+  /** 导入/抓取新评论后，清空下游分析结果与筛选，避免旧标签串味 */
+  const resetInsightDerivedState = () => {
+    setTagLib(null);
+    setDeepReport(null);
+    setJourneyReportRaw(null);
+    setJourneyRows([]);
+    setFilterRating('all');
+    setFilterAsin('all');
+    setFilterModel('all');
+    setFilterMedia('all');
+    setFilterVp('all');
+    setFilterCountry('all');
+    setFilterDatePreset('all');
+    setFilterHelpfulMin('all');
+    setFilterTagPositive(null);
+    setFilterTagNegative(null);
+    setFilterTagScenarios(null);
+    setFilterTagAudience(null);
+    setListSearchTerm('');
+    setListMediaOnly(false);
+    setExpandedReviewIds({});
+    setTranslatedMap({});
+    setTranslatedVisibleMap({});
+    setTagModal(null);
+    setJourneyQuoteTr({});
+    setJourneyQuoteTrShow({});
+    setTagEditorOpen(false);
+    setStep('idle');
+  };
+
   // ── File Upload ────────────────────────────────────────
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -643,36 +677,39 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
       const scan = await scanReviewFile(file);
       const r = await parseReviewsWithMapping(file, scan.mapping);
       setReviews(r);
-      setTagLib(null);
-      setDeepReport(null);
-      setJourneyReportRaw(null);
-      setJourneyRows([]);
-      setFilterRating('all');
-      setFilterAsin('all');
-      setFilterModel('all');
-      setFilterMedia('all');
-      setFilterVp('all');
-      setFilterCountry('all');
-      setFilterDatePreset('all');
-      setFilterHelpfulMin('all');
-      setFilterTagPositive(null);
-      setFilterTagNegative(null);
-      setFilterTagScenarios(null);
-      setFilterTagAudience(null);
-      setListSearchTerm('');
-      setListMediaOnly(false);
-      setExpandedReviewIds({});
-      setTranslatedMap({});
-      setTranslatedVisibleMap({});
-      setTagModal(null);
-      setJourneyQuoteTr({});
-      setJourneyQuoteTrShow({});
-      setTagEditorOpen(false);
-      setStep('idle');
+      resetInsightDerivedState();
       toast.success(`成功导入 ${r.length} 条评论`);
     }
     catch { toast.error('解析评论失败，请检查文件格式'); }
     e.target.value = '';
+  };
+
+  const handleMcpFetchReviews = async (params: {
+    asins: string[];
+    marketplace: string;
+    maxPages: number;
+    replace: boolean;
+    onProgress: (msg: string) => void;
+  }) => {
+    const all: Review[] = [];
+    for (let i = 0; i < params.asins.length; i++) {
+      const asin = params.asins[i];
+      params.onProgress(`(${i + 1}/${params.asins.length}) 抓取 ${asin}…`);
+      const chunk = await fetchReviewsFromMcp({
+        asin,
+        marketplace: params.marketplace,
+        maxPages: params.maxPages,
+        onProgress: params.onProgress,
+      });
+      all.push(...chunk);
+    }
+    if (!all.length) {
+      toast.error('未抓到评论，请换 ASIN/站点或减少筛选后重试');
+      throw new Error('未抓到评论');
+    }
+    setReviews((prev) => (params.replace ? all : [...prev, ...all]));
+    resetInsightDerivedState();
+    toast.success(`已从卖家精灵抓取 ${all.length} 条评论（${params.asins.length} 个 ASIN）`);
   };
 
   // ── Step 1: Generate Tag Library ───────────────────────
@@ -968,7 +1005,13 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
           <p className="text-[#86868b] text-sm mt-1">更深层看差评结构变化，并输出可落地的用户旅程洞察</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {reviews.length > 0 && <button onClick={() => { setReviews([]); setTagLib(null); setDeepReport(null); setJourneyReportRaw(null); setJourneyRows([]); setStep('idle'); setPersona(null); setFilterRating('all'); setFilterAsin('all'); setFilterModel('all'); setFilterMedia('all'); setFilterVp('all'); setFilterCountry('all'); setFilterDatePreset('all'); setFilterHelpfulMin('all'); setFilterTagPositive(null); setFilterTagNegative(null); setFilterTagScenarios(null); setFilterTagAudience(null); setListSearchTerm(''); setListMediaOnly(false); setExpandedReviewIds({}); setTranslatedMap({}); setTranslatedVisibleMap({}); setTagModal(null); setJourneyQuoteTr({}); setJourneyQuoteTrShow({}); setTagEditorOpen(false); }} className="px-4 py-2 bg-white border border-black/5 rounded-xl text-sm font-medium text-[#86868b] hover:bg-rose-50 hover:text-rose-600 transition-all">清空数据</button>}
+          {reviews.length > 0 && <button onClick={() => { setReviews([]); setPersona(null); resetInsightDerivedState(); }} className="px-4 py-2 bg-white border border-black/5 rounded-xl text-sm font-medium text-[#86868b] hover:bg-rose-50 hover:text-rose-600 transition-all">清空数据</button>}
+          <McpFetchPanel
+            mode="reviews"
+            defaultMarketplace={marketplaceCode}
+            suggestAsins={products.slice(0, 8).map((p) => p.asin).filter(Boolean)}
+            onFetch={handleMcpFetchReviews}
+          />
           <label className="flex items-center gap-2 px-4 py-2 bg-white border border-black/5 rounded-xl text-sm font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer shadow-sm">
             <Upload className="w-4 h-4" /> 上传评论文件
             <input type="file" accept=".csv,.xlsx" className="hidden" onChange={handleFileUpload} />
@@ -1003,7 +1046,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
         <div className="bg-white rounded-3xl border border-dashed border-black/10 p-20 flex flex-col items-center justify-center text-center">
           <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mb-6"><MessageSquare className="w-8 h-8 text-indigo-600"/></div>
           <h3 className="text-lg font-bold text-[#1d1d1f] mb-2">暂无评论数据</h3>
-          <p className="text-[#86868b] max-w-sm">请上传包含 ASIN、标题和评论内容的 CSV 或 Excel 文件，开始用户洞察之旅。</p>
+          <p className="text-[#86868b] max-w-sm">点右上角「在线抓取评论」填入竞品 ASIN 即可拉取；也可以继续上传 CSV / Excel。</p>
         </div>
       ) : (
         <>

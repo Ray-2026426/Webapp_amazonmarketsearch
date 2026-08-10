@@ -100,10 +100,14 @@ export function loadAiSettings(): AiSettings | null {
     if (raw) return JSON.parse(raw) as AiSettings;
     // \u56de\u9000\u5230 .env.local \u9ed8\u8ba4\u914d\u7f6e\uff0c\u65e0\u9700\u624b\u52a8\u8f93\u5165
     const defaultKey = import.meta.env.VITE_DEFAULT_AI_KEY as string | undefined;
-    const defaultProvider = (import.meta.env.VITE_DEFAULT_AI_PROVIDER ?? 'gemini') as AiProvider;
-    const defaultModel = (import.meta.env.VITE_DEFAULT_AI_MODEL ?? 'gemini-2.5-flash-preview-05-20') as string;
-    if (defaultKey) return { provider: defaultProvider, apiKey: defaultKey, model: defaultModel };
-    return null;
+    const defaultProvider = (import.meta.env.VITE_DEFAULT_AI_PROVIDER ?? 'deepseek') as AiProvider;
+    const defaultModel = (import.meta.env.VITE_DEFAULT_AI_MODEL ?? 'deepseek-chat') as string;
+    // 无密钥时也返回 DeepSeek 默认项，方便你在「AI 设置」里直接填 Key
+    return {
+      provider: defaultProvider,
+      apiKey: defaultKey?.trim() || '',
+      model: defaultModel,
+    };
   } catch {
     return null;
   }
@@ -123,6 +127,11 @@ export interface GenerateOptions {
   systemPrompt?: string;
   jsonMode?: boolean;
   signal?: AbortSignal;
+}
+
+export interface ImageInput {
+  base64: string;
+  mimeType: string;
 }
 
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
@@ -182,6 +191,24 @@ export async function generateText(
   return callOpenAICompat(prompt, resolved, { systemPrompt, jsonMode });
 }
 
+/**
+ * 多模态 AI 调用：发送文本 + 图片（base64）给 AI 进行视觉分析。
+ * 支持 Gemini / OpenAI / Claude 及所有 OpenAI 兼容接口。
+ */
+export async function generateWithImages(
+  prompt: string,
+  images: ImageInput[],
+  settings: AiSettings,
+  options: GenerateOptions = {}
+): Promise<string> {
+  const { systemPrompt, jsonMode } = options;
+  const resolved = { ...settings, model: resolveModel(settings) };
+  if (resolved.provider === 'gemini') {
+    return callGeminiWithImages(prompt, images, resolved, { systemPrompt, jsonMode });
+  }
+  return callOpenAICompatWithImages(prompt, images, resolved, { systemPrompt, jsonMode });
+}
+
 // \u2500\u2500\u2500 Gemini (direct from browser, works with browser proxy extensions) \u2500\u2500\u2500\u2500\u2500\u2500\u2500
 async function callGemini(
   prompt: string,
@@ -236,6 +263,68 @@ async function callGemini(
   }
 
   throw new Error('Gemini 请求失败，请稍后重试。');
+}
+
+// ─── Gemini with Images (multimodal) ───────────────────────────────────────────
+async function callGeminiWithImages(
+  prompt: string,
+  images: ImageInput[],
+  settings: AiSettings,
+  opts: { systemPrompt?: string; jsonMode?: boolean }
+): Promise<string> {
+  const fullPrompt = opts.systemPrompt ? `${opts.systemPrompt}\n\n${prompt}` : prompt;
+  const customUrl = settings.apiUrls?.[settings.provider]?.trim();
+  let url: string;
+  if (customUrl) {
+    url = customUrl;
+    if (!/[?&]key=/.test(url)) {
+      url += `${url.includes('?') ? '&' : '?'}key=${encodeURIComponent(settings.apiKey)}`;
+    }
+  } else {
+    const baseUrl = getProviderConfig('gemini').baseUrl.replace(/\/+$/, '');
+    url = `${baseUrl}/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`;
+  }
+
+  const parts: Record<string, unknown>[] = [{ text: fullPrompt }];
+  for (const img of images) {
+    parts.push({ inlineData: { mimeType: img.mimeType, data: img.base64 } });
+  }
+
+  const body: Record<string, unknown> = {
+    contents: [{ role: 'user', parts }],
+  };
+  if (opts.jsonMode) {
+    body.generationConfig = { responseMimeType: 'application/json' };
+  }
+
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    }
+
+    const text = await res.text();
+    let errMsg = text;
+    try {
+      const errJson = JSON.parse(text);
+      errMsg = errJson?.error?.message || errJson?.error?.status || text;
+    } catch {}
+
+    if (shouldRetry(res.status, errMsg, attempt, maxAttempts)) {
+      await sleep(1200 * attempt);
+      continue;
+    }
+    throw new Error(normalizeAiError('Gemini', res.status, errMsg));
+  }
+
+  throw new Error('Gemini 视觉分析请求失败，请稍后重试。');
 }
 
 /** 是否填写了自定义 API URL */
@@ -402,7 +491,71 @@ async function callOpenAICompat(
   throw new Error(`${providerName} 请求失败，请稍后重试。`);
 }
 
-// \u2500\u2500\u2500 Streaming (OpenAI-compatible only, for chatbot) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── OpenAI-Compatible with Images (multimodal vision) ────────────────────────
+async function callOpenAICompatWithImages(
+  prompt: string,
+  images: ImageInput[],
+  settings: AiSettings,
+  opts: { systemPrompt?: string; jsonMode?: boolean }
+): Promise<string> {
+  const cfg = getProviderConfig(settings.provider);
+  const endpoint = buildEndpoint(settings, settings.provider);
+
+  const userContent: Record<string, unknown>[] = [{ type: 'text', text: prompt }];
+  for (const img of images) {
+    userContent.push({
+      type: 'image_url',
+      image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+    });
+  }
+
+  const messages: Record<string, unknown>[] = [];
+  if (opts.systemPrompt) {
+    messages.push({ role: 'system', content: opts.systemPrompt });
+  }
+  messages.push({ role: 'user', content: userContent });
+
+  const body: Record<string, unknown> = {
+    model: settings.model,
+    messages,
+  };
+  if (opts.jsonMode) {
+    body.response_format = { type: 'json_object' };
+  }
+
+  const headers = buildRequestHeaders(settings);
+  const providerName = cfg.name || 'AI';
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      const text = await res.text();
+      return parseOpenAICompatResponse(text, endpoint);
+    }
+
+    const text = await res.text();
+    let errMsg = text;
+    try {
+      const errJson = JSON.parse(text);
+      errMsg = errJson?.error?.message || errJson?.message || text;
+    } catch {}
+
+    if (shouldRetry(res.status, errMsg, attempt, maxAttempts)) {
+      await sleep(1200 * attempt);
+      continue;
+    }
+    throw new Error(normalizeAiError(providerName, res.status, errMsg));
+  }
+
+  throw new Error(`${providerName} 视觉分析请求失败，请稍后重试。`);
+}
+
+// ─── Streaming (OpenAI-compatible only, for chatbot) ──────────────────────────
 export async function* streamText(
   prompt: string,
   settings: AiSettings,

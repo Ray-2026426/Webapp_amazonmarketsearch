@@ -244,6 +244,8 @@ export interface KwViewProps{
   onStartEdit:(kw:Keyword)=>void;
   onSaveEdit:(id:string)=>void;
   onCancelEdit:()=>void;
+  /** 标题栏右侧额外操作（如在线抓取） */
+  headerExtra?: React.ReactNode;
   onTogTag:(tag:string)=>void;
   onMergeSegments:(sources:string[], target:string)=>void;
   onRenameSegment:(oldName:string, newName:string)=>void;
@@ -254,7 +256,7 @@ export function KwView(p:KwViewProps){
   const [showQInfo, setShowQInfo] = useState(false);
   const [showSegLimit, setShowSegLimit] = useState(false);
   const [showSegMgr, setShowSegMgr] = useState(false);
-  const{keywords,hasSeg,segs,scat,tStat,filt,totVol,isAI,prog,tab,setTab,seg,setSeg,ins,genIns,showT,setShowT,q,setQ,cat,setCat,eid,etags,maxSegs,setMaxSegs,quadrantRule,setQuadrantRule,onUpload,onRunAI,onStop,onGenAI,onClear,onExport,onStartEdit,onSaveEdit,onCancelEdit,onTogTag,onMergeSegments,onRenameSegment,onDeleteSegment}=p;
+  const{keywords,hasSeg,segs,scat,tStat,filt,totVol,isAI,prog,tab,setTab,seg,setSeg,ins,genIns,showT,setShowT,q,setQ,cat,setCat,eid,etags,maxSegs,setMaxSegs,quadrantRule,setQuadrantRule,onUpload,onRunAI,onStop,onGenAI,onClear,onExport,onStartEdit,onSaveEdit,onCancelEdit,onTogTag,onMergeSegments,onRenameSegment,onDeleteSegment,headerExtra}=p;
   return(
     <div className="space-y-6">
       {showQInfo && <QuadrantInfoModal rule={quadrantRule} onClose={()=>setShowQInfo(false)} onSave={setQuadrantRule}/>}
@@ -266,18 +268,21 @@ export function KwView(p:KwViewProps){
       <Card className="border-none shadow-sm overflow-hidden">
         <CardHeader className="bg-[#f5f5f7]/50 border-b border-black/5">
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <div><CardTitle className="text-lg font-semibold flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-indigo-600"/>关键词数据</CardTitle><CardDescription>上传西柚找词/卖家精灵导出的关键词表</CardDescription></div>
-            {keywords.length>0&&(
-              <div className="flex items-center gap-2 flex-wrap">
-                <button onClick={()=>setShowSegLimit(true)} title={`细分上限: ${maxSegs}`} className="flex items-center gap-1.5 px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-xl text-xs font-medium text-[#86868b] hover:text-[#1d1d1f] transition-colors">
-                  <Settings2 className="w-3.5 h-3.5"/>细分上限: {maxSegs}
-                </button>
-                {hasSeg && <button onClick={()=>setShowSegMgr(true)} className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 border border-violet-100 rounded-xl text-xs font-medium text-violet-600 hover:bg-violet-100 transition-colors"><Layers className="w-3.5 h-3.5"/>管理细分</button>}
-                <button onClick={onExport} className="flex items-center gap-1.5 px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-xl text-xs font-medium text-[#86868b] hover:text-emerald-600 transition-colors"><Download className="w-3.5 h-3.5"/>导出 Excel</button>
-                <button onClick={isAI?onStop:onRunAI} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${isAI?'bg-rose-50 text-rose-600':'bg-indigo-600 text-white hover:bg-indigo-700'}`}><Brain className="w-4 h-4"/>{isAI?`取消(${prog.c}/${prog.t})`:'AI 智能分析'}</button>
-                <button onClick={onClear} className="flex items-center gap-2 bg-rose-50 text-rose-600 px-3 py-2 rounded-xl text-sm font-medium"><Trash2 className="w-4 h-4"/></button>
-              </div>
-            )}
+            <div><CardTitle className="text-lg font-semibold flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-indigo-600"/>关键词数据</CardTitle><CardDescription>在线抓取竞品流量词，或上传西柚找词/卖家精灵导出的关键词表</CardDescription></div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {headerExtra}
+              {keywords.length>0&&(
+                <>
+                  <button onClick={()=>setShowSegLimit(true)} title={`细分上限: ${maxSegs}`} className="flex items-center gap-1.5 px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-xl text-xs font-medium text-[#86868b] hover:text-[#1d1d1f] transition-colors">
+                    <Settings2 className="w-3.5 h-3.5"/>细分上限: {maxSegs}
+                  </button>
+                  {hasSeg && <button onClick={()=>setShowSegMgr(true)} className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 border border-violet-100 rounded-xl text-xs font-medium text-violet-600 hover:bg-violet-100 transition-colors"><Layers className="w-3.5 h-3.5"/>管理细分</button>}
+                  <button onClick={onExport} className="flex items-center gap-1.5 px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-xl text-xs font-medium text-[#86868b] hover:text-emerald-600 transition-colors"><Download className="w-3.5 h-3.5"/>导出 Excel</button>
+                  <button onClick={isAI?onStop:onRunAI} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${isAI?'bg-rose-50 text-rose-600':'bg-indigo-600 text-white hover:bg-indigo-700'}`}><Brain className="w-4 h-4"/>{isAI?`取消(${prog.c}/${prog.t})`:'AI 智能分析'}</button>
+                  <button onClick={onClear} className="flex items-center gap-2 bg-rose-50 text-rose-600 px-3 py-2 rounded-xl text-sm font-medium"><Trash2 className="w-4 h-4"/></button>
+                </>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-6">
@@ -285,8 +290,8 @@ export function KwView(p:KwViewProps){
             <div className="border-2 border-dashed border-black/10 rounded-[24px] p-12 flex flex-col items-center text-center hover:border-indigo-500 hover:bg-indigo-50/30 transition-all cursor-pointer relative group">
               <input type="file" accept=".xlsx,.xls,.csv" onChange={onUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"/>
               <div className="w-16 h-16 bg-[#f5f5f7] rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-100"><Upload className="w-8 h-8 text-[#86868b] group-hover:text-indigo-600"/></div>
-              <h3 className="text-lg font-semibold text-[#1d1d1f]">点击或拖拽上传关键词表</h3>
-              <p className="text-sm text-[#86868b] mt-2 max-w-md">支持 Excel/CSV，含关键词、搜索量、CPC、转化率字段</p>
+              <h3 className="text-lg font-semibold text-[#1d1d1f]">点击上传，或用右上角「在线抓取关键词」</h3>
+              <p className="text-sm text-[#86868b] mt-2 max-w-md">支持 Excel/CSV；也可直接填竞品 ASIN 从卖家精灵拉取流量词</p>
             </div>
           ):(<div className="grid grid-cols-2 md:grid-cols-4 gap-4">{[{l:'总词数',v:keywords.length.toLocaleString(),c:'text-[#1d1d1f]'},{l:'总周搜索量',v:totVol.toLocaleString(),c:'text-emerald-600'},{l:'识别细分',v:`${segs.length} 个`,c:'text-indigo-600'},{l:'已打标',v:`${keywords.filter(k=>k.aiTags.length>0).length} 个`,c:'text-violet-600'}].map(m=>(<div key={m.l} className="bg-[#f5f5f7] p-4 rounded-2xl border border-black/5"><div className="text-xs text-[#86868b] uppercase tracking-wider mb-1">{m.l}</div><div className={`text-2xl font-bold ${m.c}`}>{m.v}</div></div>))}</div>)}
         </CardContent>

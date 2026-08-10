@@ -28,13 +28,18 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
+/** vatRate：标准税率%。亚马逊前台售价多为「含税价」，需先拆出 VAT 再算真实毛利 */
 const COUNTRIES = [
-  { code: 'US', name: '美国', currency: '$', rmbRate: 7.2 },
-  { code: 'UK', name: '英国', currency: '£', rmbRate: 9.1 },
-  { code: 'EU', name: '欧洲', currency: '€', rmbRate: 7.8 },
-  { code: 'JP', name: '日本', currency: '¥', rmbRate: 0.048 },
-  { code: 'CA', name: '加拿大', currency: 'C$', rmbRate: 5.3 },
-  { code: 'AU', name: '澳大利亚', currency: 'A$', rmbRate: 4.7 },
+  { code: 'US', name: '美国', currency: '$', rmbRate: 7.2, vatRate: 0 },
+  { code: 'UK', name: '英国', currency: '£', rmbRate: 9.1, vatRate: 20 },
+  { code: 'DE', name: '德国', currency: '€', rmbRate: 7.8, vatRate: 19 },
+  { code: 'FR', name: '法国', currency: '€', rmbRate: 7.8, vatRate: 20 },
+  { code: 'IT', name: '意大利', currency: '€', rmbRate: 7.8, vatRate: 22 },
+  { code: 'ES', name: '西班牙', currency: '€', rmbRate: 7.8, vatRate: 21 },
+  { code: 'EU', name: '欧洲(其他)', currency: '€', rmbRate: 7.8, vatRate: 20 },
+  { code: 'JP', name: '日本', currency: '¥', rmbRate: 0.048, vatRate: 10 },
+  { code: 'CA', name: '加拿大', currency: 'C$', rmbRate: 5.3, vatRate: 5 },
+  { code: 'AU', name: '澳大利亚', currency: 'A$', rmbRate: 4.7, vatRate: 10 },
 ];
 
 const DEFAULT_LIST_PRICE = 29.99;
@@ -48,7 +53,8 @@ const DEFAULT_VARIANT: Omit<Variant, 'id'> = {
 const COST_COLORS: Record<string, string> = {
   '采购': '#6366f1', '头程': '#3b82f6', 'FBA': '#8b5cf6',
   '仓储': '#14b8a6', '佣金': '#ec4899', '广告': '#f59e0b',
-  '退款': '#ef4444', '其他': '#94a3b8', '净利润': '#10b981', '亏损': '#ef4444',
+  'VAT': '#64748b', '退款': '#ef4444', '其他': '#94a3b8',
+  '净利润': '#10b981', '亏损': '#ef4444',
 };
 
 type SavedPlan = {
@@ -56,6 +62,7 @@ type SavedPlan = {
   variants: Variant[];
   country: string;
   rmbRate: number;
+  vatRate: number;
   savedAt: string;
   variantCount: number;
 };
@@ -102,10 +109,13 @@ function normalizeSavedPlans(raw: unknown): SavedPlan[] {
     const country = typeof item.country === 'string' ? item.country : 'US';
     const rmbN = Number(item.rmbRate);
     const rmbRate = Number.isFinite(rmbN) ? rmbN : COUNTRIES[0].rmbRate;
+    const matched = COUNTRIES.find((c) => c.code === country);
+    const vatN = Number(item.vatRate);
+    const vatRate = Number.isFinite(vatN) ? vatN : (matched?.vatRate ?? 0);
     const savedAt = typeof item.savedAt === 'string' && item.savedAt ? item.savedAt : '';
     const vcN = Number(item.variantCount);
     const variantCount = Number.isFinite(vcN) && vcN >= 0 ? Math.floor(vcN) : variants.length;
-    out.push({ name, variants, country, rmbRate, savedAt, variantCount });
+    out.push({ name, variants, country, rmbRate, vatRate, savedAt, variantCount });
   }
   return out;
 }
@@ -122,29 +132,38 @@ function readPlansFromStorage(): { plans: SavedPlan[]; hadParseError: boolean } 
   }
 }
 
-function calcVariant(v: Variant, rmbRate: number) {
+function calcVariant(v: Variant, rmbRate: number, vatRatePct: number) {
   const storage = round1(v.storageFee);
   const procLocal = v.procurementCost / rmbRate;
+  const vatRate = Math.max(0, vatRatePct) / 100;
+  /** 前台售价多为含税价：净销售额 = 含税价 / (1+VAT) */
+  const netPrice = vatRate > 0 ? v.price / (1 + vatRate) : v.price;
+  const vatAmount = Math.max(0, v.price - netPrice);
+  /** 佣金通常按含税成交价计提 */
   const commission = v.price * (v.commissionRate / 100);
   const refundCost = v.price * (v.refundRate / 100);
   const adCostPerOrder = v.cvr > 0 ? v.cpc / (v.cvr / 100) : 0;
   const adCostPerItem = adCostPerOrder * (v.adOrderShare / 100);
   const acos = v.price > 0 ? (adCostPerItem / v.price) * 100 : 0;
-  const totalCost = procLocal + v.shippingCost + v.fbaFee + storage + commission + refundCost + adCostPerItem + v.otherCost;
-  const profit = v.price - totalCost;
-  const margin = v.price > 0 ? (profit / v.price) * 100 : 0;
+  const operatingCost =
+    procLocal + v.shippingCost + v.fbaFee + storage + commission + refundCost + adCostPerItem + v.otherCost;
+  const totalCost = operatingCost + vatAmount;
+  /** 毛利按「不含税净收入 − 经营成本」；VAT 单独列出，不算你的钱 */
+  const profit = netPrice - operatingCost;
+  const margin = netPrice > 0 ? (profit / netPrice) * 100 : 0;
   const monthlyProfit = profit * v.monthlySales;
-  /** 月销售额（元）：自然单 + 广告单，不剔除任何来源 */
+  /** 月销售额（含税 GMV） */
   const monthlySalesRevenue = v.price * v.monthlySales;
+  const monthlyNetRevenue = netPrice * v.monthlySales;
   const adOrders = Math.round(v.monthlySales * (v.adOrderShare / 100));
   const organicOrders = v.monthlySales - adOrders;
-  /** 月度广告总花费 = 每件上摊分的广告费 × 全月销量（与 P&L 中广告线一致，避免用「广告单数取整」产生偏差） */
   const totalAdSpend = adCostPerItem * v.monthlySales;
   const tacos =
     monthlySalesRevenue > 0 ? (totalAdSpend / monthlySalesRevenue) * 100 : 0;
   const fixedCost = procLocal + v.shippingCost + v.fbaFee + storage + v.otherCost;
-  const breakEvenPrice = (1 - v.commissionRate/100 - v.refundRate/100 - acos/100) > 0
-    ? fixedCost / (1 - v.commissionRate/100 - v.refundRate/100 - acos/100) : 0;
+  /** 盈亏平衡「含税售价」：使净收入刚好覆盖经营成本 */
+  const keepRate = 1 / (1 + vatRate) - v.commissionRate / 100 - v.refundRate / 100 - acos / 100;
+  const breakEvenPrice = keepRate > 0 ? fixedCost / keepRate : 0;
   const safetyMargin = v.price > 0 ? ((v.price - breakEvenPrice) / v.price) * 100 : 0;
   const costBreakdown = [
     { name: '采购', value: procLocal },
@@ -153,28 +172,93 @@ function calcVariant(v: Variant, rmbRate: number) {
     { name: '仓储', value: storage },
     { name: '佣金', value: commission },
     { name: '广告', value: adCostPerItem },
+    { name: 'VAT', value: vatAmount },
     { name: '退款', value: refundCost },
     { name: '其他', value: v.otherCost },
     { name: profit >= 0 ? '净利润' : '亏损', value: Math.abs(profit) },
   ].filter(c => c.value > 0.001);
   return { ...v, procLocal, commission, refundCost, adCostPerOrder, adCostPerItem, acos, tacos,
-    totalCost, profit, margin, monthlyProfit, monthlyRevenue: monthlySalesRevenue, adOrders, organicOrders,
+    netPrice, vatAmount, totalCost, profit, margin, monthlyProfit, monthlyRevenue: monthlySalesRevenue,
+    monthlyNetRevenue, adOrders, organicOrders,
     totalAdSpend, breakEvenPrice, safetyMargin, costBreakdown };
 }
 
-const InputField = ({ label, value, onChange, step = '0.01' }: { label: string; value: number; onChange: (v: string) => void; step?: string }) => (
-  <div className="space-y-1">
-    <label className="text-xs text-[#86868b] font-medium block">{label}</label>
-    <input type="number" step={step} value={value} onChange={e => onChange(e.target.value)}
-      className="w-full border border-black/10 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"/>
-  </div>
-);
+/** 数字输入：用文本态编辑，避免出现 039.99 这类前导 0 */
+function normalizeNumericTyping(raw: string): string {
+  let s = raw.replace(/[^\d.-]/g, '');
+  const neg = s.startsWith('-');
+  s = (neg ? '-' : '') + s.replace(/-/g, '');
+  const firstDot = s.indexOf('.');
+  if (firstDot !== -1) {
+    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, '');
+  }
+  // 去掉整数前多余的 0：039.99 → 39.99；保留 0 / 0.xx / -0.xx
+  s = s.replace(/^(-?)0+(\d)/, '$1$2');
+  return s;
+}
+
+function parseNumericInput(raw: string): number {
+  if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+const InputField = ({
+  label,
+  value,
+  onChange,
+  step = '0.01',
+}: {
+  label: string;
+  value: number;
+  onChange: (v: string) => void;
+  step?: string;
+}) => {
+  const [text, setText] = useState(() => (Number.isFinite(value) ? String(value) : ''));
+  const focused = useRef(false);
+
+  useEffect(() => {
+    if (focused.current) return;
+    setText(Number.isFinite(value) ? String(value) : '');
+  }, [value]);
+
+  return (
+    <div className="space-y-1">
+      <label className="text-xs text-[#86868b] font-medium block">{label}</label>
+      <input
+        type="text"
+        inputMode="decimal"
+        step={step}
+        value={text}
+        onFocus={() => { focused.current = true; }}
+        onBlur={() => {
+          focused.current = false;
+          const n = parseNumericInput(text);
+          const cleaned = Number.isFinite(n) ? String(n) : '0';
+          setText(cleaned);
+          onChange(cleaned);
+        }}
+        onChange={(e) => {
+          const next = normalizeNumericTyping(e.target.value);
+          setText(next);
+          if (next !== '' && next !== '-' && next !== '.' && next !== '-.') {
+            onChange(String(parseNumericInput(next)));
+          } else if (next === '') {
+            onChange('0');
+          }
+        }}
+        className="w-full border border-black/10 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+      />
+    </div>
+  );
+};
 
 export const ProfitCalculator = React.memo(function ProfitCalculator() {
   const [country, setCountry] = useState(COUNTRIES[0]);
   const [rmbRate, setRmbRate] = useState(COUNTRIES[0].rmbRate);
+  const [vatRate, setVatRate] = useState(COUNTRIES[0].vatRate);
   const [variants, setVariants] = useState<Variant[]>([{ id: '1', ...DEFAULT_VARIANT }]);
-  const [savedPlans, setSavedPlans] = useState<{ name: string; variants: Variant[]; country: string; rmbRate: number; savedAt: string; variantCount: number }[]>([]);
+  const [savedPlans, setSavedPlans] = useState<SavedPlan[]>([]);
   const [planName, setPlanName] = useState('');
   /** 从列表「加载」的方案在存档数组中的下标；用于「保存修改」覆盖原条目，另存为新方案后会指向新条目 */
   const [activeSavedPlanIndex, setActiveSavedPlanIndex] = useState<number | null>(null);
@@ -212,6 +296,7 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
         variants,
         country: country.code,
         rmbRate,
+        vatRate,
         savedAt: new Date().toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}),
         variantCount: variants.length,
       };
@@ -245,6 +330,7 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
         variants,
         country: country.code,
         rmbRate,
+        vatRate,
         savedAt: new Date().toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}),
         variantCount: variants.length,
       };
@@ -260,7 +346,7 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
     }
   };
 
-  const loadPlan = (p: typeof savedPlans[0], listIndex: number) => {
+  const loadPlan = (p: SavedPlan, listIndex: number) => {
     try {
       const raw = Array.isArray(p?.variants) && p.variants.length > 0 ? p.variants : [{}];
       const safeVariants = raw.map((v, i) => sanitizeVariant(v, i));
@@ -271,6 +357,10 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
 
       const matched = COUNTRIES.find(x => x.code === p?.country);
       if (matched) setCountry(matched);
+      const safeVat = Number.isFinite(Number(p?.vatRate))
+        ? Number(p.vatRate)
+        : (matched?.vatRate ?? vatRate);
+      setVatRate(safeVat);
 
       setActiveSavedPlanIndex(listIndex);
       setPlanName(typeof p?.name === 'string' ? p.name : '');
@@ -320,25 +410,27 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
   };
 
   const results = useMemo(() => {
-    const vr = variants.map(v => calcVariant(v, rmbRate));
+    const vr = variants.map(v => calcVariant(v, rmbRate, vatRate));
     const totalSales = vr.reduce((s, v) => s + v.monthlySales, 0);
     const totalMonthlyProfit = vr.reduce((s, v) => s + v.monthlyProfit, 0);
     const totalMonthlyRevenue = vr.reduce((s, v) => s + v.monthlyRevenue, 0);
+    const totalMonthlyNetRevenue = vr.reduce((s, v) => s + v.monthlyNetRevenue, 0);
     const totalAdSpend = vr.reduce((s, v) => s + v.totalAdSpend, 0);
-    const parentMargin = totalMonthlyRevenue > 0 ? (totalMonthlyProfit / totalMonthlyRevenue) * 100 : 0;
+    /** 父体毛利率按不含税净销售额计算，避免 VAT 虚高 */
+    const parentMargin = totalMonthlyNetRevenue > 0 ? (totalMonthlyProfit / totalMonthlyNetRevenue) * 100 : 0;
     const parentTacos = totalMonthlyRevenue > 0 ? (totalAdSpend / totalMonthlyRevenue) * 100 : 0;
     const w = (key: keyof ReturnType<typeof calcVariant>) =>
       totalSales > 0 ? vr.reduce((s, v) => s + (v[key] as number) * v.monthlySales, 0) / totalSales : 0;
     const avgPrice = w('price');
     const cvrRange = [2,4,6,8,10,12,15,20].map(cvr => {
-      const av = variants.map(v => calcVariant({...v, cvr}, rmbRate));
-      const rev = av.reduce((s,v)=>s+v.monthlyRevenue,0);
+      const av = variants.map(v => calcVariant({...v, cvr}, rmbRate, vatRate));
+      const rev = av.reduce((s,v)=>s+v.monthlyNetRevenue,0);
       const prt = av.reduce((s,v)=>s+v.monthlyProfit,0);
       return { cvr: `${cvr}%`, margin: rev>0 ? parseFloat(((prt/rev)*100).toFixed(1)) : 0 };
     });
     const priceRange = [-20,-15,-10,-5,0,5,10,15,20].map(delta => {
-      const av = variants.map(v => calcVariant({...v, price: Math.max(0.01, v.price*(1+delta/100))}, rmbRate));
-      const rev = av.reduce((s,v)=>s+v.monthlyRevenue,0);
+      const av = variants.map(v => calcVariant({...v, price: Math.max(0.01, v.price*(1+delta/100))}, rmbRate, vatRate));
+      const rev = av.reduce((s,v)=>s+v.monthlyNetRevenue,0);
       const prt = av.reduce((s,v)=>s+v.monthlyProfit,0);
       return { label: `${delta>0?'+':''}${delta}%`, margin: rev>0 ? parseFloat(((prt/rev)*100).toFixed(1)) : 0 };
     });
@@ -364,8 +456,8 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
     };
     const parentCostDisplay = buildParentCostDisplay();
 
-    return { vr, totalSales, totalMonthlyProfit, totalMonthlyRevenue, totalAdSpend, parentMargin, parentTacos, avgPrice, cvrRange, priceRange, parentCostDisplay };
-  }, [variants, rmbRate]);
+    return { vr, totalSales, totalMonthlyProfit, totalMonthlyRevenue, totalMonthlyNetRevenue, totalAdSpend, parentMargin, parentTacos, avgPrice, cvrRange, priceRange, parentCostDisplay };
+  }, [variants, rmbRate, vatRate]);
 
   const cur = country.currency;
 
@@ -377,19 +469,46 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
           <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><Calculator className="w-6 h-6"/></div>
           <div>
             <h2 className="text-xl font-semibold text-[#1d1d1f]">利润计算器</h2>
-            <p className="text-sm text-[#86868b]">多变体成本结构 · 广告效率 · 父体综合利润率</p>
+            <p className="text-sm text-[#86868b]">多变体成本 · VAT · 广告效率 · 父体综合利润率</p>
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5" title="用于把「采购成本(人民币)」换算为站点当地币种：1 美元 ≈ 7.2 人民币 即填 7.2">
             <span className="text-xs text-[#86868b] whitespace-nowrap">1{cur} ≈</span>
-            <input type="number" step="0.01" value={rmbRate} onChange={e => setRmbRate(parseFloat(e.target.value)||rmbRate)}
-              className="w-16 text-sm border border-black/10 rounded-lg px-2 py-1.5 focus:outline-none"/>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={String(rmbRate)}
+              onChange={(e) => {
+                const next = normalizeNumericTyping(e.target.value);
+                if (next === '' || next === '.' || next === '-' || next === '-.') return;
+                setRmbRate(parseNumericInput(next) || rmbRate);
+              }}
+              className="w-16 text-sm border border-black/10 rounded-lg px-2 py-1.5 focus:outline-none"
+            />
             <span className="text-xs text-[#86868b]">人民币(¥)</span>
           </div>
-          <select value={country.code} onChange={e => { const c=COUNTRIES.find(x=>x.code===e.target.value)!; setCountry(c); setRmbRate(c.rmbRate); }}
+          <div className="flex items-center gap-1.5" title="前台售价按含税价理解：VAT 会从售价中拆出，不计入你的净利润">
+            <span className="text-xs text-[#86868b] whitespace-nowrap">VAT</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={String(vatRate)}
+              onChange={(e) => {
+                const next = normalizeNumericTyping(e.target.value);
+                if (next === '' || next === '.' || next === '-' || next === '-.') {
+                  setVatRate(0);
+                  return;
+                }
+                setVatRate(Math.max(0, parseNumericInput(next)));
+              }}
+              className="w-14 text-sm border border-black/10 rounded-lg px-2 py-1.5 focus:outline-none"
+            />
+            <span className="text-xs text-[#86868b]">%</span>
+          </div>
+          <select value={country.code} onChange={e => { const c=COUNTRIES.find(x=>x.code===e.target.value)!; setCountry(c); setRmbRate(c.rmbRate); setVatRate(c.vatRate); }}
             className="border border-black/10 rounded-lg px-3 py-2 bg-white text-sm focus:outline-none">
-            {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.currency})</option>)}
+            {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.currency}){c.vatRate>0?` · VAT ${c.vatRate}%`:''}</option>)}
           </select>
           <button onClick={()=>setShowSavePanel(v=>!v)} className="flex items-center gap-1.5 border border-black/10 rounded-xl px-3 py-2 text-sm hover:bg-[#f5f5f7]">
             <Save className="w-4 h-4"/><span>存档</span>
@@ -485,12 +604,20 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
                   <InputField label="广告订单占比 (%)" value={v.adOrderShare} onChange={val=>updateVariant(v.id,'adOrderShare',val)}/>
                   <InputField label={`其他成本 (${cur})`} value={v.otherCost} onChange={val=>updateVariant(v.id,'otherCost',val)}/>
                 </div>
+                {vatRate > 0 && (
+                  <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2 text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
+                    <span>含税售价 {cur}{v.price.toFixed(2)}</span>
+                    <span>VAT {vatRate}% = {cur}{v.vatAmount.toFixed(2)}</span>
+                    <span>不含税净收入 {cur}{v.netPrice.toFixed(2)}</span>
+                    <span className="text-[#86868b]">毛利率按净收入计算</span>
+                  </div>
+                )}
                 <div className="pt-3 border-t border-black/5 grid grid-cols-4 md:grid-cols-7 gap-3">
                   {[
                     {l:'单件广告费',val:`${cur}${v.adCostPerItem.toFixed(2)}`},
                     {l:'ACOS',val:`${v.acos.toFixed(1)}%`},
                     {l:'TACos',val:`${v.tacos.toFixed(1)}%`},
-                    {l:'总成本',val:`${cur}${v.totalCost.toFixed(2)}`},
+                    {l:'总成本(含VAT)',val:`${cur}${v.totalCost.toFixed(2)}`},
                     {l:'单件净利',val:`${cur}${v.profit.toFixed(2)}`,c:v.profit>=0?'text-emerald-600':'text-rose-600'},
                     {l:'毛利率',val:`${v.margin.toFixed(1)}%`,c:v.margin>=0?'text-emerald-600':'text-rose-600',b:true},
                     {l:'月净利润',val:`${cur}${Math.round(v.monthlyProfit).toLocaleString()}`,c:v.monthlyProfit>=0?'text-emerald-600':'text-rose-600',b:true},
@@ -644,7 +771,8 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
               <div className="space-y-1">
                 {[
                   {l:'月总销量',v:`${results.totalSales.toLocaleString()} 件`},
-                  {l:'月总销售额',v:`${cur}${Math.round(results.totalMonthlyRevenue).toLocaleString()}`},
+                  {l:'月总销售额(含税)',v:`${cur}${Math.round(results.totalMonthlyRevenue).toLocaleString()}`},
+                  ...(vatRate > 0 ? [{l:'月净销售额(不含税)',v:`${cur}${Math.round(results.totalMonthlyNetRevenue).toLocaleString()}`}] : []),
                   {l:'月总广告花费',v:`${cur}${Math.round(results.totalAdSpend).toLocaleString()}`},
                   {l:'月总净利润',v:`${cur}${Math.round(results.totalMonthlyProfit).toLocaleString()}`,c:results.totalMonthlyProfit>=0?'text-emerald-600':'text-rose-600'},
                 ].map(item=>(
