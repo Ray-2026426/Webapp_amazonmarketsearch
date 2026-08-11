@@ -1,8 +1,10 @@
 import type { Keyword, Review } from './parser';
 import {
-  getEffectiveMcpEndpoint,
+  getActiveSellerSpriteProvider,
+  getSellerSpriteEndpoint,
   loadMcpSettings,
   type McpSettings,
+  type McpProviderEntry,
 } from './mcpConfig';
 
 export const SELLERSPRITE_MARKETPLACES = [
@@ -161,18 +163,24 @@ async function mcpHttp(
   };
 }
 
+function resolveSellerSpriteAuth(settings?: McpSettings | null): { secretKey: string; endpoint: string } {
+  const cfg = settings ?? loadMcpSettings();
+  const ss = getActiveSellerSpriteProvider(cfg);
+  const secretKey = (ss?.secretKey || cfg.secretKey || '').trim();
+  if (!secretKey) {
+    throw new Error('请先在「设置 → MCP 数据」中配置卖家精灵密钥');
+  }
+  const endpoint = getSellerSpriteEndpoint(ss?.mcpUrl ?? cfg.mcpUrl);
+  return { secretKey, endpoint };
+}
+
 /** 浏览器端直接调用卖家精灵 MCP（经同源反代或用户自定义 URL） */
 async function callSellerSpriteToolBrowser(
   toolName: string,
   args: Record<string, unknown>,
   settings?: McpSettings | null
 ): Promise<unknown> {
-  const cfg = settings ?? loadMcpSettings();
-  const secretKey = cfg.secretKey.trim();
-  if (!secretKey) {
-    throw new Error('请先在「设置 → MCP 数据」中填写卖家精灵 Secret Key');
-  }
-  const endpoint = getEffectiveMcpEndpoint(cfg);
+  const { secretKey, endpoint } = resolveSellerSpriteAuth(settings);
   const rpcBody = {
     jsonrpc: '2.0' as const,
     id: Date.now(),
@@ -251,18 +259,21 @@ async function callSellerSpriteToolBrowser(
 
 export async function getSellerSpriteStatus(): Promise<{ configured: boolean; message: string }> {
   const cfg = loadMcpSettings();
-  if (cfg.secretKey.trim()) {
-    const viaProxy = !cfg.mcpUrl.trim() || /mcp\.sellersprite\.com/i.test(cfg.mcpUrl);
+  const ss = getActiveSellerSpriteProvider(cfg);
+  const key = (ss?.secretKey || cfg.secretKey || '').trim();
+  if (key) {
+    const viaProxy = getSellerSpriteEndpoint(ss?.mcpUrl ?? cfg.mcpUrl) === '/api-proxy/sellersprite-mcp'
+      || getSellerSpriteEndpoint(ss?.mcpUrl ?? cfg.mcpUrl).startsWith('/api-proxy/');
     return {
       configured: true,
       message: viaProxy
-        ? '已配置 MCP 密钥，将通过应用安全代理连接卖家精灵。'
-        : '已配置 MCP 密钥（自定义中转地址）。可直接抓取。',
+        ? `已配置「${ss?.name || '卖家精灵'}」，将通过应用安全代理连接。`
+        : `已配置「${ss?.name || '卖家精灵'}」（自定义地址）。可直接抓取。`,
     };
   }
   return {
     configured: false,
-    message: '尚未配置。请打开「设置 → MCP 数据」，填入卖家精灵 Secret Key（地址栏请留空）。',
+    message: '尚未配置卖家精灵。请打开「设置 → MCP 数据」，添加或填写卖家精灵密钥（地址栏请留空）。',
   };
 }
 
@@ -308,12 +319,13 @@ export interface FetchReviewsOptions {
 export async function fetchReviewsFromMcp(opts: FetchReviewsOptions): Promise<Review[]> {
   const asin = opts.asin.trim().toUpperCase();
   const marketplace = normalizeMarketplaceCode(opts.marketplace);
-  const pageSize = Math.min(Math.max(opts.pageSize ?? 50, 1), 100);
-  const maxPages = Math.min(Math.max(opts.maxPages ?? 5, 1), 20);
+  // 卖家精灵 review API 每页最多返回 20 条（实测），所以 pageSize 默认设成 20
+  const pageSize = Math.min(Math.max(opts.pageSize ?? 20, 1), 20);
+  const maxPages = Math.min(Math.max(opts.maxPages ?? 10, 1), 50);
   const out: Review[] = [];
 
   for (let page = 1; page <= maxPages; page++) {
-    opts.onProgress?.(`正在抓取 ${asin} 评论 第 ${page}/${maxPages} 页…`);
+    opts.onProgress?.(`正在抓取 ${asin} 评论 第 ${page}/${maxPages} 页（已获 ${out.length} 条）…`);
     const payload = await callTool('review', {
       marketplace,
       asin,
@@ -327,9 +339,9 @@ export async function fetchReviewsFromMcp(opts: FetchReviewsOptions): Promise<Re
       }
     }
     const meta = pickMeta(payload);
+    // 仅当彻底没返回才终止；API 返回条数固定 ≈ pageSize，不要用 < pageSize 提前断掉
     const noMore =
       items.length === 0 ||
-      items.length < pageSize ||
       (meta.pages != null && page >= meta.pages) ||
       meta.hasNext === false;
     if (noMore) break;
@@ -437,13 +449,9 @@ export function parseAsinList(raw: string): string[] {
   return out;
 }
 
-/** 用一条轻量请求验证 MCP 密钥是否可用 */
-export async function testSellerSpriteMcp(settings?: McpSettings | null): Promise<void> {
-  const cfg = settings ?? loadMcpSettings();
-  if (!cfg.secretKey.trim()) throw new Error('请先填写 Secret Key');
-  // initialize 握手即可验证密钥，不必真拉业务数据
-  const endpoint = getEffectiveMcpEndpoint(cfg);
-  const res = await mcpHttp(endpoint, cfg.secretKey.trim(), {
+/** 通用：测试任意 MCP 端点（initialize 握手） */
+export async function testMcpEndpoint(endpoint: string, secretKey: string): Promise<void> {
+  const res = await mcpHttp(endpoint, secretKey.trim(), {
     headers: { 'MCP-Protocol-Version': '2025-03-26' },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -462,11 +470,36 @@ export async function testSellerSpriteMcp(settings?: McpSettings | null): Promis
   }
 }
 
+/** 测试某条 MCP 数据源 */
+export async function testMcpProvider(
+  provider: Pick<McpProviderEntry, 'kind' | 'secretKey' | 'mcpUrl'>
+): Promise<void> {
+  const secretKey = provider.secretKey.trim();
+  if (!secretKey) throw new Error('请先填写密钥');
+  const endpoint =
+    provider.kind === 'sellersprite'
+      ? getSellerSpriteEndpoint(provider.mcpUrl)
+      : provider.mcpUrl.trim().replace(/\/+$/, '');
+  if (!endpoint) throw new Error(provider.kind === 'sellersprite' ? '卖家精灵地址异常' : '请填写 MCP 地址');
+  await testMcpEndpoint(endpoint, secretKey);
+}
+
+/** 用一条轻量请求验证卖家精灵密钥是否可用 */
+export async function testSellerSpriteMcp(settings?: McpSettings | null): Promise<void> {
+  const { secretKey, endpoint } = resolveSellerSpriteAuth(settings);
+  await testMcpEndpoint(endpoint, secretKey);
+}
+
 function unwrapData(payload: unknown): Record<string, unknown> {
   if (!payload || typeof payload !== 'object') return {};
   const o = payload as Record<string, unknown>;
   if (o.data && typeof o.data === 'object') return o.data as Record<string, unknown>;
   return o;
+}
+
+export interface VariationChild {
+  asin: string;
+  attribute: string;
 }
 
 export interface AsinDetailSnapshot {
@@ -477,13 +510,73 @@ export interface AsinDetailSnapshot {
   rating: number;
   ratings: number;
   imageUrl: string;
+  zoomImageUrl: string;
   features: string[];
   lqs: number;
   fulfillment: string;
   sellers: number;
+  sellerName: string;
   categoryPath: string;
   badge: Record<string, string>;
+  /** 父体 ASIN */
+  parentAsin: string;
+  /** 子体数量（卖家精灵 variations 字段） */
+  variationCount: number;
+  /** 父体下全部子体 */
+  variationList: VariationChild[];
+  /** 当前子体规格，如 Size: 2.75 Inchs */
+  skuList: string[];
+  dimensions: string;
+  weight: string;
+  bsrRank: number;
+  bsrLabel: string;
+  asinUrl: string;
   raw: Record<string, unknown>;
+}
+
+function parseVariationList(raw: unknown): VariationChild[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const o = item as Record<string, unknown>;
+      const asin = String(o.asin || '').toUpperCase();
+      if (!asin) return null;
+      return { asin, attribute: String(o.attribute || '') };
+    })
+    .filter(Boolean) as VariationChild[];
+}
+
+function mapAsinDetail(d: Record<string, unknown>, fallbackAsin: string): AsinDetailSnapshot {
+  const features = Array.isArray(d.features) ? d.features.map(String) : [];
+  const asin = String(d.asin || fallbackAsin).toUpperCase();
+  return {
+    asin,
+    title: String(d.title || ''),
+    brand: String(d.brand || ''),
+    price: Number(d.price) || 0,
+    rating: Number(d.rating) || 0,
+    ratings: Number(d.ratings) || 0,
+    imageUrl: String(d.imageUrl || d.zoomImageUrl || ''),
+    zoomImageUrl: String(d.zoomImageUrl || d.imageUrl || ''),
+    features,
+    lqs: Number(d.lqs) || 0,
+    fulfillment: String(d.fulfillment || ''),
+    sellers: Number(d.sellers) || 0,
+    sellerName: String(d.sellerName || ''),
+    categoryPath: String(d.nodeLabelPath || ''),
+    badge: (d.badge && typeof d.badge === 'object' ? d.badge : {}) as Record<string, string>,
+    parentAsin: String(d.parent || '').toUpperCase(),
+    variationCount: Number(d.variations) || 0,
+    variationList: parseVariationList(d.variationList),
+    skuList: Array.isArray(d.skuList) ? d.skuList.map(String) : [],
+    dimensions: String(d.dimensions || ''),
+    weight: String(d.weight || ''),
+    bsrRank: Number(d.bsrRank) || 0,
+    bsrLabel: String(d.bsrLabel || ''),
+    asinUrl: String(d.asinUrl || ''),
+    raw: d,
+  };
 }
 
 export async function fetchAsinDetailFromMcp(
@@ -494,23 +587,108 @@ export async function fetchAsinDetailFromMcp(
     asin: asin.trim().toUpperCase(),
     marketplace: normalizeMarketplaceCode(marketplace),
   });
-  const d = unwrapData(payload);
-  const features = Array.isArray(d.features) ? d.features.map(String) : [];
+  return mapAsinDetail(unwrapData(payload), asin);
+}
+
+/** 父体结构：锚点子体 + 父体下全部变体明细 */
+export interface ParentMatrixSnapshot {
+  /** 用户选中的对比 ASIN（通常是子体） */
+  anchorAsin: string;
+  brand: string;
+  parentAsin: string;
+  variationCount: number;
+  /** 锚点规格 */
+  anchorSku: string;
+  children: Array<{
+    asin: string;
+    attribute: string;
+    isAnchor: boolean;
+    price: number;
+    rating: number;
+    ratings: number;
+    imageUrl: string;
+  }>;
+}
+
+/**
+ * 拉取某 ASIN 对应父体下的子体矩阵。
+ * 先取锚点详情拿到 parent + variationList，再对其他子体补价格/评分（最多 12 个，避免过慢）。
+ */
+export async function fetchParentMatrixFromMcp(
+  asin: string,
+  marketplace: string,
+  onProgress?: (msg: string) => void
+): Promise<ParentMatrixSnapshot> {
+  const detail = await fetchAsinDetailFromMcp(asin, marketplace);
+  const parentAsin = detail.parentAsin || detail.asin;
+  const list =
+    detail.variationList.length > 0
+      ? detail.variationList
+      : [{ asin: detail.asin, attribute: detail.skuList[0] || '' }];
+
+  const children: ParentMatrixSnapshot['children'] = [];
+  const MAX_EXTRA = 12;
+  let fetched = 0;
+
+  for (const v of list) {
+    const isAnchor = v.asin === detail.asin;
+    if (isAnchor) {
+      children.push({
+        asin: v.asin,
+        attribute: v.attribute || detail.skuList[0] || '',
+        isAnchor: true,
+        price: detail.price,
+        rating: detail.rating,
+        ratings: detail.ratings,
+        imageUrl: detail.imageUrl,
+      });
+      continue;
+    }
+    if (fetched >= MAX_EXTRA) {
+      children.push({
+        asin: v.asin,
+        attribute: v.attribute,
+        isAnchor: false,
+        price: 0,
+        rating: 0,
+        ratings: 0,
+        imageUrl: '',
+      });
+      continue;
+    }
+    onProgress?.(`补全子体 ${v.asin}…`);
+    try {
+      const child = await fetchAsinDetailFromMcp(v.asin, marketplace);
+      fetched += 1;
+      children.push({
+        asin: v.asin,
+        attribute: v.attribute || child.skuList[0] || '',
+        isAnchor: false,
+        price: child.price,
+        rating: child.rating,
+        ratings: child.ratings,
+        imageUrl: child.imageUrl,
+      });
+    } catch {
+      children.push({
+        asin: v.asin,
+        attribute: v.attribute,
+        isAnchor: false,
+        price: 0,
+        rating: 0,
+        ratings: 0,
+        imageUrl: '',
+      });
+    }
+  }
+
   return {
-    asin: String(d.asin || asin).toUpperCase(),
-    title: String(d.title || ''),
-    brand: String(d.brand || ''),
-    price: Number(d.price) || 0,
-    rating: Number(d.rating) || 0,
-    ratings: Number(d.ratings) || 0,
-    imageUrl: String(d.imageUrl || d.zoomImageUrl || ''),
-    features,
-    lqs: Number(d.lqs) || 0,
-    fulfillment: String(d.fulfillment || ''),
-    sellers: Number(d.sellers) || 0,
-    categoryPath: String(d.nodeLabelPath || ''),
-    badge: (d.badge && typeof d.badge === 'object' ? d.badge : {}) as Record<string, string>,
-    raw: d,
+    anchorAsin: detail.asin,
+    brand: detail.brand,
+    parentAsin,
+    variationCount: detail.variationCount || list.length,
+    anchorSku: detail.skuList[0] || list.find((x) => x.asin === detail.asin)?.attribute || '',
+    children,
   };
 }
 
@@ -542,4 +720,67 @@ export async function fetchTrafficStatFromMcp(
     ads: Number(d.ads) || 0,
     badgeCount: badge,
   };
+}
+
+/** 品牌下其他父体（非锚点父体的 ASIN） */
+export interface BrandParentItem {
+  asin: string;
+  title: string;
+  price: number;
+  rating: number;
+  ratings: number;
+  imageUrl: string;
+  monthlySales: number;
+  bsrRank: number;
+}
+
+/**
+ * 用 product_research 搜索同品牌其他产品，
+ * 聚合为「品牌下其他父体」列表（去重、排除当前锚点父体）
+ */
+export async function fetchBrandParentsFromMcp(
+  brand: string,
+  marketplace: string,
+  excludeParents: string[],
+  onProgress?: (msg: string) => void
+): Promise<BrandParentItem[]> {
+  if (!brand.trim()) return [];
+  const mkt = normalizeMarketplaceCode(marketplace);
+  const excludeSet = new Set(excludeParents.map((a) => a.toUpperCase()));
+  onProgress?.(`搜索品牌「${brand}」下的产品…`);
+
+  try {
+    const payload = await callSellerSpriteToolBrowser('product_research', {
+      request: {
+        brands: brand.trim(),
+        marketplace: mkt,
+        page: 1,
+        size: 50,
+      },
+    });
+    const items = pickItems(payload);
+    const list: BrandParentItem[] = [];
+    for (const it of items) {
+      if (!it || typeof it !== 'object') continue;
+      const row = it as Record<string, unknown>;
+      const asin = String(row.asin || '').toUpperCase();
+      if (!asin || excludeSet.has(asin)) continue;
+      // 只看父体（没有 parent 字段或 parent 等于自己的就是父体）
+      const parent = String(row.parent || '').toUpperCase();
+      if (parent && parent !== asin) continue; // 是子体，跳过
+      list.push({
+        asin,
+        title: String(row.title || '').slice(0, 200),
+        price: Number(row.price) || 0,
+        rating: Number(row.rating) || 0,
+        ratings: Number(row.ratings) || 0,
+        imageUrl: String(row.imageUrl || ''),
+        monthlySales: Number(row.totalUnits) || 0,
+        bsrRank: Number(row.bsrRank) || 0,
+      });
+    }
+    return list.filter((x) => x.title);
+  } catch {
+    return [];
+  }
 }

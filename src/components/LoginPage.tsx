@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, Eye, EyeOff, User, Lock } from 'lucide-react';
+import { Eye, EyeOff, User, Lock } from 'lucide-react';
 import { login, register, saveCreds, loadCreds, clearCreds } from '../utils/auth';
 import { toast } from 'sonner';
 
@@ -76,8 +76,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       <div className="relative z-10 w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-500/30 mb-4">
-            <BarChart3 className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center w-20 h-20 mb-4">
+            <img src="/logo.png?v=20260811" alt="AmzDev Tool" className="w-20 h-20 rounded-2xl object-contain drop-shadow-xl" />
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">AmzDev Tool</h1>
           <p className="text-indigo-300 text-sm mt-1">Amazon 市场洞察平台</p>

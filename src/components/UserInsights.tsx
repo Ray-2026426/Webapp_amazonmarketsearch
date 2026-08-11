@@ -388,9 +388,28 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
   journeyQuoteTrRef.current = journeyQuoteTr;
   const [expandedReviewIds, setExpandedReviewIds] = useState<Record<string, boolean>>({});
 
-  const deepReportMarkdown = useMemo(
-    () => (deepReport ? enhanceInsightReportMarkdown(deepReport) : ''),
+  const deepReportHtml = useMemo(
+    () => {
+      if (!deepReport) return '';
+      // AI 返回的可能包含 markdown 代码围栏包裹的 HTML，先去掉
+      let html = deepReport.replace(/^```html?\s*\n?/i, '').replace(/\n?```\s*$/, '').trim();
+      // 如果没被代码围栏包裹，尝试提取第一个 <div> 开头的内容
+      if (!html.startsWith('<')) {
+        const start = html.search(/<(div|section|article|table|h[1-6]|p|ul|ol)/i);
+        if (start >= 0) html = html.slice(start);
+      }
+      return html;
+    },
     [deepReport]
+  );
+
+  // 保留 deepReportMarkdown 用于兼容（但如果 deepReportHtml 非空，优先用 HTML）
+  const deepReportMarkdown = useMemo(
+    () => {
+      if (deepReportHtml) return '';
+      return deepReport ? enhanceInsightReportMarkdown(deepReport) : '';
+    },
+    [deepReport, deepReportHtml]
   );
 
   // ── Derived ────────────────────────────────────────────
@@ -1655,11 +1674,18 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
               </CardHeader>
               <CardContent className="p-6">
                 {deepReport ? (
+                  deepReportHtml ? (
+                    <div
+                      className="max-h-[min(560px,70vh)] overflow-x-auto overflow-y-auto rounded-2xl border border-indigo-100/90 bg-gradient-to-b from-white via-white to-indigo-50/40 px-5 py-6 shadow-inner"
+                      dangerouslySetInnerHTML={{ __html: deepReportHtml }}
+                    />
+                  ) : (
                   <div className="max-h-[min(560px,70vh)] overflow-x-auto overflow-y-auto rounded-2xl border border-indigo-100/90 bg-gradient-to-b from-white via-white to-indigo-50/40 px-5 py-6 shadow-inner">
                     <div className="prose prose-base max-w-none min-w-[280px] text-[#3f3f46] leading-relaxed prose-headings:scroll-mt-4 prose-headings:font-semibold prose-headings:text-indigo-950 prose-h2:text-[1.05rem] prose-h2:mt-8 prose-h2:mb-3 prose-h2:border-b prose-h2:border-indigo-100 prose-h2:pb-2 prose-h2:first:mt-0 prose-p:my-2.5 prose-p:text-[15px] prose-ul:my-2 prose-ul:pl-1 prose-li:my-1 prose-li:marker:text-indigo-400 prose-strong:text-[#1e1b4b] [&_table]:w-full [&_table]:text-[14px] prose-th:border prose-th:border-black/10 prose-th:bg-stone-50 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-td:border prose-td:border-black/10 prose-td:px-3 prose-td:py-2">
                       <Markdown remarkPlugins={[remarkGfm]}>{deepReportMarkdown}</Markdown>
                     </div>
                   </div>
+                  )
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12 text-[#86868b]">
                     <FileText className="w-12 h-12 mb-3 text-zinc-200"/>

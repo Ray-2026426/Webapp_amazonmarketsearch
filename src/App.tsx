@@ -27,6 +27,7 @@ import { Toaster, toast } from 'sonner';
 import { getCurrentUser, logout, type SessionUser } from './utils/auth';
 import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
 import { loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
+import { getDemoData } from './utils/demoData';
 import { LoginPage } from './components/LoginPage';
 import { AiSettingsPanel } from './components/AiSettingsPanel';
 import { savePromptItem, resetPromptToDefault } from './components/AiPromptManager';
@@ -145,6 +146,8 @@ export default function App() {
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isDemoData, setIsDemoData] = useState(false);
+  const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
@@ -615,14 +618,28 @@ export default function App() {
             console.log("App state restored successfully.");
           }
         } else {
-          // 未加载市场数据时，仍恢复已保存的评论等工作区内容（仅评论分析）
+          // 新用户：没有任何已保存的市场数据，加载演示数据让用户直观看到 APP 效果
           const [savedReviews, savedPersona, savedKeywords, savedAnchorAnnotations] = await Promise.all([
             get('reviews'),
             get('persona'),
             get('keywords'),
             get('anchorAnnotations'),
           ]);
-          if (savedReviews && Array.isArray(savedReviews) && savedReviews.length > 0) {
+          const hasSavedReviews = savedReviews && Array.isArray(savedReviews) && savedReviews.length > 0;
+
+          if (!hasSavedReviews) {
+            // 首次进入，加载演示数据
+            const demo = getDemoData();
+            setProducts(demo.products);
+            setHistory(demo.history);
+            setMonths(demo.months);
+            setMarketplace(demo.marketplace);
+            setHistorySourceLabel(demo.sourceLabel);
+            setIsDataLoaded(true);
+            setIsDemoData(true);
+            console.log('Loaded demo data for first-time user.');
+          } else {
+            // 有保存的评论但没有市场数据
             setReviews(savedReviews);
             if (savedPersona) setPersona(savedPersona);
             if (savedKeywords) setKeywords(savedKeywords);
@@ -885,6 +902,8 @@ export default function App() {
       setMonths(parsedMonths);
       await new Promise(resolve => setTimeout(resolve, 100));
       setIsDataLoaded(true);
+      setIsDemoData(false);
+      setDemoBannerDismissed(false);
       
       toast.success("数据加载成功！");
     } catch (error) {
@@ -1038,8 +1057,8 @@ export default function App() {
           {/* Sidebar */}
           <aside className="w-64 bg-white border-r border-black/5 hidden md:flex flex-col">
         <div className="p-6 border-b border-black/5">
-          <div className="flex items-center space-x-2 font-semibold text-lg text-[#1d1d1f]">
-            <BarChart3 className="w-6 h-6 text-indigo-600" />
+          <div className="flex items-center space-x-2.5 font-semibold text-lg text-[#1d1d1f]">
+            <img src="/logo.png?v=20260811" alt="AmzDev Tool" className="w-9 h-9 rounded-xl object-contain shadow-sm" />
             <span>AmzDev Tool</span>
           </div>
         </div>
@@ -1231,6 +1250,26 @@ export default function App() {
           className="flex-1 overflow-y-auto p-8"
         >
           {activeView === 'market' && <PageQuickNav />}
+          {isDemoData && !demoBannerDismissed && (
+            <div className="max-w-7xl mx-auto mb-4">
+              <div className="rounded-2xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 px-5 py-3 flex items-center justify-between gap-3 animate-in fade-in">
+                <div className="flex items-center gap-2 text-sm text-indigo-800">
+                  <Sparkles className="w-4 h-4 shrink-0" />
+                  <span>
+                    当前为<strong>示例数据</strong>（美国站薄枕头品类），方便你预览 APP 功能。
+                    上传你自己的市场数据即可切换。
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDemoBannerDismissed(true)}
+                  className="shrink-0 p-1.5 rounded-lg hover:bg-indigo-100 text-indigo-600 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
           {!isDataLoaded && activeView === 'market' ? (
             <div className="h-full flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-700">
               <div className="text-center space-y-2">
