@@ -119,7 +119,15 @@ export function McpFetchPanel({
             }`}
           >
             <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            <span>{statusMsg}</span>
+            <span>
+              {statusMsg}
+              {!configured && (
+                <>
+                  {' '}
+                  打开右上角「设置 → MCP 数据」填写密钥即可。
+                </>
+              )}
+            </span>
           </div>
 
           <div>

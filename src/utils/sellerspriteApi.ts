@@ -1,4 +1,9 @@
 import type { Keyword, Review } from './parser';
+import {
+  getEffectiveMcpEndpoint,
+  loadMcpSettings,
+  type McpSettings,
+} from './mcpConfig';
 
 export const SELLERSPRITE_MARKETPLACES = [
   'US', 'UK', 'DE', 'FR', 'IT', 'ES', 'JP', 'CA', 'AU', 'MX', 'IN', 'BR', 'AE',
@@ -36,7 +41,6 @@ function asArray<T>(x: unknown): T[] {
   return [];
 }
 
-/** 从卖家精灵包装结构里取出 items 列表 */
 function pickItems(payload: unknown): unknown[] {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
@@ -64,33 +68,195 @@ function pickMeta(payload: unknown): { total?: number; pages?: number; page?: nu
   };
 }
 
+type JsonRpc = {
+  jsonrpc: '2.0';
+  id?: number | string;
+  result?: unknown;
+  error?: { message?: string };
+};
+
+function parseMcpHttpBody(text: string): JsonRpc | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('{')) {
+    try {
+      return JSON.parse(trimmed) as JsonRpc;
+    } catch {
+      /* fall through */
+    }
+  }
+  const dataLines = trimmed
+    .split(/\r?\n/)
+    .filter((l) => l.startsWith('data:'))
+    .map((l) => l.slice(5).trim())
+    .filter((l) => l && l !== '[DONE]');
+  for (let i = dataLines.length - 1; i >= 0; i--) {
+    try {
+      const obj = JSON.parse(dataLines[i]) as JsonRpc;
+      if (obj && (obj.result !== undefined || obj.error !== undefined)) return obj;
+    } catch {
+      /* continue */
+    }
+  }
+  return null;
+}
+
+function extractToolPayload(result: unknown): unknown {
+  if (result == null) return null;
+  if (typeof result === 'string') {
+    try {
+      return JSON.parse(result);
+    } catch {
+      return result;
+    }
+  }
+  if (typeof result !== 'object') return result;
+  const r = result as {
+    content?: Array<{ type?: string; text?: string }>;
+    structuredContent?: unknown;
+  };
+  if (r.structuredContent !== undefined) return r.structuredContent;
+  if (Array.isArray(r.content)) {
+    const joined = r.content.map((c) => String(c.text ?? '')).join('\n').trim();
+    if (!joined) return result;
+    try {
+      return JSON.parse(joined);
+    } catch {
+      return joined;
+    }
+  }
+  return result;
+}
+
+async function mcpHttp(
+  endpoint: string,
+  secretKey: string,
+  init: { method?: string; body?: string; headers?: Record<string, string> }
+): Promise<{ ok: boolean; status: number; text: string; sessionId?: string }> {
+  const res = await fetch(endpoint, {
+    method: init.method ?? 'POST',
+    headers: {
+      Accept: 'application/json, text/event-stream',
+      'Content-Type': 'application/json',
+      'secret-key': secretKey,
+      ...(init.headers ?? {}),
+    },
+    body: init.body,
+  });
+  return {
+    ok: res.ok,
+    status: res.status,
+    text: await res.text(),
+    sessionId: res.headers.get('mcp-session-id') || undefined,
+  };
+}
+
+/** 浏览器端直接调用卖家精灵 MCP（经同源反代或用户自定义 URL） */
+async function callSellerSpriteToolBrowser(
+  toolName: string,
+  args: Record<string, unknown>,
+  settings?: McpSettings | null
+): Promise<unknown> {
+  const cfg = settings ?? loadMcpSettings();
+  const secretKey = cfg.secretKey.trim();
+  if (!secretKey) {
+    throw new Error('请先在「AI 设置 → MCP 数据」中填写卖家精灵 Secret Key');
+  }
+  const endpoint = getEffectiveMcpEndpoint(cfg);
+  const rpcBody = {
+    jsonrpc: '2.0' as const,
+    id: Date.now(),
+    method: 'tools/call',
+    params: { name: toolName, arguments: args },
+  };
+
+  const direct = await mcpHttp(endpoint, secretKey, {
+    headers: {
+      'MCP-Protocol-Version': '2025-03-26',
+      'Mcp-Method': 'tools/call',
+      'Mcp-Name': toolName,
+    },
+    body: JSON.stringify(rpcBody),
+  });
+  let parsed = parseMcpHttpBody(direct.text);
+  if (direct.ok && parsed?.result !== undefined && !parsed.error) {
+    return extractToolPayload(parsed.result);
+  }
+
+  const initRes = await mcpHttp(endpoint, secretKey, {
+    headers: { 'MCP-Protocol-Version': '2025-03-26' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 'amz-market-research-app', version: '1.0.0' },
+      },
+    }),
+  });
+  const sessionId = initRes.sessionId;
+  if (!initRes.ok && !sessionId) {
+    const hint =
+      parsed?.error?.message ||
+      direct.text.slice(0, 200) ||
+      initRes.text.slice(0, 200);
+    if (/Failed to fetch|NetworkError|CORS/i.test(String(hint)) || direct.status === 0) {
+      throw new Error('无法连接 MCP。请确认已用 npm run dev 启动，或检查自定义 MCP 地址是否允许跨域。');
+    }
+    throw new Error(hint || `MCP 初始化失败 (${initRes.status || direct.status})`);
+  }
+
+  if (sessionId) {
+    await mcpHttp(endpoint, secretKey, {
+      headers: {
+        'MCP-Protocol-Version': '2025-03-26',
+        'Mcp-Session-Id': sessionId,
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+    });
+  }
+
+  const callRes = await mcpHttp(endpoint, secretKey, {
+    headers: {
+      'MCP-Protocol-Version': '2025-03-26',
+      'Mcp-Method': 'tools/call',
+      'Mcp-Name': toolName,
+      ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
+    },
+    body: JSON.stringify(rpcBody),
+  });
+  parsed = parseMcpHttpBody(callRes.text);
+  if (!callRes.ok || parsed?.error) {
+    throw new Error(
+      parsed?.error?.message || callRes.text.slice(0, 300) || `MCP 调用失败 (${callRes.status})`
+    );
+  }
+  if (parsed?.result === undefined) {
+    throw new Error('MCP 返回为空，请检查密钥或 ASIN/站点是否正确');
+  }
+  return extractToolPayload(parsed.result);
+}
+
 export async function getSellerSpriteStatus(): Promise<{ configured: boolean; message: string }> {
-  try {
-    const res = await fetch('/api/sellersprite/status');
-    const json = await res.json();
+  const cfg = loadMcpSettings();
+  if (cfg.secretKey.trim()) {
     return {
-      configured: Boolean(json.configured),
-      message: String(json.message || ''),
-    };
-  } catch {
-    return {
-      configured: false,
-      message: '无法连接本地代理，请确认已用 npm run dev 启动本应用',
+      configured: true,
+      message: cfg.mcpUrl.trim()
+        ? '已配置 MCP 密钥（自定义地址）。可直接抓取。'
+        : '已配置 MCP 密钥。将通过本应用安全代理连接卖家精灵。',
     };
   }
+  return {
+    configured: false,
+    message: '尚未配置。请打开右上角「AI 设置 → MCP 数据」，填入卖家精灵 Secret Key。',
+  };
 }
 
 async function callTool(tool: 'review' | 'traffic_keyword', args: Record<string, unknown>): Promise<unknown> {
-  const res = await fetch('/api/sellersprite', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tool, args }),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(String(json.error || `请求失败 (${res.status})`));
-  }
-  return json.data;
+  return callSellerSpriteToolBrowser(tool, args);
 }
 
 function mapReviewItem(item: Record<string, unknown>, asin: string, marketplace: string): Review {
@@ -123,9 +289,7 @@ function mapReviewItem(item: Record<string, unknown>, asin: string, marketplace:
 export interface FetchReviewsOptions {
   asin: string;
   marketplace: string;
-  /** 每页条数，默认 50 */
   pageSize?: number;
-  /** 最多抓取页数，默认 5（约 250 条） */
   maxPages?: number;
   onProgress?: (msg: string) => void;
 }
@@ -174,7 +338,6 @@ function mapKeywordItem(item: Record<string, unknown>, rank: number): Keyword {
   const top3Click = Number(item.top3ClickingRate) || monopoly;
   const top3Conv = Number(item.top3ConversionRate) || 0;
   const purchaseRate = Number(item.purchaseRate) || 0;
-  // 用点击集中度映射为 0–100 难度，便于沿用现有象限逻辑
   const difficulty = Math.round(Math.min(100, Math.max(0, monopoly * 100)));
 
   return {
@@ -245,7 +408,6 @@ export async function fetchKeywordsFromMcp(opts: FetchKeywordsOptions): Promise<
   return [...map.values()];
 }
 
-/** 解析用户输入的多个 ASIN（逗号/空格/换行） */
 export function parseAsinList(raw: string): string[] {
   const parts = raw
     .toUpperCase()
@@ -262,4 +424,29 @@ export function parseAsinList(raw: string): string[] {
     out.push(asin);
   }
   return out;
+}
+
+/** 用一条轻量请求验证 MCP 密钥是否可用 */
+export async function testSellerSpriteMcp(settings?: McpSettings | null): Promise<void> {
+  const cfg = settings ?? loadMcpSettings();
+  if (!cfg.secretKey.trim()) throw new Error('请先填写 Secret Key');
+  // initialize 握手即可验证密钥，不必真拉业务数据
+  const endpoint = getEffectiveMcpEndpoint(cfg);
+  const res = await mcpHttp(endpoint, cfg.secretKey.trim(), {
+    headers: { 'MCP-Protocol-Version': '2025-03-26' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 'amz-market-research-app-test', version: '1.0.0' },
+      },
+    }),
+  });
+  if (!res.ok && !res.sessionId) {
+    const parsed = parseMcpHttpBody(res.text);
+    throw new Error(parsed?.error?.message || res.text.slice(0, 200) || `验证失败 (${res.status})`);
+  }
 }

@@ -26,6 +26,7 @@ import { get, set, del } from 'idb-keyval';
 import { Toaster, toast } from 'sonner';
 import { getCurrentUser, logout, type SessionUser } from './utils/auth';
 import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
+import { loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
 import { LoginPage } from './components/LoginPage';
 import { AiSettingsPanel } from './components/AiSettingsPanel';
 import { savePromptItem, resetPromptToDefault } from './components/AiPromptManager';
@@ -117,6 +118,7 @@ export default function App() {
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(() => loadAiSettings());
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
   const [isAvatarSettingsOpen, setIsAvatarSettingsOpen] = useState(false);
+  const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
 
   const handleLoginSuccess = useCallback(() => {
     const isGuest = sessionStorage.getItem('guest_mode') === '1';
@@ -1105,7 +1107,7 @@ export default function App() {
             className="w-full flex items-center space-x-3 px-3 py-2 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] rounded-xl font-medium transition-colors"
           >
             <Settings className="w-5 h-5" />
-            <span>AI 设置</span>
+            <span>设置</span>
           </button>
           <div className="flex items-center justify-between px-3 py-2 mt-1 bg-[#f5f5f7] rounded-xl">
             <div className="flex items-center gap-2 min-w-0">
@@ -1239,8 +1241,10 @@ export default function App() {
                 <div className="max-w-7xl mx-auto space-y-8" data-annotate-anchor="market-root">
                 {/* KPI Cards Header */}
                 <div className="flex flex-col space-y-4" data-annotate-anchor="market-kpi-header">
-                  {/* ── Market Scorecard ── */}
-                  <MarketScorecard products={filteredProducts} history={filteredHistory} months={months} />
+                  {/* ── Market Scorecard（默认隐藏，设置 → 功能开关 中开启） ── */}
+                  {featureFlags.showMarketScorecard && (
+                    <MarketScorecard products={filteredProducts} history={filteredHistory} months={months} />
+                  )}
 
                   <div className="flex items-center justify-between">
                     <h2 className="text-[20px] font-semibold text-[#1d1d1f]">核心指标</h2>
@@ -1353,11 +1357,6 @@ export default function App() {
                     tooltip="FBA费用/价格均值：FBA费用 ÷ 售价 的平均比值。一般低于15%为健康，越高说明平台物流成本侵蚀利润越严重"/>
                 </div>
 
-                {/* ── Opportunity Scanner (P1: moved up) ── */}
-                <div data-annotate-anchor="market-opportunity-scanner">
-                  <OpportunityScanner products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
-                </div>
-
                 {/* Charts Grid */}
                 <div className="grid grid-cols-1 gap-6" data-annotate-anchor="market-charts">
                   <div data-annotate-anchor="segment-share-chart">
@@ -1378,6 +1377,9 @@ export default function App() {
                   </div>
                   <div data-annotate-anchor="market-concentration">
                     <MarketConcentrationChart products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} />
+                  </div>
+                  <div data-annotate-anchor="market-opportunity-scanner">
+                    <OpportunityScanner products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
                   </div>
                   <div data-annotate-anchor="brand-leaderboard">
                     <BrandLeaderboard products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
@@ -1513,6 +1515,7 @@ export default function App() {
           settings={aiSettings}
           onSave={handleSaveAiSettings}
           onClose={() => setIsAiSettingsOpen(false)}
+          onFeatureFlagsChange={setFeatureFlags}
         />
       )}
 

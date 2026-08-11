@@ -1,3 +1,5 @@
+import { buildUserBackgroundSystemPrompt } from './userBackground';
+
 // AI Provider Configuration & Unified Call Layer
 
 export type AiProvider = 'gemini' | 'openai' | 'claude' | 'deepseek' | 'qwen' | 'moonshot' | 'zhipu';
@@ -178,12 +180,20 @@ function resolveModel(settings: AiSettings): string {
   return allModels[0] || getProviderConfig(settings.provider).defaultModel;
 }
 
+function mergeSystemPrompt(systemPrompt?: string): string | undefined {
+  const userCtx = buildUserBackgroundSystemPrompt();
+  const parts = [userCtx, systemPrompt?.trim()].filter(Boolean) as string[];
+  if (parts.length === 0) return undefined;
+  return parts.join('\n\n');
+}
+
 export async function generateText(
   prompt: string,
   settings: AiSettings,
   options: GenerateOptions = {}
 ): Promise<string> {
-  const { systemPrompt, jsonMode } = options;
+  const { jsonMode } = options;
+  const systemPrompt = mergeSystemPrompt(options.systemPrompt);
   const resolved = { ...settings, model: resolveModel(settings) };
   if (resolved.provider === 'gemini') {
     return callGemini(prompt, resolved, { systemPrompt, jsonMode });
@@ -201,7 +211,8 @@ export async function generateWithImages(
   settings: AiSettings,
   options: GenerateOptions = {}
 ): Promise<string> {
-  const { systemPrompt, jsonMode } = options;
+  const { jsonMode } = options;
+  const systemPrompt = mergeSystemPrompt(options.systemPrompt);
   const resolved = { ...settings, model: resolveModel(settings) };
   if (resolved.provider === 'gemini') {
     return callGeminiWithImages(prompt, images, resolved, { systemPrompt, jsonMode });
@@ -568,11 +579,12 @@ export async function* streamText(
     return;
   }
 
+  const mergedSystem = mergeSystemPrompt(systemPrompt);
   const cfg = getProviderConfig(settings.provider);
   const endpoint = buildEndpoint(settings, settings.provider);
 
   const messages: { role: string; content: string }[] = [];
-  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  if (mergedSystem) messages.push({ role: 'system', content: mergedSystem });
   messages.push({ role: 'user', content: prompt });
 
   const headers = buildRequestHeaders(settings);

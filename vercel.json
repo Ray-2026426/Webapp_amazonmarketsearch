@@ -33,6 +33,14 @@
     {
       "source": "/api-proxy/zhipu/(.*)",
       "destination": "https://open.bigmodel.cn/$1"
+    },
+    {
+      "source": "/api-proxy/sellersprite-mcp",
+      "destination": "https://mcp.sellersprite.com/mcp"
+    },
+    {
+      "source": "/api-proxy/sellersprite-mcp/(.*)",
+      "destination": "https://mcp.sellersprite.com/mcp/$1"
     }
   ]
 }
