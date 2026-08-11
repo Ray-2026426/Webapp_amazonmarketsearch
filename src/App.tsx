@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer, CheckSquare } from 'lucide-react';
+import { BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer, CheckSquare, Crosshair } from 'lucide-react';
 import { MetricCard } from './components/MetricCard';
 import { MarketTrendChart } from './components/MarketTrendChart';
 import { PriceDistributionChart } from './components/PriceDistributionChart';
@@ -31,6 +31,7 @@ import { LoginPage } from './components/LoginPage';
 import { AiSettingsPanel } from './components/AiSettingsPanel';
 import { savePromptItem, resetPromptToDefault } from './components/AiPromptManager';
 import { OpportunityScanner } from './components/OpportunityScanner';
+import { CompetitorHub } from './components/CompetitorHub';
 import { SeasonalHeatmap } from './components/SeasonalHeatmap';
 import { BsrDistributionChart } from './components/BsrDistributionChart';
 import { PriceRatingChart } from './components/PriceRatingChart';
@@ -1051,6 +1052,13 @@ export default function App() {
             <span>市场大盘</span>
           </button>
           <button 
+            onClick={() => setActiveView('competitors')}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'competitors' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+          >
+            <Crosshair className="w-5 h-5" />
+            <span>竞品分析</span>
+          </button>
+          <button 
             onClick={() => setActiveView('insights')}
             className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'insights' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
           >
@@ -1145,11 +1153,13 @@ export default function App() {
           <div className="flex items-center space-x-4">
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight text-[#1d1d1f]">
-                {activeView === 'market' ? '市场大盘' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
+                {activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品分析' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
               </h1>
               <p className="text-[15px] text-[#86868b] mt-1">
                 {activeView === 'market' 
                   ? '分析市场趋势、竞争对手及产品机会。' 
+                  : activeView === 'competitors'
+                  ? '选定竞品 ASIN，从 Listing、流量、产品矩阵三视角全盘对比。'
                   : activeView === 'insights'
                   ? '分析竞品评论，深度解析用户真实反馈与画像。'
                   : activeView === 'keywords'
@@ -1220,7 +1230,7 @@ export default function App() {
           data-annotate-anchor="workspace-scroll"
           className="flex-1 overflow-y-auto p-8"
         >
-          <PageQuickNav />
+          {activeView === 'market' && <PageQuickNav />}
           {!isDataLoaded && activeView === 'market' ? (
             <div className="h-full flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-700">
               <div className="text-center space-y-2">
@@ -1414,6 +1424,17 @@ export default function App() {
                 </div>
               </div>
               }
+
+              {activeView === 'competitors' && (
+                <div className="max-w-7xl mx-auto" data-annotate-anchor="competitors-root">
+                  <CompetitorHub
+                    products={products}
+                    marketplaceCode={marketplace.code}
+                    domain={marketplace.domain}
+                    preselectedAsins={selectedCompareAsins}
+                  />
+                </div>
+              )}
 
               {/* 有市场数据、或当前在用户洞察、或已有评论数据时保持挂载（后台打标不因切 Tab 中断） */}
               {(isDataLoaded || activeView === 'insights' || reviews.length > 0) && (

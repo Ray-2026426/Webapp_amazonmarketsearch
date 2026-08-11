@@ -133,16 +133,26 @@ async function mcpHttp(
   secretKey: string,
   init: { method?: string; body?: string; headers?: Record<string, string> }
 ): Promise<{ ok: boolean; status: number; text: string; sessionId?: string }> {
-  const res = await fetch(endpoint, {
-    method: init.method ?? 'POST',
-    headers: {
-      Accept: 'application/json, text/event-stream',
-      'Content-Type': 'application/json',
-      'secret-key': secretKey,
-      ...(init.headers ?? {}),
-    },
-    body: init.body,
-  });
+  let res: Response;
+  try {
+    res = await fetch(endpoint, {
+      method: init.method ?? 'POST',
+      headers: {
+        Accept: 'application/json, text/event-stream',
+        'Content-Type': 'application/json',
+        'secret-key': secretKey,
+        ...(init.headers ?? {}),
+      },
+      body: init.body,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      /Failed to fetch|NetworkError|Load failed/i.test(msg)
+        ? '网络请求失败（Failed to fetch）。请确认：① 已用 npm run dev 启动本应用；② MCP 地址栏留空（不要填官方网址，官方地址请走应用内代理）；③ Secret Key 正确。'
+        : msg
+    );
+  }
   return {
     ok: res.ok,
     status: res.status,
@@ -160,7 +170,7 @@ async function callSellerSpriteToolBrowser(
   const cfg = settings ?? loadMcpSettings();
   const secretKey = cfg.secretKey.trim();
   if (!secretKey) {
-    throw new Error('请先在「AI 设置 → MCP 数据」中填写卖家精灵 Secret Key');
+    throw new Error('请先在「设置 → MCP 数据」中填写卖家精灵 Secret Key');
   }
   const endpoint = getEffectiveMcpEndpoint(cfg);
   const rpcBody = {
@@ -242,16 +252,17 @@ async function callSellerSpriteToolBrowser(
 export async function getSellerSpriteStatus(): Promise<{ configured: boolean; message: string }> {
   const cfg = loadMcpSettings();
   if (cfg.secretKey.trim()) {
+    const viaProxy = !cfg.mcpUrl.trim() || /mcp\.sellersprite\.com/i.test(cfg.mcpUrl);
     return {
       configured: true,
-      message: cfg.mcpUrl.trim()
-        ? '已配置 MCP 密钥（自定义地址）。可直接抓取。'
-        : '已配置 MCP 密钥。将通过本应用安全代理连接卖家精灵。',
+      message: viaProxy
+        ? '已配置 MCP 密钥，将通过应用安全代理连接卖家精灵。'
+        : '已配置 MCP 密钥（自定义中转地址）。可直接抓取。',
     };
   }
   return {
     configured: false,
-    message: '尚未配置。请打开右上角「AI 设置 → MCP 数据」，填入卖家精灵 Secret Key。',
+    message: '尚未配置。请打开「设置 → MCP 数据」，填入卖家精灵 Secret Key（地址栏请留空）。',
   };
 }
 
@@ -449,4 +460,86 @@ export async function testSellerSpriteMcp(settings?: McpSettings | null): Promis
     const parsed = parseMcpHttpBody(res.text);
     throw new Error(parsed?.error?.message || res.text.slice(0, 200) || `验证失败 (${res.status})`);
   }
+}
+
+function unwrapData(payload: unknown): Record<string, unknown> {
+  if (!payload || typeof payload !== 'object') return {};
+  const o = payload as Record<string, unknown>;
+  if (o.data && typeof o.data === 'object') return o.data as Record<string, unknown>;
+  return o;
+}
+
+export interface AsinDetailSnapshot {
+  asin: string;
+  title: string;
+  brand: string;
+  price: number;
+  rating: number;
+  ratings: number;
+  imageUrl: string;
+  features: string[];
+  lqs: number;
+  fulfillment: string;
+  sellers: number;
+  categoryPath: string;
+  badge: Record<string, string>;
+  raw: Record<string, unknown>;
+}
+
+export async function fetchAsinDetailFromMcp(
+  asin: string,
+  marketplace: string
+): Promise<AsinDetailSnapshot> {
+  const payload = await callSellerSpriteToolBrowser('asin_detail', {
+    asin: asin.trim().toUpperCase(),
+    marketplace: normalizeMarketplaceCode(marketplace),
+  });
+  const d = unwrapData(payload);
+  const features = Array.isArray(d.features) ? d.features.map(String) : [];
+  return {
+    asin: String(d.asin || asin).toUpperCase(),
+    title: String(d.title || ''),
+    brand: String(d.brand || ''),
+    price: Number(d.price) || 0,
+    rating: Number(d.rating) || 0,
+    ratings: Number(d.ratings) || 0,
+    imageUrl: String(d.imageUrl || d.zoomImageUrl || ''),
+    features,
+    lqs: Number(d.lqs) || 0,
+    fulfillment: String(d.fulfillment || ''),
+    sellers: Number(d.sellers) || 0,
+    categoryPath: String(d.nodeLabelPath || ''),
+    badge: (d.badge && typeof d.badge === 'object' ? d.badge : {}) as Record<string, string>,
+    raw: d,
+  };
+}
+
+export interface TrafficStatSnapshot {
+  asin: string;
+  keywords: number;
+  ranks: number;
+  ads: number;
+  badgeCount: Record<string, number | null>;
+}
+
+export async function fetchTrafficStatFromMcp(
+  asin: string,
+  marketplace: string
+): Promise<TrafficStatSnapshot> {
+  const payload = await callSellerSpriteToolBrowser('traffic_keyword_stat', {
+    asin: asin.trim().toUpperCase(),
+    marketplace: normalizeMarketplaceCode(marketplace),
+  });
+  const d = unwrapData(payload);
+  const badge = (d.badgeCount && typeof d.badgeCount === 'object' ? d.badgeCount : {}) as Record<
+    string,
+    number | null
+  >;
+  return {
+    asin: String(d.asin || asin).toUpperCase(),
+    keywords: Number(d.keywords) || 0,
+    ranks: Number(d.ranks) || 0,
+    ads: Number(d.ads) || 0,
+    badgeCount: badge,
+  };
 }

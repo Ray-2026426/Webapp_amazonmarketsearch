@@ -38,12 +38,32 @@ export function loadMcpSettings(): McpSettings {
   return { secretKey: '', mcpUrl: '' };
 }
 
+/** 实际请求用的 MCP endpoint：官方地址一律走同源反代，避免浏览器跨域 Failed to fetch */
+export function isOfficialSellerSpriteMcpUrl(url: string): boolean {
+  const u = url.trim().toLowerCase().replace(/\/+$/, '');
+  if (!u) return true;
+  return /mcp\.sellersprite\.com/i.test(u);
+}
+
+export function getEffectiveMcpEndpoint(settings?: McpSettings | null): string {
+  const s = settings ?? loadMcpSettings();
+  const custom = s.mcpUrl.trim().replace(/\/+$/, '');
+  // 留空或填官方地址 → 走应用内代理（Vite/Vercel）
+  if (!custom || isOfficialSellerSpriteMcpUrl(custom)) {
+    return SELLERSPRITE_MCP_PROXY_PATH;
+  }
+  return custom;
+}
+
 export function saveMcpSettings(settings: McpSettings): void {
+  const rawUrl = settings.mcpUrl.trim();
+  // 官方地址存成空，避免下次再误走直连跨域
+  const mcpUrl = isOfficialSellerSpriteMcpUrl(rawUrl) ? '' : rawUrl;
   localStorage.setItem(
     MCP_KEY,
     JSON.stringify({
       secretKey: settings.secretKey.trim(),
-      mcpUrl: settings.mcpUrl.trim(),
+      mcpUrl,
     })
   );
 }
@@ -65,12 +85,4 @@ export function loadFeatureFlags(): AppFeatureFlags {
 
 export function saveFeatureFlags(flags: AppFeatureFlags): void {
   localStorage.setItem(FEATURES_KEY, JSON.stringify(flags));
-}
-
-/** 实际请求用的 MCP endpoint：自定义 URL 优先，否则走同源反代 */
-export function getEffectiveMcpEndpoint(settings?: McpSettings | null): string {
-  const s = settings ?? loadMcpSettings();
-  const custom = s.mcpUrl.trim().replace(/\/+$/, '');
-  if (custom) return custom;
-  return SELLERSPRITE_MCP_PROXY_PATH;
 }

@@ -66,7 +66,10 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
 
   const initialMcp = loadMcpSettings();
   const [mcpSecretKey, setMcpSecretKey] = useState(initialMcp.secretKey);
-  const [mcpUrl, setMcpUrl] = useState(initialMcp.mcpUrl);
+  // 官方地址显示为空，避免用户误以为要直连导致跨域
+  const [mcpUrl, setMcpUrl] = useState(
+    /mcp\.sellersprite\.com/i.test(initialMcp.mcpUrl) ? '' : initialMcp.mcpUrl
+  );
   const [isMcpTesting, setIsMcpTesting] = useState(false);
   const [mcpTestResult, setMcpTestResult] = useState<'ok' | 'fail' | null>(null);
 
@@ -235,9 +238,9 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white w-full max-w-3xl rounded-[24px] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
-        <div className="p-6 border-b border-black/5 flex items-center justify-between bg-[#f5f5f7]/50 shrink-0">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-3 sm:p-4">
+      <div className="bg-white w-full max-w-3xl rounded-[24px] shadow-2xl animate-in fade-in zoom-in-95 duration-200 h-[min(90vh,880px)] max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="p-5 sm:p-6 border-b border-black/5 flex items-center justify-between bg-[#f5f5f7]/50 shrink-0">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-indigo-600" />
             <h3 className="text-lg font-semibold text-[#1d1d1f]">设置</h3>
@@ -558,16 +561,29 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                   MCP 地址（可选）
                 </label>
                 <p className="text-xs text-[#86868b]">
-                  一般<strong>留空</strong>即可，系统会走本应用安全代理（推荐）。仅当你有自建中转时才填写完整地址。
-                  官方默认：<code className="bg-black/5 px-1 rounded">{DEFAULT_SELLERSPRITE_MCP_URL}</code>
+                  <strong>请保持留空</strong>。系统会自动走本应用安全代理，填写
+                  <code className="bg-black/5 px-1 rounded mx-0.5">{DEFAULT_SELLERSPRITE_MCP_URL}</code>
+                  反而会触发浏览器跨域报错（Failed to fetch）。只有自建中转时才填自定义地址。
                 </p>
                 <input
                   type="text"
                   value={mcpUrl}
                   onChange={(e) => { setMcpUrl(e.target.value); setMcpTestResult(null); }}
-                  placeholder="留空 = 使用应用内置代理"
+                  placeholder="留空（推荐）"
                   className="w-full px-4 py-2.5 bg-[#f5f5f7] border border-black/5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 font-mono"
                 />
+                {/mcp\.sellersprite\.com/i.test(mcpUrl) && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                    检测到官方地址。点下方「一键清空地址」后验证即可。
+                    <button
+                      type="button"
+                      className="ml-2 text-amber-900 font-semibold underline"
+                      onClick={() => { setMcpUrl(''); setMcpTestResult(null); }}
+                    >
+                      一键清空地址
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -598,7 +614,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
           {tab === 'prompts' && <AiPromptManager embedded />}
         </div>
 
-        <div className="p-6 border-t border-black/5 flex justify-end gap-3 shrink-0">
+        <div className="p-5 sm:p-6 border-t border-black/5 flex justify-end gap-3 shrink-0 bg-white relative z-10">
           <button
             type="button"
             onClick={onClose}
