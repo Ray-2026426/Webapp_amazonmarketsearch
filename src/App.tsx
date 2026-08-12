@@ -1063,7 +1063,7 @@ export default function App() {
           <aside className="w-64 bg-white border-r border-black/5 hidden md:flex flex-col">
         <div className="p-6 border-b border-black/5">
           <div className="flex items-center space-x-2.5 font-semibold text-lg text-[#1d1d1f]">
-            <img src="/logo.png?v=20260811" alt="AmzDev Tool" className="w-9 h-9 rounded-xl object-contain shadow-sm" />
+            <img src="/logo.png?v=20260812" alt="AmzDev Tool" className="w-9 h-9 rounded-xl object-contain shadow-sm" />
             <span>AmzDev Tool</span>
           </div>
         </div>

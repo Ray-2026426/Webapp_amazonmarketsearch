@@ -14,6 +14,7 @@ import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { SecondaryReportPage } from './SecondaryReportPage';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend, PieChart, Pie } from 'recharts';
 
 interface TagLibrary {
@@ -350,6 +351,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
   const [deepReportOpen, setDeepReportOpen] = useState(false);
   const [journeyReportRaw, setJourneyReportRaw] = useState<string | null>(null);
   const [journeyRows, setJourneyRows] = useState<JourneyRow[]>([]);
+  const [journeyOpen, setJourneyOpen] = useState(false);
   const [isJourneyLoading, setIsJourneyLoading] = useState(false);
   /** 每成功拉取一次旅程数据 +1，强制整段旅程 UI 重挂载，避免与 Recharts 并发提交 DOM 时 insertBefore 崩溃 */
   const [journeyMountId, setJourneyMountId] = useState(0);
@@ -904,6 +906,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
       }
       setJourneyRows(rows);
       setJourneyMountId((n) => n + 1);
+      setJourneyOpen(true);
       if (rows.length === 0 && trimmed.length > 80) {
         toast.warning('AI 返回内容未能解析为旅程表，已展示原文。可缩小筛选范围或在 AI 设置中恢复「VOC Step4」默认提示后重试。');
       }
@@ -1669,7 +1672,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                     <div className="p-2 bg-indigo-100 rounded-xl"><Sparkles className="w-4 h-4 text-indigo-600"/></div>
                     <div>
                       <CardTitle className="text-sm font-bold">AI 深度洞察报告</CardTitle>
-                      <p className="text-xs text-[#86868b] mt-0.5">生成后在独立页面查看，不挤占当前分析区</p>
+                      <p className="text-xs text-[#86868b] mt-0.5">生成后在独立阅读页查看（全屏白紫风格，无旁边虚化）</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1695,128 +1698,161 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                   <FileText className="w-12 h-12 mb-3 text-zinc-200"/>
                   <p className="text-sm text-center">
                     {deepReport
-                      ? '报告已生成。点击右上角「查看报告」打开独立阅读页。'
-                      : '点击「生成报告」，AI 将基于当前筛选评论生成深度洞察，并在独立页面打开。'}
+                      ? '报告已生成。点击「查看报告」打开独立阅读页。'
+                      : '点击「生成报告」，AI 将基于当前筛选评论生成深度洞察。'}
                   </p>
                 </div>
               </CardContent>
             </Card>
 
             {deepReportOpen && deepReport && (
-              <div className="fixed inset-0 z-[80] bg-[#f5f5f7] flex flex-col animate-in fade-in">
-                <div className="shrink-0 bg-white/90 backdrop-blur border-b border-black/5 px-6 py-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="p-2 bg-indigo-100 rounded-xl shrink-0"><Sparkles className="w-4 h-4 text-indigo-600"/></div>
-                    <div className="min-w-0">
-                      <h2 className="text-lg font-bold text-[#1d1d1f] truncate">AI 深度洞察报告</h2>
-                      <p className="text-xs text-[#86868b]">基于当前筛选评论 · 独立阅读页</p>
-                    </div>
+              <SecondaryReportPage
+                title="AI 深度洞察报告"
+                subtitle="基于当前筛选评论 · 独立阅读页"
+                icon={<Sparkles className="w-5 h-5" />}
+                onClose={() => setDeepReportOpen(false)}
+                onRegenerate={() => void runDeepReport()}
+                regenerating={isReportLoading}
+              >
+                {deepReportHtml ? (
+                  <div
+                    className="text-[15px] leading-[1.8] text-[#3f3f46] [&_h1]:text-[22px] [&_h1]:font-semibold [&_h1]:text-indigo-950 [&_h1]:mb-4 [&_h2]:text-[18px] [&_h2]:font-semibold [&_h2]:text-indigo-900 [&_h2]:mt-8 [&_h2]:mb-3 [&_h3]:mt-5 [&_h3]:mb-2 [&_p]:mb-3 [&_li]:mb-1.5"
+                    dangerouslySetInnerHTML={{ __html: deepReportHtml }}
+                  />
+                ) : (
+                  <div className="prose prose-base max-w-none text-[#3f3f46] leading-relaxed prose-headings:font-semibold prose-headings:text-indigo-950 prose-p:my-3">
+                    <Markdown remarkPlugins={[remarkGfm]}>{deepReportMarkdown}</Markdown>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={runDeepReport}
-                      disabled={isReportLoading}
-                      className="px-3 py-2 rounded-xl border border-black/10 text-sm font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] disabled:opacity-50"
-                    >
-                      {isReportLoading ? '生成中…' : '重新生成'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeepReportOpen(false)}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold"
-                    >
-                      <X className="w-4 h-4" />
-                      关闭
-                    </button>
-                  </div>
-                </div>
-                <div className="flex-1 overflow-y-auto p-6 md:p-10">
-                  <div className="max-w-3xl mx-auto bg-white rounded-3xl border border-black/5 shadow-sm p-6 md:p-10">
-                    {deepReportHtml ? (
-                      <div dangerouslySetInnerHTML={{ __html: deepReportHtml }} />
-                    ) : (
-                      <div className="prose prose-base max-w-none text-[#3f3f46] leading-relaxed prose-headings:font-semibold prose-headings:text-indigo-950">
-                        <Markdown remarkPlugins={[remarkGfm]}>{deepReportMarkdown}</Markdown>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+                )}
+              </SecondaryReportPage>
             )}
 
             <Card className="rounded-3xl border-black/5 shadow-sm overflow-hidden w-full">
-              <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 border-b border-black/5">
-                <div className="flex items-center justify-between gap-3">
+              <CardHeader className="bg-gradient-to-r from-indigo-50 to-violet-50 border-b border-black/5">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-amber-100 rounded-xl"><Route className="w-4 h-4 text-amber-700"/></div>
-                    <div><CardTitle className="text-sm font-bold">用户旅程 5W1H 表</CardTitle><p className="text-xs text-[#86868b] mt-0.5">严格按评论事实生成；原句分行展示并尽量匹配晒图（整行宽展示）</p></div>
+                    <div className="p-2 bg-violet-100 rounded-xl"><Route className="w-4 h-4 text-violet-700"/></div>
+                    <div>
+                      <CardTitle className="text-sm font-bold">用户旅程 5W1H</CardTitle>
+                      <p className="text-xs text-[#86868b] mt-0.5">生成后在独立阅读页展开；原句分行并尽量匹配晒图</p>
+                    </div>
                   </div>
-                  <button onClick={runJourneyReport} disabled={isJourneyLoading} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 disabled:opacity-60">
-                    {isJourneyLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Route className="w-4 h-4"/>}
-                    {isJourneyLoading ? '生成中...' : '生成旅程表'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {(journeyRows.length > 0 || journeyReportRaw) && (
+                      <button
+                        type="button"
+                        onClick={() => setJourneyOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-xl text-sm font-semibold hover:bg-indigo-50"
+                      >
+                        <Route className="w-4 h-4"/>
+                        查看旅程
+                      </button>
+                    )}
+                    <button onClick={runJourneyReport} disabled={isJourneyLoading} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60">
+                      {isJourneyLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Route className="w-4 h-4"/>}
+                      {isJourneyLoading ? '生成中...' : journeyRows.length > 0 ? '重新生成' : '生成旅程表'}
+                    </button>
+                  </div>
                 </div>
               </CardHeader>
-              <CardContent className="p-4">
-                {journeyRows.length > 0 ? (
-                  <div key={`journey-parsed-${journeyMountId}`} className="space-y-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] text-[#86868b] mr-1">呈现方式</span>
+              <CardContent className="p-6">
+                <div className="flex flex-col items-center justify-center py-8 text-[#86868b]">
+                  <Route className="w-12 h-12 mb-3 text-zinc-200"/>
+                  <p className="text-sm text-center">
+                    {journeyRows.length > 0 || journeyReportRaw
+                      ? '旅程表已生成。点击「查看旅程」打开宽屏阅读页。'
+                      : '点击「生成旅程表」，AI 会按 5W1H 结构输出用户旅程，并在独立页面展示。'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {journeyOpen && (journeyRows.length > 0 || journeyReportRaw) && (
+              <SecondaryReportPage
+                title="用户旅程 5W1H"
+                subtitle="严格按评论事实 · 宽屏排版"
+                icon={<Route className="w-5 h-5" />}
+                onClose={() => setJourneyOpen(false)}
+                onRegenerate={() => void runJourneyReport()}
+                regenerating={isJourneyLoading}
+                extraActions={
+                  journeyRows.length > 0 ? (
+                    <div className="hidden sm:flex items-center gap-1 rounded-full bg-indigo-50 p-1 border border-indigo-100">
                       <button
                         type="button"
                         onClick={() => setJourneyViewMode('timeline')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${journeyViewMode === 'timeline' ? 'bg-amber-600 text-white' : 'bg-[#f5f5f7] text-[#424245] hover:bg-black/5'}`}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${journeyViewMode === 'timeline' ? 'bg-indigo-600 text-white' : 'text-indigo-700 hover:bg-white'}`}
                       >
-                        旅程时间线（推荐）
+                        时间线
                       </button>
                       <button
                         type="button"
                         onClick={() => setJourneyViewMode('table')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${journeyViewMode === 'table' ? 'bg-amber-600 text-white' : 'bg-[#f5f5f7] text-[#424245] hover:bg-black/5'}`}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${journeyViewMode === 'table' ? 'bg-indigo-600 text-white' : 'text-indigo-700 hover:bg-white'}`}
                       >
-                        原始表格
+                        表格
+                      </button>
+                    </div>
+                  ) : null
+                }
+              >
+                {journeyRows.length > 0 ? (
+                  <div key={`journey-parsed-${journeyMountId}`} className="space-y-6">
+                    <div className="sm:hidden flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setJourneyViewMode('timeline')}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold ${journeyViewMode === 'timeline' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700'}`}
+                      >
+                        时间线
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setJourneyViewMode('table')}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold ${journeyViewMode === 'table' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700'}`}
+                      >
+                        表格
                       </button>
                     </div>
                     {journeyViewMode === 'timeline' ? (
-                      <div className="space-y-0 max-h-[min(560px,70vh)] overflow-y-auto pr-1">
+                      <div className="space-y-0">
                         {journeyRows.map((r, i) => (
-                          <div key={`jm-${journeyMountId}-${i}-${r.stage.slice(0, 32)}`} className="relative pl-7 pb-6 last:pb-2 border-l-2 border-amber-200/90 ml-2">
-                            <div className="absolute left-[-7px] top-1.5 w-3 h-3 rounded-full bg-amber-500 border-2 border-white shadow-sm" />
-                            <div className="rounded-2xl border border-black/5 bg-gradient-to-br from-white to-amber-50/40 p-4 shadow-sm">
-                              <div className="flex flex-wrap items-baseline gap-2 mb-3">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800/90 bg-amber-100/80 px-2 py-0.5 rounded-md">阶段</span>
-                                <h4 className="text-sm font-bold text-[#1d1d1f] leading-snug">{r.stage}</h4>
+                          <div key={`jm-${journeyMountId}-${i}-${r.stage.slice(0, 32)}`} className="relative pl-8 pb-10 last:pb-2 border-l-2 border-indigo-200 ml-3">
+                            <div className="absolute left-[-9px] top-2 w-4 h-4 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 border-2 border-white shadow-sm shadow-indigo-200" />
+                            <div className="rounded-[22px] border border-indigo-50 bg-gradient-to-br from-white to-indigo-50/40 p-5 sm:p-6 shadow-[0_12px_30px_-20px_rgba(79,70,229,0.45)]">
+                              <div className="flex flex-wrap items-baseline gap-2 mb-4">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800 bg-indigo-100/90 px-2.5 py-1 rounded-full">阶段 {i + 1}</span>
+                                <h4 className="text-base sm:text-lg font-semibold text-[#1d1d1f] leading-snug">{r.stage}</h4>
                               </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
                                 {[
-                                  ['Who', r.who],
-                                  ['Where', r.where],
-                                  ['When', r.when],
-                                  ['What', r.what],
-                                  ['Why', r.why],
-                                  ['How', r.how],
+                                  ['Who 谁', r.who],
+                                  ['Where 在哪', r.where],
+                                  ['When 何时', r.when],
+                                  ['What 做了什么', r.what],
+                                  ['Why 为何', r.why],
+                                  ['How 怎么做', r.how],
                                 ].map(([k, v]) => (
-                                  <div key={String(k)} className="rounded-xl bg-white/90 border border-black/5 p-2.5 min-h-[52px]">
-                                    <div className="text-[10px] font-semibold text-[#86868b]">{k}</div>
-                                    <div className="text-xs text-[#424245] mt-1 leading-relaxed">{v}</div>
+                                  <div key={String(k)} className="rounded-2xl bg-white border border-indigo-50 px-3.5 py-3 min-h-[72px]">
+                                    <div className="text-[11px] font-semibold text-indigo-500">{k}</div>
+                                    <div className="text-sm text-[#424245] mt-1.5 leading-relaxed">{v}</div>
                                   </div>
                                 ))}
                               </div>
-                              <div className="rounded-xl border-l-4 border-indigo-400 bg-indigo-50/60 pl-3 pr-3 py-2.5 mb-3">
-                                <div className="text-[10px] font-semibold text-indigo-800 mb-2">代表评论原句（逐条）</div>
+                              <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 px-4 py-3.5 mb-4">
+                                <div className="text-[11px] font-semibold text-indigo-800 mb-2.5">代表评论原句</div>
                                 <div className="space-y-3">
                                   {splitJourneyQuoteLines(r.quote).map((line, qi) => {
                                     const qKey = `jq-${i}-${qi}`;
                                     const matched = findReviewForQuoteLine(line, filteredReviews);
                                     return (
-                                      <div key={qKey} className="rounded-lg border border-indigo-100/90 bg-white/70 p-3">
-                                        <p className="text-sm text-[#1d1d1f] leading-relaxed whitespace-pre-wrap">{line}</p>
+                                      <div key={qKey} className="rounded-xl border border-white bg-white/90 p-3.5 shadow-sm">
+                                        <p className="text-[15px] text-[#1d1d1f] leading-relaxed whitespace-pre-wrap">{line}</p>
                                         {matched?.imageUrls && matched.imageUrls.length > 0 ? (
-                                          <div className="mt-2 flex flex-wrap gap-2">
+                                          <div className="mt-3 flex flex-wrap gap-2">
                                             {matched.imageUrls.slice(0, 8).map((url, uidx) => (
                                               <button key={`${qKey}-img-${uidx}`} type="button" onClick={() => setMediaPreview({ type: 'image', url })} className="block">
-                                                <img src={url} alt="" loading="lazy" decoding="async" className="h-16 w-16 rounded-lg object-cover border border-black/5" />
+                                                <img src={url} alt="" loading="lazy" decoding="async" className="h-20 w-20 rounded-xl object-cover border border-indigo-50" />
                                               </button>
                                             ))}
                                           </div>
@@ -1824,7 +1860,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                                         {matched?.videoUrls && matched.videoUrls.length > 0 ? (
                                           <div className="mt-2 flex flex-wrap gap-2">
                                             {matched.videoUrls.slice(0, 3).map((url, uidx) => (
-                                              <button key={`${qKey}-v-${uidx}`} type="button" onClick={() => setMediaPreview({ type: 'video', url })} className="text-xs px-2 py-1 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200">
+                                              <button key={`${qKey}-v-${uidx}`} type="button" onClick={() => setMediaPreview({ type: 'video', url })} className="text-xs px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100">
                                                 视频 {uidx + 1}
                                               </button>
                                             ))}
@@ -1833,27 +1869,27 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                                         <button
                                           type="button"
                                           onClick={() => void translateJourneyQuoteLine(qKey, line)}
-                                          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                                          className="mt-2.5 inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
                                         >
                                           <Languages className="h-3.5 w-3.5" />
                                           {journeyQuoteTrLoading === qKey ? '翻译中…' : journeyQuoteTr[qKey] ? (journeyQuoteTrShow[qKey] ? '收起译文' : '查看译文') : '译为中文'}
                                         </button>
                                         {journeyQuoteTr[qKey] && journeyQuoteTrShow[qKey] ? (
-                                          <p className="mt-2 text-sm text-[#3a3a3c] leading-relaxed whitespace-pre-wrap rounded-lg border border-black/5 bg-white/95 p-2">{journeyQuoteTr[qKey]}</p>
+                                          <p className="mt-2 text-sm text-[#3a3a3c] leading-relaxed whitespace-pre-wrap rounded-xl border border-indigo-50 bg-[#faf9ff] p-2.5">{journeyQuoteTr[qKey]}</p>
                                         ) : null}
                                       </div>
                                     );
                                   })}
                                 </div>
                               </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3">
-                                  <div className="text-[10px] font-semibold text-rose-800">当前方案劣势</div>
-                                  <p className="text-xs text-rose-900 mt-1 leading-relaxed">{r.weakness}</p>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="rounded-2xl border border-rose-100 bg-rose-50/70 p-4">
+                                  <div className="text-[11px] font-semibold text-rose-800">当前方案劣势</div>
+                                  <p className="text-sm text-rose-900 mt-1.5 leading-relaxed">{r.weakness}</p>
                                 </div>
-                                <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3">
-                                  <div className="text-[10px] font-semibold text-emerald-800">可能的改进方案</div>
-                                  <p className="text-xs text-emerald-900 mt-1 leading-relaxed">{r.improvement}</p>
+                                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+                                  <div className="text-[11px] font-semibold text-emerald-800">可能的改进方案</div>
+                                  <p className="text-sm text-emerald-900 mt-1.5 leading-relaxed">{r.improvement}</p>
                                 </div>
                               </div>
                             </div>
@@ -1861,45 +1897,45 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                         ))}
                       </div>
                     ) : (
-                      <div className="overflow-auto max-h-[min(560px,70vh)] border border-black/5 rounded-xl">
-                        <table className="min-w-[1000px] w-full text-xs">
-                          <thead className="bg-[#f5f5f7] sticky top-0 z-10">
-                            <tr className="text-left text-[#1d1d1f]">
-                              <th className="px-3 py-2 border-b border-black/5">阶段</th>
-                              <th className="px-3 py-2 border-b border-black/5">Who</th>
-                              <th className="px-3 py-2 border-b border-black/5">Where</th>
-                              <th className="px-3 py-2 border-b border-black/5">When</th>
-                              <th className="px-3 py-2 border-b border-black/5">What</th>
-                              <th className="px-3 py-2 border-b border-black/5">Why</th>
-                              <th className="px-3 py-2 border-b border-black/5">How</th>
-                              <th className="px-3 py-2 border-b border-black/5">代表评论原句</th>
-                              <th className="px-3 py-2 border-b border-black/5">当前方案劣势</th>
-                              <th className="px-3 py-2 border-b border-black/5">可能的改进方案</th>
+                      <div className="overflow-auto border border-indigo-50 rounded-2xl">
+                        <table className="min-w-[1100px] w-full text-sm">
+                          <thead className="bg-indigo-50/80 sticky top-0 z-10">
+                            <tr className="text-left text-indigo-950">
+                              <th className="px-3 py-3 border-b border-indigo-100">阶段</th>
+                              <th className="px-3 py-3 border-b border-indigo-100">Who</th>
+                              <th className="px-3 py-3 border-b border-indigo-100">Where</th>
+                              <th className="px-3 py-3 border-b border-indigo-100">When</th>
+                              <th className="px-3 py-3 border-b border-indigo-100">What</th>
+                              <th className="px-3 py-3 border-b border-indigo-100">Why</th>
+                              <th className="px-3 py-3 border-b border-indigo-100">How</th>
+                              <th className="px-3 py-3 border-b border-indigo-100">代表评论原句</th>
+                              <th className="px-3 py-3 border-b border-indigo-100">劣势</th>
+                              <th className="px-3 py-3 border-b border-indigo-100">改进</th>
                             </tr>
                           </thead>
                           <tbody>
                             {journeyRows.map((r, i) => (
-                              <tr key={`jmt-${journeyMountId}-${i}-${r.stage.slice(0, 24)}`} className="align-top odd:bg-white even:bg-[#fcfcfd]">
-                                <td className="px-3 py-2 border-b border-black/5 font-semibold text-[#1d1d1f]">{r.stage}</td>
-                                <td className="px-3 py-2 border-b border-black/5 text-[#424245]">{r.who}</td>
-                                <td className="px-3 py-2 border-b border-black/5 text-[#424245]">{r.where}</td>
-                                <td className="px-3 py-2 border-b border-black/5 text-[#424245]">{r.when}</td>
-                                <td className="px-3 py-2 border-b border-black/5 text-[#424245]">{r.what}</td>
-                                <td className="px-3 py-2 border-b border-black/5 text-[#424245]">{r.why}</td>
-                                <td className="px-3 py-2 border-b border-black/5 text-[#424245]">{r.how}</td>
-                                <td className="px-3 py-2 border-b border-black/5 text-[#1d1d1f] max-w-[420px]">
+                              <tr key={`jmt-${journeyMountId}-${i}-${r.stage.slice(0, 24)}`} className="align-top odd:bg-white even:bg-[#faf9ff]">
+                                <td className="px-3 py-3 border-b border-indigo-50 font-semibold text-[#1d1d1f]">{r.stage}</td>
+                                <td className="px-3 py-3 border-b border-indigo-50 text-[#424245]">{r.who}</td>
+                                <td className="px-3 py-3 border-b border-indigo-50 text-[#424245]">{r.where}</td>
+                                <td className="px-3 py-3 border-b border-indigo-50 text-[#424245]">{r.when}</td>
+                                <td className="px-3 py-3 border-b border-indigo-50 text-[#424245]">{r.what}</td>
+                                <td className="px-3 py-3 border-b border-indigo-50 text-[#424245]">{r.why}</td>
+                                <td className="px-3 py-3 border-b border-indigo-50 text-[#424245]">{r.how}</td>
+                                <td className="px-3 py-3 border-b border-indigo-50 text-[#1d1d1f] max-w-[420px]">
                                   <div className="space-y-3">
                                     {splitJourneyQuoteLines(r.quote).map((line, qi) => {
                                       const qKey = `jq-${i}-${qi}`;
                                       const matched = findReviewForQuoteLine(line, filteredReviews);
                                       return (
-                                        <div key={qKey} className="border-b border-black/5 pb-2 last:border-0 last:pb-0">
+                                        <div key={qKey} className="border-b border-indigo-50 pb-2 last:border-0 last:pb-0">
                                           <p className="whitespace-pre-wrap leading-relaxed">{line}</p>
                                           {matched?.imageUrls && matched.imageUrls.length > 0 ? (
                                             <div className="mt-1.5 flex flex-wrap gap-1.5">
                                               {matched.imageUrls.slice(0, 6).map((url, uidx) => (
                                                 <button key={`${qKey}-im-${uidx}`} type="button" onClick={() => setMediaPreview({ type: 'image', url })} className="block">
-                                                  <img src={url} alt="" loading="lazy" decoding="async" className="h-12 w-12 rounded-md object-cover border border-black/5" />
+                                                  <img src={url} alt="" loading="lazy" decoding="async" className="h-12 w-12 rounded-md object-cover border border-indigo-50" />
                                                 </button>
                                               ))}
                                             </div>
@@ -1909,15 +1945,15 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                                             {journeyQuoteTrLoading === qKey ? '…' : journeyQuoteTr[qKey] ? (journeyQuoteTrShow[qKey] ? '收起' : '译文') : '翻译'}
                                           </button>
                                           {journeyQuoteTr[qKey] && journeyQuoteTrShow[qKey] ? (
-                                            <p className="mt-1 text-[11px] text-[#3a3a3c] bg-[#fafafa] rounded p-1.5">{journeyQuoteTr[qKey]}</p>
+                                            <p className="mt-1 text-[11px] text-[#3a3a3c] bg-[#faf9ff] rounded p-1.5">{journeyQuoteTr[qKey]}</p>
                                           ) : null}
                                         </div>
                                       );
                                     })}
                                   </div>
                                 </td>
-                                <td className="px-3 py-2 border-b border-black/5 text-rose-700">{r.weakness}</td>
-                                <td className="px-3 py-2 border-b border-black/5 text-emerald-700">{r.improvement}</td>
+                                <td className="px-3 py-3 border-b border-indigo-50 text-rose-700">{r.weakness}</td>
+                                <td className="px-3 py-3 border-b border-indigo-50 text-emerald-700">{r.improvement}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1925,22 +1961,17 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                       </div>
                     )}
                   </div>
-                ) : journeyReportRaw ? (
-                  <div key={`journey-raw-${journeyMountId}`} className="space-y-3">
-                    <div className="rounded-lg border border-amber-200/90 bg-amber-50/90 px-3 py-2.5 text-xs text-amber-950 leading-relaxed">
-                      <span className="font-semibold text-amber-900">AI 返回格式不规范，无法生成结构化旅程表</span>
-                      。建议：① 在「AI 设置 → AI 提示词」找到「VOC Step4: 用户旅程5W1H」点击 <strong>恢复默认</strong>（已优化为 JSON 输出）；② 缩小筛选条件后重新生成。下方保留 AI 原文以便排查。
-                    </div>
-                    <pre className="max-h-[min(420px,60vh)] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-black/5 bg-[#fafafa] p-4 text-xs leading-relaxed text-[#424245]">{journeyReportRaw}</pre>
-                  </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-12 text-[#86868b]">
-                    <Route className="w-12 h-12 mb-3 text-zinc-200"/>
-                    <p className="text-sm text-center">点击「生成旅程表」，AI 会按你指定的 5W1H 结构输出用户旅程阶段表</p>
+                  <div key={`journey-raw-${journeyMountId}`} className="space-y-4">
+                    <div className="rounded-2xl border border-amber-200/90 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 leading-relaxed">
+                      <span className="font-semibold text-amber-900">AI 返回格式不规范，无法生成结构化旅程表</span>
+                      。建议：① 在「AI 设置 → AI 提示词」找到「VOC Step4: 用户旅程5W1H」点击恢复默认；② 缩小筛选条件后重新生成。下方保留原文。
+                    </div>
+                    <pre className="overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-indigo-50 bg-[#faf9ff] p-5 text-sm leading-relaxed text-[#424245]">{journeyReportRaw}</pre>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+              </SecondaryReportPage>
+            )}
           </div>
 
           {/* Reviews List */}

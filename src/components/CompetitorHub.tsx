@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Crosshair, Loader2, Image as ImageIcon, Activity, Grid3X3, Plus, X, Upload,
   ChevronRight, ChevronLeft, Star, Package, ExternalLink, RefreshCw, Sparkles, HelpCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
+import { SecondaryReportPage } from './SecondaryReportPage';
 import {
   SELLERSPRITE_MARKETPLACES,
   normalizeMarketplaceCode,
@@ -68,14 +70,50 @@ function starsLabel(rating: number): string {
   return `${rating.toFixed(1)} ★`;
 }
 
+/** 用 fixed + portal，避免表格 overflow 把气泡裁掉 */
 function Tip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const place = () => {
+    const el = btnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const width = 224;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+    const top = r.bottom + 6;
+    setPos({ top, left });
+    setOpen(true);
+  };
+
   return (
-    <span className="relative inline-flex group/tip align-middle ml-0.5">
-      <HelpCircle className="w-3.5 h-3.5 text-[#c7c7cc] cursor-help" />
-      <span className="pointer-events-none absolute z-20 left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-56 rounded-lg bg-[#1d1d1f] text-white text-[11px] leading-relaxed px-2.5 py-2 opacity-0 group-hover/tip:opacity-100 transition-opacity shadow-lg">
-        {text}
-      </span>
-    </span>
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        title={text}
+        aria-label={text}
+        className="inline-flex align-middle ml-0.5 text-[#c7c7cc] hover:text-indigo-600 focus:outline-none focus-visible:text-indigo-600"
+        onMouseEnter={place}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={place}
+        onBlur={() => setOpen(false)}
+      >
+        <HelpCircle className="w-3.5 h-3.5" />
+      </button>
+      {open &&
+        createPortal(
+          <div
+            role="tooltip"
+            className="fixed z-[9999] w-56 rounded-lg bg-[#1d1d1f] text-white text-[11px] leading-relaxed px-2.5 py-2 shadow-lg pointer-events-none"
+            style={{ top: pos.top, left: pos.left }}
+          >
+            {text}
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 
@@ -172,8 +210,9 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   const [matrices, setMatrices] = useState<ParentMatrixSnapshot[]>([]);
   const [brandSiblings, setBrandSiblings] = useState<BrandSiblingRow[]>([]);
 
-  const [aiLoading, setAiLoading] = useState<ResultTab | null>(null);
-  const [aiHtml, setAiHtml] = useState<Partial<Record<ResultTab, string>>>({});
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiReportHtml, setAiReportHtml] = useState('');
+  const [aiReportOpen, setAiReportOpen] = useState(false);
 
   // 大盘勾选变化时同步进对比池
   useEffect(() => {
@@ -279,7 +318,8 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     setLoading(true);
     setProgress('开始对比分析…');
     setHasResult(false);
-    setAiHtml({});
+    setAiReportHtml('');
+    setAiReportOpen(false);
     try {
       const detailList: AsinDetailSnapshot[] = [];
       const trafficList: TrafficStatSnapshot[] = [];
@@ -345,7 +385,7 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     }
   };
 
-  const runAiForTab = async (tab: ResultTab) => {
+  const runFullAiReport = async () => {
     const cfg = loadAiSettings();
     if (!cfg?.apiKey) {
       toast.error('请先在「设置」配置 AI API Key');
@@ -355,60 +395,56 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
       toast.error('请先完成对比分析');
       return;
     }
-    setAiLoading(tab);
+    setAiLoading(true);
     try {
-      const promptId =
-        tab === 'listing' ? 'competitor_listing' :
-        tab === 'traffic' ? 'competitor_traffic' :
-        'competitor_matrix';
-      const base = getPrompt(promptId);
+      const base = getPrompt('competitor_full_report');
 
-      let dataBlock = '';
-      if (tab === 'listing') {
-        dataBlock = details.map((d) => `### ${d.asin} | ${d.brand}
+      const listingBlock = details.map((d) => `### ${d.asin} | ${d.brand}
 标题: ${d.title}
 价格: ${d.price} | 评分: ${d.rating}(${d.ratings}) | LQS: ${d.lqs}
 规格: ${d.skuList.join(' / ') || '-'}
 五点: ${d.features.slice(0, 5).join(' | ')}
 徽章: AC=${d.badge.amazonChoice} BS=${d.badge.bestSeller} A+=${d.badge.ebc} 视频=${d.badge.video}
 配送: ${d.fulfillment} ${d.sellerName}`).join('\n\n');
-      } else if (tab === 'traffic') {
-        dataBlock =
-          trafficStats.map((t) => {
-            const dep = t.keywords > 0 ? ((t.ads / t.keywords) * 100).toFixed(1) : '0';
-            return `${t.asin}: 流量词${t.keywords} 有排名${t.ranks} 广告词${t.ads} 广告依赖度${dep}%`;
-          }).join('\n') +
-          '\n\n' +
-          selected.map((asin) => {
-            const kws = (topKeywords[asin] || []).slice(0, 12);
-            return `## ${asin}\n` + kws.map((k) =>
-              `- ${k.keyword} | 流量占比${fmtPct(k.trafficPercentage)} | ABA#${k.abaRank || '-'} | 自然${fmtOrganic(k)} | 广告${fmtAd(k)} | 自然流量比${fmtPct(k.naturalRatio)}`
-            ).join('\n');
-          }).join('\n\n');
-      } else {
-        dataBlock =
-          matrices.map((m) => {
-            const kids = m.children.map((c) => {
-              const p = productMap.get(c.asin);
-              return `${c.asin}${c.isAnchor ? '(锚点)' : ''} ${c.attribute} $${c.price || '-'} 大盘月销${p?.monthlySales ?? '-'}`;
-            }).join('\n');
-            return `## ${m.brand} 父体 ${m.parentAsin}\n${kids}`;
-          }).join('\n\n') +
-          '\n\n## 同品牌其他链接（大盘）\n' +
-          brandSiblings.map((b) =>
-            `### ${b.brand}\n` + b.items.slice(0, 15).map((p) =>
-              `${p.asin} $${p.price} 月销${p.monthlySales} 评${p.reviewCount} BSR#${p.subBsr || '-'} ${p.title.slice(0, 60)}`
-            ).join('\n')
-          ).join('\n\n');
-      }
 
+      const trafficBlock =
+        trafficStats.map((t) => {
+          const dep = t.keywords > 0 ? ((t.ads / t.keywords) * 100).toFixed(1) : '0';
+          return `${t.asin}: 流量词${t.keywords} 有排名${t.ranks} 广告词${t.ads} 广告依赖度${dep}%`;
+        }).join('\n') +
+        '\n\n' +
+        selected.map((asin) => {
+          const kws = (topKeywords[asin] || []).slice(0, 12);
+          return `## ${asin}\n` + kws.map((k) =>
+            `- ${k.keyword} | 流量占比${fmtPct(k.trafficPercentage)} | ABA#${k.abaRank || '-'} | 自然${fmtOrganic(k)} | 广告${fmtAd(k)} | 自然流量比${fmtPct(k.naturalRatio)}`
+          ).join('\n');
+        }).join('\n\n');
+
+      const matrixBlock =
+        matrices.map((m) => {
+          const kids = m.children.map((c) => {
+            const p = productMap.get(c.asin);
+            return `${c.asin}${c.isAnchor ? '(锚点)' : ''} ${c.attribute} $${c.price || '-'} 大盘月销${p?.monthlySales ?? '-'}`;
+          }).join('\n');
+          return `## ${m.brand} 父体 ${m.parentAsin}\n${kids}`;
+        }).join('\n\n') +
+        '\n\n## 同品牌其他链接（大盘）\n' +
+        brandSiblings.map((b) =>
+          `### ${b.brand}\n` + b.items.slice(0, 15).map((p) =>
+            `${p.asin} $${p.price} 月销${p.monthlySales} 评${p.reviewCount} BSR#${p.subBsr || '-'} ${p.title.slice(0, 60)}`
+          ).join('\n')
+        ).join('\n\n');
+
+      const dataBlock = `## Listing 对比数据\n${listingBlock}\n\n## 流量对比数据\n${trafficBlock}\n\n## 产品矩阵数据\n${matrixBlock}`;
       const text = await generateText(`${base}\n\n## 对比数据\n${dataBlock}`, cfg);
-      setAiHtml((prev) => ({ ...prev, [tab]: stripHtmlFence(text) }));
-      toast.success('AI 解析已生成');
+      const html = stripHtmlFence(text);
+      setAiReportHtml(html);
+      setAiReportOpen(true);
+      toast.success('竞品综合报告已生成');
     } catch (e) {
       toast.error(`AI 解析失败：${e instanceof Error ? e.message : ''}`);
     } finally {
-      setAiLoading(null);
+      setAiLoading(false);
     }
   };
 
@@ -426,7 +462,7 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
           竞品分析
         </h2>
         <p className="text-[#86868b] text-sm mt-1">
-          可从市场大盘 ASIN 列表勾选带入，或手动添加。完成后可分别对 Listing / 流量 / 产品矩阵做 AI 解析。
+          可从市场大盘 ASIN 列表勾选带入，或手动添加。对比完成后可一键生成「Listing + 流量 + 产品矩阵」综合 AI 报告。
         </p>
       </div>
 
@@ -607,13 +643,22 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                 <div className="flex gap-2 flex-wrap">
                   <button
                     type="button"
-                    onClick={() => runAiForTab(resultTab)}
-                    disabled={aiLoading !== null}
+                    onClick={() => void runFullAiReport()}
+                    disabled={aiLoading}
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
                   >
-                    {aiLoading === resultTab ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    {aiLoading === resultTab ? 'AI 解析中…' : 'AI 解析本页'}
+                    {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    {aiLoading ? '生成综合报告…' : 'AI 综合报告'}
                   </button>
+                  {aiReportHtml && (
+                    <button
+                      type="button"
+                      onClick={() => setAiReportOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-indigo-200 bg-white text-indigo-700 text-sm font-semibold hover:bg-indigo-50"
+                    >
+                      查看报告
+                    </button>
+                  )}
                   <button type="button" onClick={() => setStep(2)} className="px-3 py-2 rounded-xl border border-black/10 text-sm text-[#86868b]">
                     返回改图包
                   </button>
@@ -624,23 +669,6 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                 </div>
               </div>
               {progress && <div className="text-xs text-violet-700 bg-violet-50 rounded-lg px-3 py-2">{progress}</div>}
-
-              {aiHtml[resultTab] && (
-                <Card className="border-indigo-100">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-indigo-600" />
-                      AI 解析结果
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div
-                      className="max-h-[420px] overflow-y-auto rounded-xl border border-indigo-50 bg-indigo-50/20 p-4"
-                      dangerouslySetInnerHTML={{ __html: aiHtml[resultTab]! }}
-                    />
-                  </CardContent>
-                </Card>
-              )}
 
               {resultTab === 'listing' && (
                 <ListingBuyerView details={details} packs={packs} marketplace={marketplace} />
@@ -659,9 +687,25 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
           )}
         </div>
       )}
+
+      {aiReportOpen && aiReportHtml && (
+        <SecondaryReportPage
+          title="竞品 AI 综合报告"
+          subtitle={`对比 ${selected.join(' · ')} · Listing + 流量 + 产品矩阵`}
+          icon={<Sparkles className="w-5 h-5" />}
+          onClose={() => setAiReportOpen(false)}
+          onRegenerate={() => void runFullAiReport()}
+          regenerating={aiLoading}
+        >
+          <div
+            className="competitor-ai-report text-[15px] leading-[1.75] text-[#3f3f46] [&_h1]:text-[22px] [&_h1]:font-semibold [&_h1]:text-indigo-950 [&_h1]:mb-4 [&_h2]:text-[18px] [&_h2]:font-semibold [&_h2]:text-indigo-900 [&_h2]:mt-8 [&_h2]:mb-3 [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:text-indigo-800 [&_h3]:mt-5 [&_h3]:mb-2 [&_p]:mb-3 [&_ul]:mb-3 [&_li]:mb-1.5 [&_table]:w-full [&_table]:text-sm [&_th]:text-left [&_th]:py-2 [&_td]:py-2 [&_td]:border-b [&_td]:border-indigo-50"
+            dangerouslySetInnerHTML={{ __html: aiReportHtml }}
+          />
+        </SecondaryReportPage>
+      )}
     </div>
   );
-};
+}
 
 function ListingBuyerView({
   details,
@@ -799,7 +843,6 @@ function TrafficView({
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">流量结构对比</CardTitle>
-          <CardDescription>名词旁的「?」可悬停查看白话解释</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]">

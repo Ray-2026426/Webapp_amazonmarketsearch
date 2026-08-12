@@ -77,7 +77,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-20 h-20 mb-4">
-            <img src="/logo.png?v=20260811" alt="AmzDev Tool" className="w-20 h-20 rounded-2xl object-contain drop-shadow-xl" />
+            <img src="/logo.png?v=20260812" alt="AmzDev Tool" className="w-20 h-20 rounded-2xl object-contain drop-shadow-xl" />
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">AmzDev Tool</h1>
           <p className="text-indigo-300 text-sm mt-1">Amazon 市场洞察平台</p>
