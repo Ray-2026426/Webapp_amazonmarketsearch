@@ -1029,49 +1029,7 @@ function ParentMatrixView({
           <EmptyHint text="大盘里没找到同品牌其他 ASIN。可能是品牌名不一致，或大盘只有当前这几条。" />
         ) : (
           brandSiblings.map((b) => (
-            <Card key={b.brand}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">品牌：{b.brand}</CardTitle>
-                <CardDescription>
-                  当前锚点 {b.anchorAsin} · 父体 {b.currentParentAsin} · 大盘另有 {b.items.length} 条同品牌链接
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[800px]">
-                  <thead>
-                    <tr className="text-left text-xs text-[#86868b] border-b border-black/5">
-                      <th className="py-2 pr-2">ASIN</th>
-                      <th className="py-2 pr-2">标题</th>
-                      <th className="py-2 pr-2">价格</th>
-                      <th className="py-2 pr-2">月销量</th>
-                      <th className="py-2 pr-2">月销售额</th>
-                      <th className="py-2 pr-2">评分</th>
-                      <th className="py-2 pr-2">评论</th>
-                      <th className="py-2">小类BSR</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {b.items.map((p) => (
-                      <tr key={p.asin} className="border-b border-black/5">
-                        <td className="py-2 pr-2 font-mono text-xs">
-                          <div className="flex items-center gap-2">
-                            {p.image ? <img src={p.image} alt="" className="w-8 h-8 rounded object-cover border" /> : null}
-                            {p.asin}
-                          </div>
-                        </td>
-                        <td className="py-2 pr-2 text-xs max-w-[220px] truncate" title={p.title}>{p.title}</td>
-                        <td className="py-2 pr-2">${p.price.toFixed(2)}</td>
-                        <td className="py-2 pr-2 font-semibold">{fmtNum(p.monthlySales)}</td>
-                        <td className="py-2 pr-2">${fmtNum(Math.round(p.monthlyRevenue))}</td>
-                        <td className="py-2 pr-2">{p.rating || '-'}</td>
-                        <td className="py-2 pr-2">{fmtNum(p.reviewCount)}</td>
-                        <td className="py-2">{p.subBsr ? `#${fmtNum(p.subBsr)}` : '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
+            <BrandSiblingCard key={b.brand} row={b} />
           ))
         )}
       </div>
@@ -1085,79 +1043,214 @@ function ParentMatrixView({
         {!matrices.length ? (
           <EmptyHint text="暂无父体数据。" />
         ) : (
-          matrices.map((m) => {
-            const prices = m.children.map((c) => c.price).filter((p) => p > 0);
-            const priceMin = prices.length ? Math.min(...prices) : 0;
-            const priceMax = prices.length ? Math.max(...prices) : 0;
-            return (
-              <Card key={m.anchorAsin}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2 flex-wrap">
-                    <span>{m.brand || '未知品牌'}</span>
-                    <span className="text-xs font-normal text-[#86868b]">锚点 {m.anchorAsin}</span>
-                  </CardTitle>
-                  <CardDescription>
-                    父体 ASIN：<span className="font-mono text-[#1d1d1f]">{m.parentAsin || '-'}</span>
-                    {' · '}子体数 {m.variationCount || m.children.length}
-                    {priceMin > 0 && (
-                      <>
-                        {' · '}价格带 ${priceMin.toFixed(2)}
-                        {priceMax !== priceMin ? ` – $${priceMax.toFixed(2)}` : ''}
-                      </>
-                    )}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[880px]">
-                    <thead>
-                      <tr className="text-left text-xs text-[#86868b] border-b border-black/5">
-                        <th className="py-2 pr-2">子体 ASIN</th>
-                        <th className="py-2 pr-2">规格</th>
-                        <th className="py-2 pr-2">价格</th>
-                        <th className="py-2 pr-2">月销量</th>
-                        <th className="py-2 pr-2">月销售额</th>
-                        <th className="py-2 pr-2">评分</th>
-                        <th className="py-2 pr-2">评论</th>
-                        <th className="py-2 pr-2">小类BSR</th>
-                        <th className="py-2">角色</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {m.children.map((c) => {
-                        const p = productMap.get(c.asin);
-                        return (
-                          <tr key={c.asin} className={`border-b border-black/5 ${c.isAnchor ? 'bg-indigo-50/60 font-semibold' : ''}`}>
-                            <td className="py-2 pr-2 font-mono text-xs">
-                              <div className="flex items-center gap-2">
-                                {(c.imageUrl || p?.image) ? (
-                                  <img src={c.imageUrl || p?.image} alt="" className="w-8 h-8 rounded object-cover border" />
-                                ) : null}
-                                {c.asin}
-                              </div>
-                            </td>
-                            <td className="py-2 pr-2 text-xs">{c.attribute || '-'}</td>
-                            <td className="py-2 pr-2">{c.price ? `$${c.price.toFixed(2)}` : p ? `$${p.price.toFixed(2)}` : '-'}</td>
-                            <td className="py-2 pr-2 font-semibold">{p ? fmtNum(p.monthlySales) : '-'}</td>
-                            <td className="py-2 pr-2">{p ? `$${fmtNum(Math.round(p.monthlyRevenue))}` : '-'}</td>
-                            <td className="py-2 pr-2">{c.rating || p?.rating || '-'}</td>
-                            <td className="py-2 pr-2">{fmtNum(c.ratings || p?.reviewCount || 0)}</td>
-                            <td className="py-2 pr-2">{p?.subBsr ? `#${fmtNum(p.subBsr)}` : '-'}</td>
-                            <td className="py-2 text-xs">
-                              {c.isAnchor ? <span className="text-indigo-700">当前对比子体</span> : <span className="text-[#86868b]">同父体变体</span>}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  <p className="text-[11px] text-[#86868b] mt-2">月销量/销售额/BSR：优先用大盘已导入数据；大盘没有的显示「-」。</p>
-                </CardContent>
-              </Card>
-            );
-          })
+          matrices.map((m) => (
+            <ParentVariationCard key={m.anchorAsin} matrix={m} productMap={productMap} />
+          ))
         )}
       </div>
     </div>
+  );
+}
+
+const MATRIX_PAGE_SIZE = 8;
+
+function TablePager({
+  page,
+  totalPages,
+  total,
+  pageSize,
+  onChange,
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  onChange: (p: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  return (
+    <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-black/5">
+      <span className="text-[11px] text-[#86868b]">
+        第 {from}–{to} 条，共 {total} 条
+      </span>
+      <div className="flex items-center gap-1.5 text-xs text-[#86868b]">
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(1, page - 1))}
+          disabled={page === 1}
+          className="p-1.5 rounded-lg hover:bg-black/5 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          aria-label="上一页"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="min-w-[3.5rem] text-center tabular-nums">
+          {page} / {totalPages}
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange(Math.min(totalPages, page + 1))}
+          disabled={page === totalPages}
+          className="p-1.5 rounded-lg hover:bg-black/5 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          aria-label="下一页"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ParentVariationCard({
+  matrix: m,
+  productMap,
+}: {
+  matrix: ParentMatrixSnapshot;
+  productMap: Map<string, Product>;
+}) {
+  const [page, setPage] = useState(1);
+  const total = m.children.length;
+  const totalPages = Math.max(1, Math.ceil(total / MATRIX_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paged = m.children.slice((safePage - 1) * MATRIX_PAGE_SIZE, safePage * MATRIX_PAGE_SIZE);
+
+  const prices = m.children.map((c) => c.price).filter((p) => p > 0);
+  const priceMin = prices.length ? Math.min(...prices) : 0;
+  const priceMax = prices.length ? Math.max(...prices) : 0;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+          <span>{m.brand || '未知品牌'}</span>
+          <span className="text-xs font-normal text-[#86868b]">锚点 {m.anchorAsin}</span>
+        </CardTitle>
+        <CardDescription>
+          父体 ASIN：<span className="font-mono text-[#1d1d1f]">{m.parentAsin || '-'}</span>
+          {' · '}子体数 {m.variationCount || m.children.length}
+          {priceMin > 0 && (
+            <>
+              {' · '}价格带 ${priceMin.toFixed(2)}
+              {priceMax !== priceMin ? ` – $${priceMax.toFixed(2)}` : ''}
+            </>
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[880px]">
+          <thead>
+            <tr className="text-left text-xs text-[#86868b] border-b border-black/5">
+              <th className="py-2 pr-2">子体 ASIN</th>
+              <th className="py-2 pr-2">规格</th>
+              <th className="py-2 pr-2">价格</th>
+              <th className="py-2 pr-2">月销量</th>
+              <th className="py-2 pr-2">月销售额</th>
+              <th className="py-2 pr-2">评分</th>
+              <th className="py-2 pr-2">评论</th>
+              <th className="py-2 pr-2">小类BSR</th>
+              <th className="py-2">角色</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paged.map((c) => {
+              const p = productMap.get(c.asin);
+              return (
+                <tr key={c.asin} className={`border-b border-black/5 ${c.isAnchor ? 'bg-indigo-50/60 font-semibold' : ''}`}>
+                  <td className="py-2 pr-2 font-mono text-xs">
+                    <div className="flex items-center gap-2">
+                      {(c.imageUrl || p?.image) ? (
+                        <img src={c.imageUrl || p?.image} alt="" className="w-8 h-8 rounded object-cover border" />
+                      ) : null}
+                      {c.asin}
+                    </div>
+                  </td>
+                  <td className="py-2 pr-2 text-xs">{c.attribute || '-'}</td>
+                  <td className="py-2 pr-2">{c.price ? `$${c.price.toFixed(2)}` : p ? `$${p.price.toFixed(2)}` : '-'}</td>
+                  <td className="py-2 pr-2 font-semibold">{p ? fmtNum(p.monthlySales) : '-'}</td>
+                  <td className="py-2 pr-2">{p ? `$${fmtNum(Math.round(p.monthlyRevenue))}` : '-'}</td>
+                  <td className="py-2 pr-2">{c.rating || p?.rating || '-'}</td>
+                  <td className="py-2 pr-2">{fmtNum(c.ratings || p?.reviewCount || 0)}</td>
+                  <td className="py-2 pr-2">{p?.subBsr ? `#${fmtNum(p.subBsr)}` : '-'}</td>
+                  <td className="py-2 text-xs">
+                    {c.isAnchor ? <span className="text-indigo-700">当前对比子体</span> : <span className="text-[#86868b]">同父体变体</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <TablePager
+          page={safePage}
+          totalPages={totalPages}
+          total={total}
+          pageSize={MATRIX_PAGE_SIZE}
+          onChange={setPage}
+        />
+        <p className="text-[11px] text-[#86868b] mt-2">月销量/销售额/BSR：优先用大盘已导入数据；大盘没有的显示「-」。</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BrandSiblingCard({ row: b }: { row: BrandSiblingRow }) {
+  const [page, setPage] = useState(1);
+  const total = b.items.length;
+  const totalPages = Math.max(1, Math.ceil(total / MATRIX_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paged = b.items.slice((safePage - 1) * MATRIX_PAGE_SIZE, safePage * MATRIX_PAGE_SIZE);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">品牌：{b.brand}</CardTitle>
+        <CardDescription>
+          当前锚点 {b.anchorAsin} · 父体 {b.currentParentAsin} · 大盘另有 {b.items.length} 条同品牌链接
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[800px]">
+          <thead>
+            <tr className="text-left text-xs text-[#86868b] border-b border-black/5">
+              <th className="py-2 pr-2">ASIN</th>
+              <th className="py-2 pr-2">标题</th>
+              <th className="py-2 pr-2">价格</th>
+              <th className="py-2 pr-2">月销量</th>
+              <th className="py-2 pr-2">月销售额</th>
+              <th className="py-2 pr-2">评分</th>
+              <th className="py-2 pr-2">评论</th>
+              <th className="py-2">小类BSR</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paged.map((p) => (
+              <tr key={p.asin} className="border-b border-black/5">
+                <td className="py-2 pr-2 font-mono text-xs">
+                  <div className="flex items-center gap-2">
+                    {p.image ? <img src={p.image} alt="" className="w-8 h-8 rounded object-cover border" /> : null}
+                    {p.asin}
+                  </div>
+                </td>
+                <td className="py-2 pr-2 text-xs max-w-[220px] truncate" title={p.title}>{p.title}</td>
+                <td className="py-2 pr-2">${p.price.toFixed(2)}</td>
+                <td className="py-2 pr-2 font-semibold">{fmtNum(p.monthlySales)}</td>
+                <td className="py-2 pr-2">${fmtNum(Math.round(p.monthlyRevenue))}</td>
+                <td className="py-2 pr-2">{p.rating || '-'}</td>
+                <td className="py-2 pr-2">{fmtNum(p.reviewCount)}</td>
+                <td className="py-2">{p.subBsr ? `#${fmtNum(p.subBsr)}` : '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <TablePager
+          page={safePage}
+          totalPages={totalPages}
+          total={total}
+          pageSize={MATRIX_PAGE_SIZE}
+          onChange={setPage}
+        />
+      </CardContent>
+    </Card>
   );
 }
 
