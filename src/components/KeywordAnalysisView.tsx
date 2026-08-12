@@ -1,25 +1,28 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import {
   Upload, FileSpreadsheet, Brain, Trash2, Edit2, Check, X, Filter, ExternalLink, Zap, Search,
   Target, Lightbulb, Sparkles, TrendingUp, Tag, Download, ArrowUpDown, ChevronDown, ChevronUp,
-  Users, Map, Route, HeartHandshake, ChevronLeft, ChevronRight, Info, MousePointerClick, Package,
+  Users, Map, Route, HeartHandshake, ChevronLeft, ChevronRight, Info, MousePointerClick, HelpCircle,
 } from 'lucide-react';
 import { Keyword } from '../utils/parser';
 import {
-  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   BarChart, Bar,
 } from 'recharts';
 import {
   IntentStat, JTBDStat, ScenarioInsights, AiInsight, INTENT_META, JOB_TYPE_META, SC, TAGS,
   calcKwValueDensity,
 } from './KeywordAnalysis';
+import { InsightReportPanels } from './InsightReportPanels';
 
 const scoreColor = (s: number) => s >= 75 ? '#10b981' : s >= 60 ? '#3b82f6' : s >= 45 ? '#f59e0b' : '#9ca3af';
 const scoreBg = (s: number) => s >= 75 ? 'bg-emerald-50' : s >= 60 ? 'bg-blue-50' : s >= 45 ? 'bg-amber-50' : 'bg-[#f5f5f7]';
 const fmtNum = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0);
 const PAGE_SIZE_JTBD = 8;
 const PAGE_SIZE_RAW = 30;
+const PAGE_SIZE_DRILL = 20;
 
 const TL = [
   { id: 'ss', name: '卖家精灵', desc: 'ABA 关键词反查', url: 'https://www.sellersprite.com/v3/aba-research', bg: 'bg-violet-50', bd: 'border-violet-100', ac: 'text-violet-600', ib: 'bg-violet-100', tag: 'ABA 反查' },
@@ -178,7 +181,7 @@ export function KwView(p: KwViewProps) {
         {tab === 'jtbd' && hasInsight && <JtbdTab jtbdStats={jtbdStats} keywords={keywords} seg={seg} setSeg={setSeg} />}
         {tab === 'scenario' && hasInsight && <ScenarioTab insights={scenarioInsights} keywords={keywords} seg={seg} setSeg={setSeg} />}
         {tab === 'report' && <ReportTab ins={ins} hasInsight={hasInsight} genIns={genIns} onGenAI={onGenAI} />}
-        <div><button type="button" onClick={() => setShowT(!showT)} className="flex items-center gap-2 text-sm text-[#86868b] hover:text-[#1d1d1f] font-medium"><Filter className="w-4 h-4" />{showT ? '收起' : '展开'}原始关键词表<span className="text-xs bg-[#f5f5f7] px-2 py-0.5 rounded-full border border-black/5">{keywords.length} 个词</span><span className="text-[10px] text-[#86868b]">（可翻页）</span></button></div>
+        <div><button type="button" onClick={() => setShowT(!showT)} className="flex items-center gap-2 text-sm text-[#86868b] hover:text-[#1d1d1f] font-medium"><Filter className="w-4 h-4" />{showT ? '收起' : '展开'}原始关键词表<span className="text-xs bg-[#f5f5f7] px-2 py-0.5 rounded-full border border-black/5">{keywords.length} 个词</span></button></div>
         {showT && <RawTable filt={filt} eid={eid} etags={etags} q={q} setQ={setQ} cat={cat} setCat={setCat} onStartEdit={onStartEdit} onSaveEdit={onSaveEdit} onCancelEdit={onCancelEdit} onTogTag={onTogTag} />}
       </>)}
     </div>);
@@ -222,25 +225,203 @@ function IntentTab({ hasInsight, intentStats, tStat }: { hasInsight: boolean; in
   </div>);
 }
 
+/* ─── Keyword drill-down modal ─── */
+function KeywordDrillModal({
+  title,
+  words,
+  onClose,
+}: {
+  title: string;
+  words: Keyword[];
+  onClose: () => void;
+}) {
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(words.length / PAGE_SIZE_DRILL));
+  useEffect(() => { setPage(0); }, [title, words.length]);
+  const paged = words.slice(page * PAGE_SIZE_DRILL, (page + 1) * PAGE_SIZE_DRILL);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white w-full max-w-3xl max-h-[85vh] rounded-2xl shadow-2xl border border-black/5 flex flex-col overflow-hidden">
+        <div className="px-5 py-4 border-b border-black/5 flex items-center justify-between shrink-0">
+          <div>
+            <h3 className="font-semibold text-[#1d1d1f]">「{title}」关键词</h3>
+            <p className="text-xs text-[#86868b] mt-0.5">共 {words.length} 个词</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5 text-[#86868b]"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-[#86868b] uppercase bg-[#f5f5f7] sticky top-0">
+              <tr>
+                <th className="px-5 py-3 text-left">关键词</th>
+                <th className="px-5 py-3 text-right">周搜索量</th>
+                <th className="px-5 py-3 text-right">CPC</th>
+                <th className="px-5 py-3 text-right">CVR</th>
+                <th className="px-5 py-3 text-left">意图</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black/5">
+              {paged.map(kw => (
+                <tr key={kw.id} className="hover:bg-[#f5f5f7]/50">
+                  <td className="px-5 py-3"><div className="font-medium">{kw.keyword}</div><div className="text-xs text-[#86868b]">{kw.translation}</div></td>
+                  <td className="px-5 py-3 text-right font-mono">{kw.weeklySearchVolume.toLocaleString()}</td>
+                  <td className="px-5 py-3 text-right font-mono">${kw.cpcBid.toFixed(2)}</td>
+                  <td className="px-5 py-3 text-right font-mono">{(kw.conversionRate * 100).toFixed(2)}%</td>
+                  <td className="px-5 py-3">{kw.userIntentStage ? <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ color: INTENT_META[kw.userIntentStage].color, background: `${INTENT_META[kw.userIntentStage].color}15` }}>{INTENT_META[kw.userIntentStage].label}</span> : '—'}</td>
+                </tr>
+              ))}
+              {paged.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-[#86868b]">暂无关联关键词</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="shrink-0 border-t border-black/5">
+          <Pager page={page} total={totalPages} onChange={setPage} />
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function ScoreHelp() {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex">
+      <button type="button" onClick={() => setOpen(v => !v)} className="p-0.5 rounded-full text-[#86868b] hover:text-indigo-600" title="机会分说明" aria-label="机会分说明">
+        <HelpCircle className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-2 z-30 w-72 p-3 bg-white border border-black/10 rounded-xl shadow-xl text-[11px] text-[#424245] leading-relaxed normal-case font-normal">
+          <div className="font-semibold text-[#1d1d1f] mb-1.5">机会分怎么算</div>
+          <ul className="space-y-1 list-disc pl-3.5">
+            <li>转化潜力 35%（均 CVR）</li>
+            <li>获客效率 25%（CPC÷CVR，越低越好）</li>
+            <li>需求量 25%（该任务周搜索量）</li>
+            <li>投放难度 15%（难度越低分越高）</li>
+          </ul>
+          <p className="mt-2 text-[#86868b]">词数少于 3 的任务不进入排行，避免碎片噪声。</p>
+          <button type="button" className="mt-2 text-indigo-600 font-medium" onClick={() => setOpen(false)}>知道了</button>
+        </div>
+      )}
+    </span>
+  );
+}
+
+const JOB_TYPE_HINT: Record<string, string> = {
+  functional: '功能任务：用户要完成具体动作（便携、静音、防水）——产品规格与五点优先对上。',
+  emotional: '情感任务：用户要获得感受（安心、仪式感）——主图氛围与文案情绪要对齐。',
+  social: '社会任务：用户要在他人面前达成身份/礼赠——礼盒与社交场景露出更关键。',
+};
+
 /* ─── JtbdTab ─── */
 function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; keywords: Keyword[]; seg: string | null; setSeg: (s: string | null) => void }) {
   const [page, setPage] = useState(0);
+  const [mapMode, setMapMode] = useState<'job' | 'keyword'>('job');
+  const [modalJob, setModalJob] = useState<string | null>(null);
   const ranked = useMemo(() => [...jtbdStats].sort((a, b) => b.opportunityScore - a.opportunityScore), [jtbdStats]);
   const totalPages = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE_JTBD));
   const paged = ranked.slice(page * PAGE_SIZE_JTBD, (page + 1) * PAGE_SIZE_JTBD);
-  const scat = useMemo(() => ranked.map((s, i) => ({ ...s, x: s.totalVolume, y: s.avgCpc, z: Math.max(s.count * 6, 80), color: JOB_TYPE_META[s.jobType].color || SC[i % SC.length] })), [ranked]);
-  const selected = ranked.find(j => j.job === seg);
-  const words = useMemo(() => seg ? keywords.filter(k => (k.jobToBeDone || '').trim() === seg).sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume) : [], [keywords, seg]);
+
+  const jobSceneHint = useMemo(() => {
+    const map = new Map<string, Map<string, number>>();
+    const intentMap = new Map<string, Map<string, number>>();
+    keywords.forEach(k => {
+      const job = (k.jobToBeDone || '').trim();
+      if (!job) return;
+      if (k.useScenario) {
+        if (!map.has(job)) map.set(job, new Map());
+        const m = map.get(job)!;
+        m.set(k.useScenario, (m.get(k.useScenario) || 0) + k.weeklySearchVolume);
+      }
+      if (k.userIntentStage) {
+        if (!intentMap.has(job)) intentMap.set(job, new Map());
+        const m = intentMap.get(job)!;
+        m.set(k.userIntentStage, (m.get(k.userIntentStage) || 0) + 1);
+      }
+    });
+    const topScene = (job: string) => {
+      const m = map.get(job);
+      if (!m?.size) return '';
+      return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+    };
+    const topIntent = (job: string) => {
+      const m = intentMap.get(job);
+      if (!m?.size) return null;
+      return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+    };
+    return { topScene, topIntent };
+  }, [keywords]);
+
+  const jobScat = useMemo(() => ranked.map((s, i) => ({
+    ...s,
+    x: s.totalVolume,
+    y: s.avgCpc,
+    z: Math.max(s.count * 8, 60),
+    color: JOB_TYPE_META[s.jobType].color || SC[i % SC.length],
+    label: s.job,
+  })), [ranked]);
+
+  const kwScat = useMemo(() => {
+    const withJob = keywords.filter(k => (k.jobToBeDone || '').trim()).sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume).slice(0, 80);
+    return withJob.map((k, i) => ({
+      keyword: k.keyword,
+      job: k.jobToBeDone,
+      x: k.weeklySearchVolume,
+      y: k.cpcBid,
+      z: Math.max(40, Math.min(160, k.weeklySearchVolume / 50)),
+      color: k.userIntentStage ? INTENT_META[k.userIntentStage].color : SC[i % SC.length],
+      cvr: k.conversionRate,
+      intent: k.userIntentStage,
+      translation: k.translation,
+    }));
+  }, [keywords]);
+
+  const medX = useMemo(() => {
+    const xs = (mapMode === 'job' ? jobScat : kwScat).map(d => d.x).sort((a, b) => a - b);
+    return xs.length ? xs[Math.floor(xs.length / 2)] : 0;
+  }, [mapMode, jobScat, kwScat]);
+  const medY = useMemo(() => {
+    const ys = (mapMode === 'job' ? jobScat : kwScat).map(d => d.y).sort((a, b) => a - b);
+    return ys.length ? ys[Math.floor(ys.length / 2)] : 0;
+  }, [mapMode, jobScat, kwScat]);
+
+  const openJob = (job: string) => {
+    setSeg(job);
+    setModalJob(job);
+  };
+
+  const modalWords = useMemo(
+    () => modalJob ? keywords.filter(k => (k.jobToBeDone || '').trim() === modalJob).sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume) : [],
+    [keywords, modalJob],
+  );
+
   if (!ranked.length) return (<div className="bg-amber-50 border border-amber-100 rounded-2xl p-6 flex items-center gap-3"><Info className="w-5 h-5 text-amber-500" /><p className="text-sm text-amber-700">暂无 JTBD 任务数据。请重新点击「AI 用户洞察」。</p></div>);
   const top3 = ranked.slice(0, 3);
+
   return (<div className="space-y-6">
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">{(Object.keys(JOB_TYPE_META) as (keyof typeof JOB_TYPE_META)[]).map(k => { const m = JOB_TYPE_META[k]; const count = jtbdStats.filter(j => j.jobType === k).length; return (<div key={k} className={`${m.bg} border border-black/5 rounded-2xl p-3`}><div className="font-bold text-sm" style={{ color: m.color }}>{m.label}</div><div className="text-xs text-[#86868b]">{count} 个任务</div></div>); })}</div>
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">{(Object.keys(JOB_TYPE_META) as (keyof typeof JOB_TYPE_META)[]).map(k => {
+      const m = JOB_TYPE_META[k];
+      const count = jtbdStats.filter(j => j.jobType === k).length;
+      return (
+        <div key={k} className={`${m.bg} border border-black/5 rounded-2xl p-3`}>
+          <div className="font-bold text-sm" style={{ color: m.color }}>{m.label}</div>
+          <div className="text-xs text-[#86868b] mb-1.5">{count} 个任务</div>
+          <p className="text-[11px] text-[#424245] leading-relaxed">{JOB_TYPE_HINT[k]}</p>
+        </div>
+      );
+    })}</div>
+
     {top3.length > 0 && (
       <div className="rounded-2xl border border-amber-100 bg-gradient-to-r from-amber-50 to-orange-50 p-5">
         <div className="text-sm font-bold text-[#1d1d1f] mb-3 flex items-center gap-2"><Sparkles className="w-4 h-4 text-amber-500" />机会热区 · Top 3 任务</div>
         <div className="grid sm:grid-cols-3 gap-3">
           {top3.map((j, i) => (
-            <button key={j.job} type="button" onClick={() => setSeg(j.job)} className="text-left rounded-xl bg-white/80 border border-amber-100/80 p-4 hover:border-amber-300 transition-colors">
+            <button key={j.job} type="button" onClick={() => openJob(j.job)} className="text-left rounded-xl bg-white/80 border border-amber-100/80 p-4 hover:border-amber-300 transition-colors">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[11px] font-bold text-amber-600">#{i + 1} · {j.opportunityScore} 分</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: `${JOB_TYPE_META[j.jobType].color}15`, color: JOB_TYPE_META[j.jobType].color }}>{JOB_TYPE_META[j.jobType].label}</span>
@@ -248,31 +429,152 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
               <div className="font-semibold text-sm text-[#1d1d1f] mb-1">{j.job}</div>
               <p className="text-[12px] text-[#86868b] leading-relaxed">
                 周搜 {j.totalVolume.toLocaleString()} · CPC ${j.avgCpc.toFixed(2)} · CVR {(j.avgCvr * 100).toFixed(1)}%
-                {j.avgCpc < 1.2 && j.totalVolume > 0 ? ' — 需求在、竞争相对可控，适合优先切入。' : j.avgCvr >= 0.12 ? ' — 转化偏高，适合作为主推任务。' : ' — 先验证 Listing 是否讲清该任务。'}
+                {j.avgCvr >= 0.12 ? ' — 转化偏高，适合主推。' : j.avgCpc < 1.2 ? ' — 需求在、竞争相对可控。' : ' — 先验证 Listing 是否讲清该任务。'}
               </p>
             </button>
           ))}
         </div>
       </div>
     )}
-    <Card className="border-none shadow-sm overflow-hidden"><CardHeader className="bg-gradient-to-r from-blue-50 via-pink-50 to-emerald-50 border-b border-black/5"><CardTitle className="text-base font-semibold flex items-center gap-2"><HeartHandshake className="w-4 h-4 text-pink-500" />用户任务机会排行<span className="text-xs font-normal text-[#86868b] ml-1">点击行可查看关键词</span><span className="ml-auto text-[10px] text-[#86868b] bg-white/70 px-2 py-0.5 rounded-full">共 {jtbdStats.length} 项</span></CardTitle></CardHeader>
-      <CardContent className="p-0"><div className="divide-y divide-black/5">{paged.map((j, i) => (<button key={j.job} onClick={() => setSeg(j.job)} className={`w-full flex items-center gap-3 px-5 py-3 hover:bg-[#f5f5f7]/50 text-left ${seg === j.job ? 'bg-indigo-50/50' : ''}`}><div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${(page * PAGE_SIZE_JTBD + i) < 3 ? 'bg-gradient-to-br from-amber-400 to-amber-500 text-white shadow-md' : 'bg-[#f5f5f7] text-[#86868b]'}`}><span className="text-sm font-bold">{page * PAGE_SIZE_JTBD + i + 1}</span></div><div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><span className="font-semibold text-[#1d1d1f] text-sm truncate">{j.job}</span><span className="text-[10px] px-2 py-0.5 rounded-full font-medium border" style={{ background: `${JOB_TYPE_META[j.jobType].color}15`, color: JOB_TYPE_META[j.jobType].color }}>{JOB_TYPE_META[j.jobType].label}</span><span className="text-[10px] text-[#86868b]">{j.count}词 · {j.totalVolume.toLocaleString()}/周</span></div><div className="text-xs text-[#86868b] mt-1 truncate">CPC ${j.avgCpc.toFixed(2)} · CVR {(j.avgCvr * 100).toFixed(1)}% · 代表：{j.topKeywords.slice(0, 3).join('、')}</div></div><div className={`flex flex-col items-center justify-center w-16 h-12 rounded-xl ${scoreBg(j.opportunityScore)} shrink-0`}><span className="text-xl font-bold" style={{ color: scoreColor(j.opportunityScore) }}>{j.opportunityScore}</span><span className="text-[9px] text-[#86868b] -mt-0.5">分</span></div></button>))}</div><Pager page={page} total={totalPages} onChange={setPage} /></CardContent></Card>
-    <Card className="border-none shadow-sm"><CardHeader><CardTitle className="text-base font-semibold"><Target className="w-4 h-4 text-rose-500 inline mr-1" />JTBD 需求-竞争地图<span className="text-xs font-normal text-[#86868b] ml-1">X=需求 · Y=竞争(CPC)</span></CardTitle></CardHeader><CardContent className="h-[420px]"><ResponsiveContainer><ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}><CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" /><XAxis type="number" dataKey="x" tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} label={{ value: '需求', position: 'insideBottom', offset: -10, fontSize: 11 }} /><YAxis type="number" dataKey="y" tickFormatter={(v: number) => `$${v.toFixed(2)}`} label={{ value: 'CPC', angle: -90, position: 'insideLeft', offset: 10, fontSize: 11 }} /><Tooltip content={<JTBDTip />} /><Scatter data={scat} onClick={(d: any) => setSeg(d.job)} cursor="pointer">{scat.map((d, i) => <Cell key={i} fill={d.color} fillOpacity={0.85} />)}</Scatter></ScatterChart></ResponsiveContainer></CardContent></Card>
-    {selected && (<Card className="border-none shadow-sm overflow-hidden"><CardHeader className="bg-[#f5f5f7]/50 border-b border-black/5"><div className="flex items-center justify-between"><CardTitle className="text-base font-semibold">「{selected.job}」关键词</CardTitle><button onClick={() => setSeg(null)} className="text-xs text-[#86868b]">清除</button></div></CardHeader><CardContent className="p-0"><div className="overflow-x-auto max-h-[400px] overflow-y-auto"><table className="w-full text-sm"><thead className="text-xs text-[#86868b] uppercase bg-[#f5f5f7] sticky top-0"><tr><th className="px-5 py-3">关键词</th><th className="px-5 py-3 text-right">周搜索量</th><th className="px-5 py-3 text-right">CPC</th><th className="px-5 py-3 text-right">CVR</th><th className="px-5 py-3">意图</th></tr></thead><tbody className="divide-y divide-black/5">{words.slice(0, 50).map(kw => (<tr key={kw.id} className="hover:bg-[#f5f5f7]/50"><td className="px-5 py-3"><div className="font-medium">{kw.keyword}</div><div className="text-xs text-[#86868b]">{kw.translation}</div></td><td className="px-5 py-3 text-right font-mono">{kw.weeklySearchVolume.toLocaleString()}</td><td className="px-5 py-3 text-right font-mono">${kw.cpcBid.toFixed(2)}</td><td className="px-5 py-3 text-right font-mono">{(kw.conversionRate * 100).toFixed(2)}%</td><td className="px-5 py-3">{kw.userIntentStage ? <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ color: INTENT_META[kw.userIntentStage].color, background: `${INTENT_META[kw.userIntentStage].color}15` }}>{INTENT_META[kw.userIntentStage].label}</span> : '—'}</td></tr>))}</tbody></table></div></CardContent></Card>)}
+
+    <Card className="border-none shadow-sm overflow-hidden">
+      <CardHeader className="bg-gradient-to-r from-blue-50 via-pink-50 to-emerald-50 border-b border-black/5">
+        <CardTitle className="text-base font-semibold flex items-center gap-2 flex-wrap">
+          <HeartHandshake className="w-4 h-4 text-pink-500" />
+          用户任务机会排行
+          <ScoreHelp />
+          <span className="text-xs font-normal text-[#86868b]">点击行打开关键词明细</span>
+          <span className="ml-auto text-[10px] text-[#86868b] bg-white/70 px-2 py-0.5 rounded-full">共 {ranked.length} 项</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="divide-y divide-black/5">
+          {paged.map((j, i) => {
+            const scene = jobSceneHint.topScene(j.job);
+            const intent = jobSceneHint.topIntent(j.job);
+            return (
+              <button key={j.job} type="button" onClick={() => openJob(j.job)} className={`w-full flex items-center gap-3 px-5 py-3 hover:bg-[#f5f5f7]/50 text-left ${seg === j.job ? 'bg-indigo-50/50' : ''}`}>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${(page * PAGE_SIZE_JTBD + i) < 3 ? 'bg-gradient-to-br from-amber-400 to-amber-500 text-white shadow-md' : 'bg-[#f5f5f7] text-[#86868b]'}`}>
+                  <span className="text-sm font-bold">{page * PAGE_SIZE_JTBD + i + 1}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-[#1d1d1f] text-sm truncate">{j.job}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border" style={{ background: `${JOB_TYPE_META[j.jobType].color}15`, color: JOB_TYPE_META[j.jobType].color }}>{JOB_TYPE_META[j.jobType].label}</span>
+                    {intent && <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ color: INTENT_META[intent as keyof typeof INTENT_META].color, background: `${INTENT_META[intent as keyof typeof INTENT_META].color}15` }}>{INTENT_META[intent as keyof typeof INTENT_META].label}</span>}
+                    <span className="text-[10px] text-[#86868b]">{j.count}词 · {j.totalVolume.toLocaleString()}/周</span>
+                  </div>
+                  <div className="text-xs text-[#86868b] mt-1 truncate">
+                    CPC ${j.avgCpc.toFixed(2)} · CVR {(j.avgCvr * 100).toFixed(1)}%
+                    {scene ? ` · 主场景：${scene}` : ''} · 代表：{j.topKeywords.slice(0, 3).join('、')}
+                  </div>
+                </div>
+                <div className={`flex flex-col items-center justify-center w-16 h-12 rounded-xl ${scoreBg(j.opportunityScore)} shrink-0`}>
+                  <span className="text-xl font-bold" style={{ color: scoreColor(j.opportunityScore) }}>{j.opportunityScore}</span>
+                  <span className="text-[9px] text-[#86868b] -mt-0.5">分</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <Pager page={page} total={totalPages} onChange={setPage} />
+      </CardContent>
+    </Card>
+
+    <Card className="border-none shadow-sm">
+      <CardHeader>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Target className="w-4 h-4 text-rose-500" />JTBD 需求-竞争地图
+            </CardTitle>
+            <CardDescription className="mt-1">
+              X=需求（周搜索量）· Y=竞争成本（CPC）· 点越大={mapMode === 'job' ? '覆盖词数越多' : '搜索量越大'}。右上竞争贵、左下易切入。
+            </CardDescription>
+          </div>
+          <div className="flex bg-[#f5f5f7] p-1 rounded-xl w-fit">
+            {(['job', 'keyword'] as const).map(m => (
+              <button key={m} type="button" onClick={() => setMapMode(m)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${mapMode === m ? 'bg-white text-[#1d1d1f] shadow-sm' : 'text-[#86868b]'}`}>
+                {m === 'job' ? '按任务' : '按关键词'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-[11px]">
+          <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-2.5 py-2 text-emerald-800">高需求 · 低 CPC → 优先打</div>
+          <div className="rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-2 text-amber-800">高需求 · 高 CPC → 精耕差异化</div>
+          <div className="rounded-lg bg-blue-50 border border-blue-100 px-2.5 py-2 text-blue-800">低需求 · 低 CPC → 长尾试水</div>
+          <div className="rounded-lg bg-rose-50 border border-rose-100 px-2.5 py-2 text-rose-800">低需求 · 高 CPC → 谨慎</div>
+        </div>
+      </CardHeader>
+      <CardContent className="h-[440px]">
+        {mapMode === 'job' ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <ScatterChart margin={{ top: 20, right: 30, bottom: 24, left: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis type="number" dataKey="x" name="需求" tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} label={{ value: '需求（周搜）', position: 'insideBottom', offset: -12, fontSize: 11 }} />
+              <YAxis type="number" dataKey="y" name="CPC" tickFormatter={(v: number) => `$${v.toFixed(2)}`} label={{ value: '竞争 CPC', angle: -90, position: 'insideLeft', offset: 8, fontSize: 11 }} />
+              <ZAxis type="number" dataKey="z" range={[60, 280]} />
+              <Tooltip content={<JTBDTip />} />
+              <Scatter data={jobScat} onClick={(d: any) => { const job = d?.job || d?.payload?.job; if (job) openJob(job); }} cursor="pointer">
+                {jobScat.map((d, i) => <Cell key={i} fill={d.color} fillOpacity={0.82} />)}
+              </Scatter>
+            </ScatterChart>
+          </ResponsiveContainer>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <ScatterChart margin={{ top: 20, right: 30, bottom: 24, left: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis type="number" dataKey="x" name="需求" tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} label={{ value: '需求（周搜）', position: 'insideBottom', offset: -12, fontSize: 11 }} />
+              <YAxis type="number" dataKey="y" name="CPC" tickFormatter={(v: number) => `$${v.toFixed(2)}`} label={{ value: '竞争 CPC', angle: -90, position: 'insideLeft', offset: 8, fontSize: 11 }} />
+              <ZAxis type="number" dataKey="z" range={[40, 220]} />
+              <Tooltip content={({ active, payload }: any) => {
+                if (!active || !payload?.length) return null;
+                const d = payload[0].payload;
+                return (
+                  <div className="bg-white border border-black/10 rounded-2xl shadow-xl p-3 max-w-[240px] text-xs">
+                    <div className="font-bold text-sm text-[#1d1d1f] mb-1">{d.keyword}</div>
+                    <div className="text-[#86868b] mb-2">{d.translation}</div>
+                    <div className="space-y-1 text-[#86868b]">
+                      <div className="flex justify-between gap-4"><span>任务</span><span className="font-semibold text-[#1d1d1f]">{d.job}</span></div>
+                      <div className="flex justify-between gap-4"><span>周搜</span><span className="font-semibold text-[#1d1d1f]">{d.x.toLocaleString()}</span></div>
+                      <div className="flex justify-between gap-4"><span>CPC</span><span className="font-semibold text-[#1d1d1f]">${d.y.toFixed(2)}</span></div>
+                      <div className="flex justify-between gap-4"><span>CVR</span><span className="font-semibold text-[#1d1d1f]">{(d.cvr * 100).toFixed(1)}%</span></div>
+                    </div>
+                  </div>
+                );
+              }} />
+              <Scatter data={kwScat} onClick={(d: any) => { const job = d?.job || d?.payload?.job; if (job) openJob(job); }} cursor="pointer">
+                {kwScat.map((d, i) => <Cell key={i} fill={d.color} fillOpacity={0.8} />)}
+              </Scatter>
+            </ScatterChart>
+          </ResponsiveContainer>
+        )}
+        <p className="text-[10px] text-[#aeaeb2] mt-1 text-center">中位参考线约：需求 {fmtNum(medX)} · CPC ${medY.toFixed(2)}（用于心算象限，非强制切割）</p>
+      </CardContent>
+    </Card>
+
+    {modalJob && <KeywordDrillModal title={modalJob} words={modalWords} onClose={() => setModalJob(null)} />}
   </div>);
 }
 
 /* ─── ScenarioTab ─── */
 function ScenarioTab({ insights, keywords, seg, setSeg }: { insights: ScenarioInsights; keywords: Keyword[]; seg: string | null; setSeg: (s: string | null) => void }) {
-  const [showAll, setShowAll] = useState(false);
-  type SortKey = 'weeklySearchVolume' | 'cpcBid' | 'conversionRate' | 'value';
-  const [sortCol, setSortCol] = useState<SortKey>('weeklySearchVolume');
-  const [sortAsc, setSortAsc] = useState(false);
-  const words = useMemo(() => { if (!seg) return []; const list = keywords.filter(k => (k.useScenario || '').trim() === seg || (k.targetUser || '').trim() === seg || (k.painPoint || '').trim() === seg || (k.featureDemand || '').trim() === seg); const getVal = (k: Keyword) => sortCol === 'value' ? calcKwValueDensity(k) : (k[sortCol] as number); return list.sort((a, b) => sortAsc ? getVal(a) - getVal(b) : getVal(b) - getVal(a)); }, [keywords, seg, sortCol, sortAsc]);
-  const shown = showAll ? words : words.slice(0, 50);
-  const toggleSort = (col: SortKey) => { if (sortCol === col) setSortAsc(v => !v); else { setSortCol(col); setSortAsc(false); } };
+  const [modalKey, setModalKey] = useState<string | null>(null);
+  const words = useMemo(() => {
+    if (!modalKey) return [];
+    return [...keywords]
+      .filter(k =>
+        (k.useScenario || '').trim() === modalKey
+        || (k.targetUser || '').trim() === modalKey
+        || (k.painPoint || '').trim() === modalKey
+        || (k.featureDemand || '').trim() === modalKey
+      )
+      .sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume);
+  }, [keywords, modalKey]);
+  const openDim = (name: string) => { setSeg(name); setModalKey(name); };
   const RankCard = ({ title, icon: Icon, items, color }: { title: string; icon: any; items: { name: string; count: number; totalVolume: number }[]; color: string }) => (
-    <Card className="border-none shadow-sm overflow-hidden"><CardHeader className="border-b border-black/5"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Icon className="w-4 h-4" style={{ color }} />{title}</CardTitle></CardHeader><CardContent className="p-0"><div className="divide-y divide-black/5 max-h-[280px] overflow-y-auto">{items.slice(0, 10).map((item, i) => (<button key={item.name} onClick={() => setSeg(item.name)} className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[#f5f5f7]/60 ${seg === item.name ? 'bg-indigo-50/60' : ''}`}><span className="w-6 text-xs font-bold text-[#86868b]">{i + 1}</span><div className="flex-1"><div className="text-sm font-medium text-[#1d1d1f] truncate">{item.name}</div><div className="text-[10px] text-[#86868b]">{item.count} 词 · {item.totalVolume.toLocaleString()}/周</div></div></button>))}{!items.length && <div className="p-6 text-center text-xs text-[#86868b]">暂无数据</div>}</div></CardContent></Card>);
+    <Card className="border-none shadow-sm overflow-hidden"><CardHeader className="border-b border-black/5"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Icon className="w-4 h-4" style={{ color }} />{title}</CardTitle></CardHeader><CardContent className="p-0"><div className="divide-y divide-black/5 max-h-[280px] overflow-y-auto">{items.slice(0, 10).map((item, i) => (<button key={item.name} type="button" onClick={() => openDim(item.name)} className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[#f5f5f7]/60 ${seg === item.name ? 'bg-indigo-50/60' : ''}`}><span className="w-6 text-xs font-bold text-[#86868b]">{i + 1}</span><div className="flex-1"><div className="text-sm font-medium text-[#1d1d1f] truncate">{item.name}</div><div className="text-[10px] text-[#86868b]">{item.count} 词 · {item.totalVolume.toLocaleString()}/周</div></div></button>))}{!items.length && <div className="p-6 text-center text-xs text-[#86868b]">暂无数据</div>}</div></CardContent></Card>);
   if (!insights.scenarios.length && !insights.users.length && !insights.painPoints.length && !insights.features.length) return (<div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 flex items-center gap-3"><Info className="w-5 h-5 text-indigo-500" /><p className="text-sm text-indigo-700">请重新点击「AI 用户洞察」分析。</p></div>);
   const heatScenarios = insights.scenarios.slice(0, 6).map(s => s.name);
   const heatUsers = insights.users.slice(0, 5).map(u => u.name);
@@ -291,156 +593,25 @@ function ScenarioTab({ insights, keywords, seg, setSeg }: { insights: ScenarioIn
         </div>
       </div>
     )}
-    <div className="text-xs text-[#86868b] bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 flex items-start gap-2"><MousePointerClick className="w-3.5 h-3.5 text-blue-500 mt-0.5 shrink-0" /><span>点击排行榜中任意条目，下方表格展示该维度的全部关联关键词。</span></div>
+    <div className="text-xs text-[#86868b] bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 flex items-start gap-2"><MousePointerClick className="w-3.5 h-3.5 text-blue-500 mt-0.5 shrink-0" /><span>点击排行榜条目，将弹出该维度的关键词明细。</span></div>
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><RankCard title="使用场景" icon={Map} items={insights.scenarios} color="#3b82f6" /><RankCard title="目标人群" icon={Users} items={insights.users} color="#8b5cf6" /><RankCard title="痛点排行" icon={TrendingUp} items={insights.painPoints} color="#ef4444" /><RankCard title="功能需求" icon={Tag} items={insights.features} color="#10b981" /></div>
-    {heatScenarios.length > 0 && heatUsers.length > 0 && (<Card className="border-none shadow-sm"><CardHeader><CardTitle className="text-base font-semibold"><Map className="w-4 h-4 text-indigo-600 inline mr-1" />场景×人群热力</CardTitle><CardDescription>颜色越深，交叉搜索量越大 — 优先打深色格子对应的场景×人群组合</CardDescription></CardHeader><CardContent className="overflow-x-auto"><table className="w-full text-xs min-w-[560px]"><thead><tr><th className="p-3 text-left text-[#86868b] font-medium">场景 \ 人群</th>{heatUsers.map(u => <th key={u} className="p-3 text-center text-[#86868b] font-medium">{u}</th>)}</tr></thead><tbody>{heatScenarios.map(sc => (<tr key={sc}><td className="p-3 font-medium text-[#1d1d1f]">{sc}</td>{heatUsers.map(u => { const cell = insights.crossMatrix.find(c => c.scenario === sc && c.user === u); const vol = cell?.volume || 0; const intensity = vol / heatMax; return (<td key={u} className="p-1.5"><button onClick={() => cell && setSeg(sc)} className="w-full min-h-[52px] rounded-xl py-3 text-center font-mono text-[12px] font-semibold" style={{ background: vol > 0 ? `rgba(79,70,229,${0.10 + intensity * 0.78})` : '#f5f5f7', color: intensity > 0.45 ? '#fff' : '#1d1d1f' }}>{vol > 0 ? fmtNum(vol) : '—'}</button></td>); })}</tr>))}</tbody></table></CardContent></Card>)}
-    {seg && (<Card className="border-none shadow-sm overflow-hidden"><CardHeader className="bg-[#f5f5f7]/50"><div className="flex items-center justify-between"><CardTitle className="text-base font-semibold">「{seg}」关键词</CardTitle><span className="text-xs text-[#86868b]">{words.length} 个词</span></div></CardHeader><CardContent className="p-0"><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-xs text-[#86868b] uppercase bg-[#f5f5f7]"><tr><th className="px-5 py-3">关键词</th><th className="px-5 py-3 text-right cursor-pointer" onClick={() => toggleSort('weeklySearchVolume')}>周搜索量<ArrowUpDown className="w-3 h-3 inline ml-1" /></th><th className="px-5 py-3 text-right cursor-pointer" onClick={() => toggleSort('cpcBid')}>CPC<ArrowUpDown className="w-3 h-3 inline ml-1" /></th><th className="px-5 py-3 text-right cursor-pointer" onClick={() => toggleSort('conversionRate')}>CVR<ArrowUpDown className="w-3 h-3 inline ml-1" /></th><th className="px-5 py-3">意图</th></tr></thead><tbody className="divide-y divide-black/5">{shown.map(kw => (<tr key={kw.id} className="hover:bg-[#f5f5f7]/50"><td className="px-5 py-3"><div className="font-medium">{kw.keyword}</div><div className="text-xs text-[#86868b]">{kw.translation}</div></td><td className="px-5 py-3 text-right font-mono">{kw.weeklySearchVolume.toLocaleString()}</td><td className="px-5 py-3 text-right font-mono">${kw.cpcBid.toFixed(2)}</td><td className="px-5 py-3 text-right font-mono">{(kw.conversionRate * 100).toFixed(2)}%</td><td className="px-5 py-3">{kw.userIntentStage ? <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ color: INTENT_META[kw.userIntentStage].color, background: `${INTENT_META[kw.userIntentStage].color}15` }}>{INTENT_META[kw.userIntentStage].label}</span> : '—'}</td></tr>))}</tbody></table></div>{words.length > 50 && <div className="p-4 text-center border-t"><button onClick={() => setShowAll(v => !v)} className="text-sm text-indigo-600 font-medium">{showAll ? '收起' : `显示全部 ${words.length} 个词`}</button></div>}</CardContent></Card>)}
-    {!seg && <div className="bg-[#f5f5f7] rounded-2xl p-6 text-center text-sm text-[#86868b]">点击上方排行条目下钻查看关键词</div>}
+    {heatScenarios.length > 0 && heatUsers.length > 0 && (<Card className="border-none shadow-sm"><CardHeader><CardTitle className="text-base font-semibold"><Map className="w-4 h-4 text-indigo-600 inline mr-1" />场景×人群热力</CardTitle><CardDescription>颜色越深，交叉搜索量越大 — 优先打深色格子对应的场景×人群组合</CardDescription></CardHeader><CardContent className="overflow-x-auto"><table className="w-full text-xs min-w-[560px]"><thead><tr><th className="p-3 text-left text-[#86868b] font-medium">场景 \ 人群</th>{heatUsers.map(u => <th key={u} className="p-3 text-center text-[#86868b] font-medium">{u}</th>)}</tr></thead><tbody>{heatScenarios.map(sc => (<tr key={sc}><td className="p-3 font-medium text-[#1d1d1f]">{sc}</td>{heatUsers.map(u => { const cell = insights.crossMatrix.find(c => c.scenario === sc && c.user === u); const vol = cell?.volume || 0; const intensity = vol / heatMax; return (<td key={u} className="p-1.5"><button type="button" onClick={() => cell && openDim(sc)} className="w-full min-h-[52px] rounded-xl py-3 text-center font-mono text-[12px] font-semibold" style={{ background: vol > 0 ? `rgba(79,70,229,${0.10 + intensity * 0.78})` : '#f5f5f7', color: intensity > 0.45 ? '#fff' : '#1d1d1f' }}>{vol > 0 ? fmtNum(vol) : '—'}</button></td>); })}</tr>))}</tbody></table></CardContent></Card>)}
+    {modalKey && <KeywordDrillModal title={modalKey} words={words} onClose={() => setModalKey(null)} />}
   </div>);
-}
-
-function asList(v: unknown): string[] {
-  if (Array.isArray(v)) return v.map(String).filter(Boolean);
-  if (typeof v === 'string' && v.trim()) return v.split(/[；;、\n]/).map(s => s.trim()).filter(Boolean);
-  return [];
 }
 
 /* ─── ReportTab ─── */
 function ReportTab({ ins, hasInsight, genIns, onGenAI }: { ins: AiInsight | null; hasInsight: boolean; genIns: boolean; onGenAI: () => void }) {
   if (!ins) return (<div className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 rounded-[24px] p-10 flex flex-col items-center text-center gap-4"><div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-md"><Lightbulb className="w-8 h-8 text-indigo-500" /></div><div><h3 className="text-xl font-bold text-[#1d1d1f] mb-2">AI 用户洞察报告</h3><p className="text-sm text-[#86868b] max-w-md">{hasInsight ? '基于意图分层、JTBD 任务与场景洞察，生成完整报告。' : '请先点击「AI 用户洞察」。'}</p></div><button onClick={onGenAI} disabled={genIns || !hasInsight} className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-semibold transition-all disabled:opacity-50 shadow-lg"><Sparkles className={`w-4 h-4 ${genIns ? 'animate-spin' : ''}`} />{genIns ? '生成中...' : '生成报告'}</button></div>);
 
-  const scenes = asList(ins.userScenes);
-  const needs = asList(ins.userNeeds);
-  const pains = asList(ins.userPainPoints);
-  const stages = Array.isArray(ins.decisionStages) ? ins.decisionStages : [];
-  const listing = ins.listingPlan;
-  const product = ins.productPlan;
-  const roadmap = Array.isArray(ins.productRoadmap) ? ins.productRoadmap : [];
-  const bullets = asList(listing?.bullets);
-  const mustFix = asList(product?.mustFix);
-
   return (
     <div className="space-y-6">
-      {/* 1. 用户画像 */}
-      <Card className="border-none shadow-sm overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-violet-50 to-indigo-50 border-b border-black/5">
-          <CardTitle className="text-base font-semibold flex items-center gap-2"><Users className="w-4 h-4 text-violet-500" />用户画像</CardTitle>
-          <CardDescription>谁在买 · 什么场景 · 要什么 · 卡在哪</CardDescription>
-        </CardHeader>
-        <CardContent className="p-6 space-y-5">
-          <p className="text-sm text-[#1d1d1f] leading-relaxed">{ins.userPersona || '—'}</p>
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div className="rounded-xl bg-[#f8f9fb] border border-black/5 p-4">
-              <div className="text-[11px] font-semibold text-indigo-600 uppercase tracking-wider mb-2">核心场景</div>
-              <ul className="space-y-1.5">{scenes.length ? scenes.map(s => <li key={s} className="text-[13px] text-[#424245] flex gap-2"><span className="text-indigo-400">·</span>{s}</li>) : <li className="text-[13px] text-[#aeaeb2]">—</li>}</ul>
-            </div>
-            <div className="rounded-xl bg-[#f8f9fb] border border-black/5 p-4">
-              <div className="text-[11px] font-semibold text-violet-600 uppercase tracking-wider mb-2">核心需求</div>
-              <ul className="space-y-1.5">{needs.length ? needs.map(s => <li key={s} className="text-[13px] text-[#424245] flex gap-2"><span className="text-violet-400">·</span>{s}</li>) : <li className="text-[13px] text-[#aeaeb2]">—</li>}</ul>
-            </div>
-            <div className="rounded-xl bg-[#f8f9fb] border border-black/5 p-4">
-              <div className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider mb-2">主要痛点</div>
-              <ul className="space-y-1.5">{pains.length ? pains.map(s => <li key={s} className="text-[13px] text-[#424245] flex gap-2"><span className="text-rose-400">·</span>{s}</li>) : <li className="text-[13px] text-[#aeaeb2]">—</li>}</ul>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 2. 决策路径 */}
-      <Card className="border-none shadow-sm overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-black/5">
-          <CardTitle className="text-base font-semibold flex items-center gap-2"><Route className="w-4 h-4 text-blue-500" />决策路径</CardTitle>
-          <CardDescription>从搜到下单，用户怎么走</CardDescription>
-        </CardHeader>
-        <CardContent className="p-6 space-y-5">
-          {stages.length > 0 ? (
-            <div className="flex flex-col lg:flex-row gap-3 lg:items-stretch">
-              {stages.map((st, i) => (
-                <div key={`${st.name}-${i}`} className="flex-1 relative">
-                  <div className="h-full rounded-2xl border border-indigo-100 bg-white p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 text-[11px] font-bold flex items-center justify-center">{i + 1}</span>
-                      <span className="text-sm font-semibold text-[#1d1d1f]">{st.name}</span>
-                    </div>
-                    <p className="text-[13px] text-[#424245] leading-relaxed mb-2">{st.desc}</p>
-                    {st.signals && <p className="text-[11px] text-[#86868b]">信号：{st.signals}</p>}
-                  </div>
-                  {i < stages.length - 1 && (
-                    <div className="hidden lg:flex absolute -right-2 top-1/2 -translate-y-1/2 z-10 text-indigo-300">
-                      <ChevronRight className="w-5 h-5" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-[#aeaeb2]">暂无分阶段路径</p>
-          )}
-          {ins.decisionSummary && (
-            <p className="text-sm text-[#424245] leading-relaxed bg-[#f8f9fb] rounded-xl p-4 border border-black/5">{ins.decisionSummary}</p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 3. 洞察结论 */}
-      <Card className="border-none shadow-sm overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-indigo-50 via-violet-50 to-indigo-50 border-b border-black/5">
-          <CardTitle className="text-base font-semibold flex items-center gap-2"><Lightbulb className="w-4 h-4 text-amber-500" />洞察结论</CardTitle>
-          <CardDescription>综合判断 → Listing / 产品 / 路线图</CardDescription>
-        </CardHeader>
-        <CardContent className="p-6 space-y-6">
-          <p className="text-sm text-[#1d1d1f] leading-relaxed">{ins.insightAnalysis || '—'}</p>
-
-          <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-5">
-            <div className="flex items-center gap-2 mb-3"><Sparkles className="w-4 h-4 text-indigo-600" /><h4 className="text-sm font-semibold text-[#1d1d1f]">Listing 方案建议</h4></div>
-            <p className="text-[13px] text-[#1d1d1f] mb-3"><span className="text-[#86868b]">标题方向：</span>{listing?.title || '—'}</p>
-            {bullets.length > 0 && (
-              <ul className="space-y-1.5 mb-3">
-                {bullets.map(b => <li key={b} className="text-[13px] text-[#424245] flex gap-2"><span className="text-indigo-500 font-bold">·</span>{b}</li>)}
-              </ul>
-            )}
-            <div className="grid sm:grid-cols-2 gap-3 text-[13px]">
-              <div className="rounded-xl bg-white/80 p-3 border border-indigo-100/60"><span className="text-[#86868b]">关键词布局：</span>{listing?.keywords || '—'}</div>
-              <div className="rounded-xl bg-white/80 p-3 border border-indigo-100/60"><span className="text-[#86868b]">视觉策略：</span>{listing?.visual || '—'}</div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-violet-100 bg-violet-50/40 p-5">
-            <div className="flex items-center gap-2 mb-3"><Package className="w-4 h-4 text-violet-600" /><h4 className="text-sm font-semibold text-[#1d1d1f]">产品方案建议</h4></div>
-            <div className="grid sm:grid-cols-3 gap-3 text-[13px] mb-3">
-              <div className="rounded-xl bg-white/80 p-3 border border-violet-100/60"><div className="text-[11px] text-[#86868b] mb-1">核心规格</div>{product?.core || '—'}</div>
-              <div className="rounded-xl bg-white/80 p-3 border border-violet-100/60"><div className="text-[11px] text-[#86868b] mb-1">差异化</div>{product?.differentiation || '—'}</div>
-              <div className="rounded-xl bg-white/80 p-3 border border-violet-100/60"><div className="text-[11px] text-[#86868b] mb-1">价格带</div>{product?.priceRange || '—'}</div>
-            </div>
-            {mustFix.length > 0 && (
-              <div>
-                <div className="text-[11px] font-semibold text-rose-600 mb-1.5">必改项</div>
-                <ul className="space-y-1">{mustFix.map(x => <li key={x} className="text-[13px] text-[#424245] flex gap-2"><span className="text-rose-400">·</span>{x}</li>)}</ul>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <div className="flex items-center gap-2 mb-3"><Target className="w-4 h-4 text-emerald-600" /><h4 className="text-sm font-semibold text-[#1d1d1f]">产品路线图（产品矩阵）</h4></div>
-            {roadmap.length ? (
-              <div className="grid sm:grid-cols-3 gap-3">
-                {roadmap.map((r, i) => (
-                  <div key={`${r.phase}-${i}`} className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] font-bold text-emerald-700">{r.phase || `P${i + 1}`}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-emerald-700 border border-emerald-100">{r.priority || '—'}</span>
-                    </div>
-                    <div className="text-sm font-semibold text-[#1d1d1f] mb-1">{r.name}</div>
-                    <div className="text-[12px] text-[#86868b]">目标：{r.target}</div>
-                  </div>
-                ))}
-              </div>
-            ) : <p className="text-sm text-[#aeaeb2]">暂无路线图</p>}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex justify-end"><button onClick={onGenAI} disabled={genIns} className="flex items-center gap-2 px-4 py-2 bg-[#f5f5f7] hover:bg-[#ebebeb] text-[#86868b] rounded-xl text-sm font-medium"><Sparkles className="w-4 h-4" />重新生成</button></div>
+      <InsightReportPanels ins={ins} />
+      <div className="flex justify-end">
+        <button type="button" onClick={onGenAI} disabled={genIns} className="flex items-center gap-2 px-4 py-2 bg-[#f5f5f7] hover:bg-[#ebebeb] text-[#86868b] rounded-xl text-sm font-medium">
+          <Sparkles className="w-4 h-4" />重新生成
+        </button>
+      </div>
     </div>
   );
 }

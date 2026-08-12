@@ -15,6 +15,8 @@ import { toast } from 'sonner';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { SecondaryReportPage } from './SecondaryReportPage';
+import { InsightReportPanels, tryParseAiInsight } from './InsightReportPanels';
+import type { AiInsight } from './KeywordAnalysis';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend, PieChart, Pie } from 'recharts';
 
 interface TagLibrary {
@@ -349,6 +351,9 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
   const [stepProgress, setStepProgress] = useState('');
   const [tagLib, setTagLib] = useState<TagLibrary | null>(null);
   const [deepReport, setDeepReport] = useState<string | null>(() => initialDeepReport ?? null);
+  const [deepInsight, setDeepInsight] = useState<AiInsight | null>(() =>
+    initialDeepReport ? tryParseAiInsight(initialDeepReport) : null
+  );
   const [isReportLoading, setIsReportLoading] = useState(false);
   const [deepReportOpen, setDeepReportOpen] = useState(false);
   const [journeyReportRaw, setJourneyReportRaw] = useState<string | null>(null);
@@ -396,21 +401,20 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
   useEffect(() => {
     if (!initialDeepReport) return;
     setDeepReport(initialDeepReport);
+    setDeepInsight(tryParseAiInsight(initialDeepReport));
   }, [initialDeepReport]);
 
   const deepReportHtml = useMemo(
     () => {
-      if (!deepReport) return '';
-      // AI 返回的可能包含 markdown 代码围栏包裹的 HTML，先去掉
+      if (!deepReport || deepInsight) return '';
       let html = deepReport.replace(/^```html?\s*\n?/i, '').replace(/\n?```\s*$/, '').trim();
-      // 如果没被代码围栏包裹，尝试提取第一个 <div> 开头的内容
       if (!html.startsWith('<')) {
         const start = html.search(/<(div|section|article|table|h[1-6]|p|ul|ol)/i);
         if (start >= 0) html = html.slice(start);
       }
-      return html;
+      return html.startsWith('<') ? html : '';
     },
-    [deepReport]
+    [deepReport, deepInsight]
   );
 
   // 保留 deepReportMarkdown 用于兼容（但如果 deepReportHtml 非空，优先用 HTML）
@@ -848,10 +852,14 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
       const reviewText = sample.map(r => `[${r.rating}星] ${r.title}: ${r.content.slice(0,150)}`).join('\n');
       const tagSummary = tagLib ? `\n\n高频标签汇总：\n好评: ${tagLib.positive.join(', ')}\n差评: ${tagLib.negative.join(', ')}\n场景: ${tagLib.scenarios.join(', ')}\n人群: ${tagLib.audience.join(', ')}` : '';
       const basePrompt = getPrompt('voc_deep_report');
-      const prompt = `${basePrompt}\n\n## 评论数据（共${filteredReviews.length}条）${tagSummary}\n\n${reviewText}`;
-      const res = await generateText(prompt, aiSettings);
+      const prompt = `${basePrompt}\n\n## 评论数据（共${filteredReviews.length}条，样本${sample.length}条）${tagSummary}\n\n${reviewText}`;
+      const res = await generateText(prompt, aiSettings, { jsonMode: true });
+      const parsed = tryParseAiInsight(res);
       setDeepReport(res);
+      setDeepInsight(parsed);
       setDeepReportOpen(true);
+      if (!parsed) toast.warning('已生成内容，但未解析为结构化报告。请到「设置 → Prompt」将「VOC Step3」重置为默认后再试。');
+      else toast.success('深度洞察报告已生成');
     } catch(e: any) { toast.error('生成报告失败: ' + e.message); }
     setIsReportLoading(false);
   };
@@ -1679,7 +1687,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                     <div className="p-2 bg-indigo-100 rounded-xl"><Sparkles className="w-4 h-4 text-indigo-600"/></div>
                     <div>
                       <CardTitle className="text-sm font-bold">AI 深度洞察报告</CardTitle>
-                      <p className="text-xs text-[#86868b] mt-0.5">生成后在独立阅读页查看（全屏白紫风格，无旁边虚化）</p>
+                      <p className="text-xs text-[#86868b] mt-0.5">结构与关键词报告一致：用户画像 · 决策路径 · 洞察结论</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1695,7 +1703,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                     )}
                     <button onClick={runDeepReport} disabled={isReportLoading} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60">
                       {isReportLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <FileText className="w-4 h-4"/>}
-                      {isReportLoading ? '生成中...' : deepReport ? '重新生成' : '生成报告'}
+                      {isReportLoading ? '生成中...' : deepReport ? '重新生成' : '生成深度洞察'}
                     </button>
                   </div>
                 </div>
@@ -1705,8 +1713,8 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                   <FileText className="w-12 h-12 mb-3 text-zinc-200"/>
                   <p className="text-sm text-center">
                     {deepReport
-                      ? '报告已生成。点击「查看报告」打开独立阅读页。'
-                      : '点击「生成报告」，AI 将基于当前筛选评论生成深度洞察。'}
+                      ? (deepInsight ? '结构化报告已就绪。点击「查看报告」打开独立阅读页。' : '报告已生成（旧版格式）。点击查看；重新生成可升级为新结构。')
+                      : '点击「生成深度洞察」，AI 将输出与关键词报告同构的三块结论。'}
                   </p>
                 </div>
               </CardContent>
@@ -1715,13 +1723,15 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
             {deepReportOpen && deepReport && (
               <SecondaryReportPage
                 title="AI 深度洞察报告"
-                subtitle="基于当前筛选评论 · 独立阅读页"
+                subtitle="用户画像 · 决策路径 · 洞察结论"
                 icon={<Sparkles className="w-5 h-5" />}
                 onClose={() => setDeepReportOpen(false)}
                 onRegenerate={() => void runDeepReport()}
                 regenerating={isReportLoading}
               >
-                {deepReportHtml ? (
+                {deepInsight ? (
+                  <InsightReportPanels ins={deepInsight} evidenceLabel="证据" />
+                ) : deepReportHtml ? (
                   <div
                     className="text-[15px] leading-[1.8] text-[#3f3f46] [&_h1]:text-[22px] [&_h1]:font-semibold [&_h1]:text-indigo-950 [&_h1]:mb-4 [&_h2]:text-[18px] [&_h2]:font-semibold [&_h2]:text-indigo-900 [&_h2]:mt-8 [&_h2]:mb-3 [&_h3]:mt-5 [&_h3]:mb-2 [&_p]:mb-3 [&_li]:mb-1.5"
                     dangerouslySetInnerHTML={{ __html: deepReportHtml }}
@@ -1740,8 +1750,8 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-violet-100 rounded-xl"><Route className="w-4 h-4 text-violet-700"/></div>
                     <div>
-                      <CardTitle className="text-sm font-bold">用户旅程 5W1H</CardTitle>
-                      <p className="text-xs text-[#86868b] mt-0.5">生成后在独立阅读页展开；原句分行并尽量匹配晒图</p>
+                      <CardTitle className="text-sm font-bold">用户旅程明细（可选）</CardTitle>
+                      <p className="text-xs text-[#86868b] mt-0.5">深度洞察里已含决策路径；此处为 5W1H 明细附表</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1767,8 +1777,8 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                   <Route className="w-12 h-12 mb-3 text-zinc-200"/>
                   <p className="text-sm text-center">
                     {journeyRows.length > 0 || journeyReportRaw
-                      ? '旅程表已生成。点击「查看旅程」打开宽屏阅读页。'
-                      : '点击「生成旅程表」，AI 会按 5W1H 结构输出用户旅程，并在独立页面展示。'}
+                      ? '旅程表明细已生成。点击「查看旅程」打开宽屏阅读页。'
+                      : '可选：需要更细的 5W1H 阶段表时再生成；主结论请看上方「深度洞察」。'}
                   </p>
                 </div>
               </CardContent>

@@ -193,6 +193,9 @@ const About: React.FC<{ c: () => void }> = ({ c }) => (
         </button>
       </div>
       <div className="p-6 space-y-5 text-sm text-[#424245]">
+        <div className="rounded-xl overflow-hidden border border-indigo-100/60">
+          <img src="/brand/kairo-about.jpg" alt="Kairo · 恰当时机" className="w-full h-40 object-cover" />
+        </div>
         <div className="rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100/60 p-4">
           <p className="text-[13px] leading-relaxed text-[#1d1d1f]">
             <strong className="text-indigo-600">Kairo</strong> 源自希腊语 <em>καιρός (Kairos)</em>——不是日历上的「时间」，而是<strong>恰到好处的那一刻</strong>。
@@ -343,62 +346,6 @@ function formatMoney(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)} 万`;
   return formatInt(n);
 }
-
-/* ═══════════════════════════════════════
-   Hero Data Flow SVG — 科技感数据流线
-   ═══════════════════════════════════════ */
-const HeroDataFlow: React.FC = () => {
-  const points = [
-    { x: 0, y: 48 }, { x: 64, y: 32 }, { x: 128, y: 52 }, { x: 192, y: 20 },
-    { x: 256, y: 40 }, { x: 320, y: 16 }, { x: 384, y: 36 }, { x: 448, y: 12 },
-  ];
-  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-
-  return (
-    <div className="relative w-full max-w-[460px] mx-auto">
-      <svg viewBox="0 0 448 64" className="w-full h-16" preserveAspectRatio="none">
-        {/* glow underlay */}
-        <defs>
-          <linearGradient id="flowGrad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#6366f1" stopOpacity="0.15" />
-            <stop offset="50%" stopColor="#8b5cf6" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="#6366f1" stopOpacity="0.15" />
-          </linearGradient>
-        </defs>
-        <path
-          d={pathD}
-          fill="none"
-          stroke="url(#flowGrad)"
-          strokeWidth="1.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity="0.45"
-        />
-        <path
-          d={pathD}
-          fill="none"
-          stroke="url(#flowGrad)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeDasharray="1000"
-          opacity="0.8"
-          style={{ animation: 'data-flow 4.5s linear infinite' }}
-        />
-        {/* data nodes */}
-        {points.map((p, i) => (
-          <circle
-            key={i}
-            cx={p.x} cy={p.y}
-            r="3"
-            fill={i % 3 === 0 ? '#6366f1' : i % 3 === 1 ? '#8b5cf6' : '#4f46e5'}
-            style={{ animation: `data-node-pulse ${2.4 + i * 0.3}s ease-in-out ${i * 0.3}s infinite` }}
-          />
-        ))}
-      </svg>
-    </div>
-  );
-};
 
 /* ═══════════════════════════════════════
    Hero Preview Card — 浮动的"大盘预览"
@@ -846,10 +793,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               输入关键词或评论，AI 自动抽出画像、JTBD 任务与决策路径，再落到可评审的产品 / 视觉 / 推广方案。
             </p>
 
-            {/* 数据流线 */}
-            <div className="mb-6">
-              <HeroDataFlow />
-              <p className="text-center text-[11px] text-[#aeaeb2] mt-2">系统持续解析品类供需结构</p>
+            {/* 品牌氛围图 */}
+            <div className="mb-6 rounded-2xl overflow-hidden border border-indigo-100/50 shadow-[0_12px_40px_-20px_rgba(79,70,229,0.35)]">
+              <img src="/brand/kairo-hero.jpg" alt="信号汇入洞察" className="w-full h-[160px] sm:h-[180px] object-cover" />
             </div>
 
             <a href="#phases" className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-500 transition-colors">
@@ -1071,6 +1017,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             </p>
           </div>
 
+          <div className="mb-10 rounded-2xl overflow-hidden border border-indigo-100/50 shadow-sm">
+            <img src="/brand/kairo-pipeline.jpg" alt="洞察链路" className="w-full max-h-[220px] object-cover object-center" />
+          </div>
+
           {/* Pipeline: 4 stages — large */}
           <div className="mb-20">
             <div className="flex items-center gap-2 mb-8">
@@ -1155,24 +1105,26 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               </div>
 
               <div className="glass-card p-7 lg:p-8">
-                <div className="flex items-center gap-2 mb-5">
+                <div className="flex items-center gap-2 mb-4">
                   <Map className="w-4 h-4 text-violet-500" />
                   <span className="text-[12px] font-semibold text-violet-600 uppercase tracking-wider">示例 · 用户决策路径</span>
                 </div>
+                <div className="mb-5 rounded-xl overflow-hidden border border-violet-100/60">
+                  <img src="/brand/kairo-decision.jpg" alt="决策路径四阶段" className="w-full h-28 object-cover" />
+                </div>
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-0 sm:items-stretch">
                   {[
-                    { stage: '认知', desc: '搜痛点词 / how-to，确认有没有解决方案' },
-                    { stage: '考虑', desc: '比材质、尺寸、场景适配；看评测与差评' },
-                    { stage: '决策', desc: '锁规格与价格带；信任信号决定是否下单' },
-                    { stage: '使用', desc: '开箱与首次使用决定留评或退货' },
-                  ].map(({ stage, desc }, i) => (
-                    <div key={stage} className="flex-1 relative sm:px-3">
-                      <div className="text-[13px] font-semibold text-[#1d1d1f] mb-1.5 flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 text-[11px] font-bold flex items-center justify-center">{i + 1}</span>
+                    { stage: '认知', desc: '搜痛点词 / how-to，确认有没有解决方案', bg: 'bg-violet-50', text: 'text-violet-700', ring: 'bg-violet-100' },
+                    { stage: '考虑', desc: '比材质、尺寸、场景适配；看评测与差评', bg: 'bg-blue-50', text: 'text-blue-700', ring: 'bg-blue-100' },
+                    { stage: '决策', desc: '锁规格与价格带；信任信号决定是否下单', bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'bg-emerald-100' },
+                    { stage: '使用', desc: '开箱与首次使用决定留评或退货', bg: 'bg-amber-50', text: 'text-amber-700', ring: 'bg-amber-100' },
+                  ].map(({ stage, desc, bg, text, ring }, i) => (
+                    <div key={stage} className={`flex-1 relative sm:mx-1 rounded-xl ${bg} border border-black/5 p-3`}>
+                      <div className={`text-[13px] font-semibold ${text} mb-1.5 flex items-center gap-2`}>
+                        <span className={`w-6 h-6 rounded-full ${ring} ${text} text-[11px] font-bold flex items-center justify-center`}>{i + 1}</span>
                         {stage}
                       </div>
                       <p className="text-[12px] text-[#86868b] leading-relaxed">{desc}</p>
-                      {i < 3 && <div className="hidden sm:block absolute right-0 top-3 w-px h-8 bg-gradient-to-b from-indigo-200 to-violet-200" />}
                     </div>
                   ))}
                 </div>
@@ -1187,9 +1139,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <span className="text-[12px] font-semibold text-indigo-600 uppercase tracking-wider">落地输出</span>
             </div>
             <h3 className="text-xl lg:text-2xl font-semibold text-[#1d1d1f] mb-2">洞察之后：三套可评审方案</h3>
-            <p className="text-[14px] text-[#86868b] mb-8 max-w-2xl">
+            <p className="text-[14px] text-[#86868b] mb-6 max-w-2xl">
               画像与任务对齐后，AI 协助把结论拆成产品、视觉、推广三份动作清单——方便直接进评审，而不是停在「感觉有机会」。
             </p>
+            <div className="mb-8 rounded-2xl overflow-hidden border border-indigo-100/50">
+              <img src="/brand/kairo-solutions.jpg" alt="产品视觉推广三方案" className="w-full max-h-[180px] object-cover" />
+            </div>
             <div className="grid md:grid-cols-3 gap-5 lg:gap-6">
               {solutionPillars.map(({ icon: Icon, accent, title, desc, bullets }) => (
                 <div key={title} className="glass-card p-7 lg:p-8 min-h-[260px] flex flex-col">

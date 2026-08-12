@@ -484,23 +484,33 @@ ${sampleTop.map((k, i) => `${i + 1}. ${k.keyword}（${k.translation}，搜索量
 
 【分析 1：购买意图分层 intent】
 必须从以下 4 个英文值中选一个：
-- awareness：问题认知、how/what、信息收集、痛点描述
-- consideration：对比/筛选/属性限定、best/top/for/vs、评测比较
-- decision：购买行动、规格精确、颜色尺寸价格限定、ready to buy
-- loyalty：品牌词、复购、replacement、配件/耗材
+- awareness：问题认知、how/what/why、信息收集、痛点描述（例：how to sleep better、neck pain pillow）
+- consideration：对比/筛选/属性限定、best/top/for/vs、评测比较（例：best cooling pillow、memory foam vs latex）
+- decision：购买行动、规格精确、颜色尺寸价格限定、型号/buy now（例：2 inch thin pillow queen、buy cervical pillow）
+- loyalty：品牌词、复购、replacement、配件/耗材（例：品牌名 + pillow、replacement cover）
+
+硬规则示例：
+- 含 how / what is / why → 优先 awareness
+- 含 best / top / vs / for / review → 优先 consideration
+- 含明确尺寸/颜色/数量/价格/buy/型号 → 优先 decision
+- 含品牌名 / replacement / refill → 优先 loyalty
+冲突时优先级：decision > consideration > loyalty > awareness
+非法或空值时填 consideration（不要留空）
 
 【分析 2：JTBD 用户任务】
-- job：用户雇用产品要完成的任务，2-8 个中文字（如「便携携带」「隔音降噪」「送礼表达」）。⚠️ 任务必须概括而非具体——同类关键词共用同一任务名。尽量用 5-8 个任务覆盖所有词，不要每个词一个任务。
-- jobType：functional（功能）/ emotional（情感）/ social（社会）
-若关键词只是泛品类词、无明显任务，job 与 jobType 可留空字符串
+- job：结果导向的短标签，2-8 个中文字，写「用户要完成什么结果」（如「便携携带」「隔音降噪」「送礼表达」），禁止只写泛品类词（如「枕头」「产品」）。
+- 同类关键词必须共用同一任务名；尽量用 5-8 个任务覆盖本批，不要一词一任务。
+- jobType：functional（功能）/ emotional（情感）/ social（社会）。整批评分时应尽量三类都有覆盖（若证据不足可空）。
+若关键词只是泛品类词、无明显任务，job 与 jobType 可留空字符串。
 
-【分析 3：场景 / 人群 / 痛点 / 功能】
-- scenario：使用场景（厨房/户外/办公/车载/旅行等），无则空字符串
-- user：目标人群（儿童/女性/老年人/专业人士等），无则空字符串
-- pain：解决的痛点（难清洗/噪音大等），无则空字符串
-- feature：功能需求（可折叠/静音/防水等），无则空字符串
-- compare：对比对象（若含 vs / alternative），无则空字符串
-- tags：从【人群词、场景词、品牌词、尺寸词、数量词、颜色词、材质词、功能词】中选 0-3 个
+【分析 3：场景 / 人群 / 痛点 / 功能】（字段互不串台）
+- scenario：只能是使用情境（地点/时刻/活动，如「侧睡」「差旅」「居家办公」）。禁止把痛点或功能写进 scenario。
+- user：目标人群（儿童/女性/老年人/专业人士等），无则空字符串。
+- pain：必须是问题表述（难清洗/异味/塌陷等），禁止写成功能卖点。
+- feature：必须是产品属性/能力（可折叠/静音/防水等），禁止写成痛点。
+- compare：对比对象（若含 vs / alternative），无则空字符串。
+- tags：从【人群词、场景词、品牌词、尺寸词、数量词、颜色词、材质词、功能词】中选 0-3 个。
+同批内近义标签请合并为同一写法；证据不足允许空字段，禁止编造。
 
 关键词列表：
 ${batch.map((k, n) => `${n + 1}. ${k.keyword}（${k.translation}）`).join('\n')}
@@ -521,13 +531,13 @@ ${batch.map((k, n) => `${n + 1}. ${k.keyword}（${k.translation}）`).join('\n')
               rs.forEach((row: any) => {
                 const idx = next.findIndex(k => k.keyword === row.keyword);
                 if (idx === -1) return;
-                const intent = normalizeIntent(row.intent);
+                const intent = normalizeIntent(row.intent) || 'consideration';
                 const jobType = normalizeJobType(row.jobType);
                 const job = String(row.job || '').trim();
                 const scenario = String(row.scenario || '').trim();
                 next[idx] = {
                   ...next[idx],
-                  userIntentStage: intent || next[idx].userIntentStage,
+                  userIntentStage: intent,
                   jobToBeDone: job || next[idx].jobToBeDone,
                   jobType: jobType || next[idx].jobType,
                   useScenario: scenario || next[idx].useScenario,
