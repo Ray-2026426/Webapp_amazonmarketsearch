@@ -63,6 +63,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (p: string) => p.replace(/^\/api-proxy\/sellersprite-mcp/, '/mcp'),
         },
+        '/api-proxy/lingxing-mcp': {
+          target: 'https://openmcp.lingxing.com',
+          changeOrigin: true,
+          rewrite: (p: string) => p.replace(/^\/api-proxy\/lingxing-mcp/, '/mcp-servers/lingxing-mcp'),
+        },
       },
     },
   };

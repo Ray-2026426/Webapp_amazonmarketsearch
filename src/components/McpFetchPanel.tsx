@@ -9,12 +9,21 @@ import {
 
 export type McpFetchMode = 'reviews' | 'keywords';
 
+/** 关键词抓取子模式：ASIN 流量词 / 种子词 ABA */
+export type KeywordFetchSource = 'asin' | 'seed';
+
 interface McpFetchPanelProps {
   mode: McpFetchMode;
   defaultMarketplace?: string;
   suggestAsins?: string[];
+  /** 关键词模式：默认抓取来源 */
+  defaultKeywordSource?: KeywordFetchSource;
   onFetch: (params: {
     asins: string[];
+    /** 种子关键词（ABA 模式） */
+    seedKeyword?: string;
+    /** asin = 竞品流量词；seed = 按词抓 ABA */
+    keywordSource?: KeywordFetchSource;
     marketplace: string;
     maxPages: number;
     replace: boolean;
@@ -44,10 +53,13 @@ export function McpFetchPanel({
   mode,
   defaultMarketplace = 'US',
   suggestAsins = [],
+  defaultKeywordSource = 'seed',
   onFetch,
 }: McpFetchPanelProps) {
   const [open, setOpen] = useState(false);
   const [asinText, setAsinText] = useState('');
+  const [seedKeyword, setSeedKeyword] = useState('');
+  const [keywordSource, setKeywordSource] = useState<KeywordFetchSource>(defaultKeywordSource);
   const [marketplace, setMarketplace] = useState(normalizeMarketplaceCode(defaultMarketplace));
   const [maxPages, setMaxPages] = useState(mode === 'reviews' ? 5 : 2);
   const [replace, setReplace] = useState(true);
@@ -73,11 +85,16 @@ export function McpFetchPanel({
     };
   }, [open]);
 
+  const isKeywordMode = mode === 'keywords';
+  const useSeed = isKeywordMode && keywordSource === 'seed';
+
   const title = mode === 'reviews' ? '在线抓取评论' : '在线抓取关键词';
   const hint =
     mode === 'reviews'
       ? '输入竞品 ASIN，直接从卖家精灵拉取评论（无需再手动下载 Excel）'
-      : '输入竞品 ASIN，直接拉取该 ASIN 的流量关键词（相当于 ABA/流量词反查）';
+      : useSeed
+        ? '输入种子关键词，拉取该词的 ABA 关联词库（更适合做用户洞察）'
+        : '输入竞品 ASIN，拉取该 ASIN 的流量关键词（竞品流量反查）';
 
   const fillSuggest = () => {
     if (!suggestAsins.length) return;
@@ -85,6 +102,34 @@ export function McpFetchPanel({
   };
 
   const handleRun = async () => {
+    if (useSeed) {
+      const seed = seedKeyword.trim();
+      if (!seed) {
+        setProgress('请先填写种子关键词（例如 coffee tumbler）');
+        return;
+      }
+      setLoading(true);
+      setProgress('开始抓取…');
+      try {
+        await onFetch({
+          asins: [],
+          seedKeyword: seed,
+          keywordSource: 'seed',
+          marketplace,
+          maxPages,
+          replace,
+          onProgress: setProgress,
+        });
+        setProgress('完成');
+        setOpen(false);
+      } catch (e) {
+        setProgress(e instanceof Error ? e.message : '抓取失败');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     const asins = parseAsinList(asinText);
     if (!asins.length) {
       setProgress('请先填写至少一个有效 ASIN（例如 B0XXXXXXXX）');
@@ -99,6 +144,7 @@ export function McpFetchPanel({
     try {
       await onFetch({
         asins,
+        keywordSource: isKeywordMode ? 'asin' : undefined,
         marketplace,
         maxPages,
         replace,
@@ -117,7 +163,9 @@ export function McpFetchPanel({
   const perPageHint =
     mode === 'reviews'
       ? `卖家精灵评论接口每页约 ${REVIEW_PAGE_SIZE} 条；选「约 100 条」= 翻 5 页`
-      : `流量词每页约 ${KEYWORD_PAGE_SIZE} 个；按目标数量自动翻页，无需关心页码`;
+      : useSeed
+        ? `ABA 关联词每页约 ${KEYWORD_PAGE_SIZE} 个；按目标数量自动翻页`
+        : `流量词每页约 ${KEYWORD_PAGE_SIZE} 个；按目标数量自动翻页，无需关心页码`;
 
   return (
     <>
@@ -158,21 +206,78 @@ export function McpFetchPanel({
                 <span>{statusMsg}</span>
               </div>
 
-              <div>
-                <label className="text-xs text-[#86868b] font-medium block mb-1">ASIN（可多个，逗号分隔）</label>
-                <textarea
-                  value={asinText}
-                  onChange={(e) => setAsinText(e.target.value)}
-                  rows={3}
-                  placeholder="例如：B0XXXXXXXX, B0YYYYYYYY"
-                  className="w-full border border-black/10 rounded-xl px-3 py-2 text-sm font-mono resize-y"
-                />
-                {suggestAsins.length > 0 && (
-                  <button type="button" onClick={fillSuggest} className="mt-1.5 text-xs text-violet-600 hover:underline">
-                    填入建议 ASIN（前 5 个）
-                  </button>
-                )}
-              </div>
+              {isKeywordMode && (
+                <div>
+                  <label className="text-xs text-[#86868b] font-medium block mb-1.5">抓取方式</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setKeywordSource('seed')}
+                      className={`px-3 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+                        keywordSource === 'seed'
+                          ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
+                          : 'bg-white text-[#86868b] border-black/10 hover:border-violet-300'
+                      }`}
+                    >
+                      输入关键词（ABA）
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setKeywordSource('asin')}
+                      className={`px-3 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+                        keywordSource === 'asin'
+                          ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
+                          : 'bg-white text-[#86868b] border-black/10 hover:border-violet-300'
+                      }`}
+                    >
+                      输入 ASIN（流量词）
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {useSeed ? (
+                <div>
+                  <label className="text-xs text-[#86868b] font-medium block mb-1">
+                    种子关键词
+                  </label>
+                  <input
+                    type="text"
+                    value={seedKeyword}
+                    onChange={(e) => setSeedKeyword(e.target.value)}
+                    placeholder="例如：coffee tumbler / camping chair"
+                    className="w-full border border-black/10 rounded-xl px-3 py-2.5 text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !loading) handleRun();
+                    }}
+                  />
+                  <p className="text-[10px] text-[#86868b] mt-1.5 leading-relaxed">
+                    输入品类核心词，系统会拉取该词的 ABA 关联词库，用于用户需求洞察
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <label className="text-xs text-[#86868b] font-medium block mb-1">
+                    ASIN（可多个，逗号分隔）
+                  </label>
+                  <textarea
+                    value={asinText}
+                    onChange={(e) => setAsinText(e.target.value)}
+                    rows={3}
+                    placeholder="例如：B0XXXXXXXX, B0YYYYYYYY"
+                    className="w-full border border-black/10 rounded-xl px-3 py-2 text-sm font-mono resize-y"
+                  />
+                  {suggestAsins.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={fillSuggest}
+                      className="mt-1.5 text-xs text-violet-600 hover:underline"
+                    >
+                      填入建议 ASIN（前 5 个）
+                    </button>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -219,7 +324,9 @@ export function McpFetchPanel({
               </label>
 
               {progress && (
-                <div className="text-xs text-[#86868b] bg-[#f5f5f7] rounded-lg px-3 py-2 whitespace-pre-wrap">{progress}</div>
+                <div className="text-xs text-[#86868b] bg-[#f5f5f7] rounded-lg px-3 py-2 whitespace-pre-wrap">
+                  {progress}
+                </div>
               )}
             </div>
 

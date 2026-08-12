@@ -622,6 +622,10 @@ export const parseReviews = async (file: File): Promise<Review[]> => {
   return buildReviewsFromRows(normalizedRows, mapping);
 };
 
+export type UserIntentStage = 'awareness' | 'consideration' | 'decision' | 'loyalty';
+export type JobType = 'functional' | 'emotional' | 'social';
+export type DemandTrend = 'rising' | 'stable' | 'declining';
+
 export interface Keyword {
   id: string;
   keyword: string;
@@ -641,6 +645,24 @@ export interface Keyword {
   top3ConversionShare: number;
   top3Asins: string;
   aiTags: string[]; // 人群词、场景词、品牌词、尺寸词、数量词、颜色词、材质词、功能词
+  /** 购买意图阶段：认知→考虑→决策→忠诚 */
+  userIntentStage?: UserIntentStage;
+  /** JTBD 用户任务名称（如「便携携带」「隔音降噪」） */
+  jobToBeDone?: string;
+  /** 任务类型：功能/情感/社会 */
+  jobType?: JobType;
+  /** 使用场景（如「户外露营」「办公商务」） */
+  useScenario?: string;
+  /** 目标人群（如「儿童」「老年人」） */
+  targetUser?: string;
+  /** 解决痛点 */
+  painPoint?: string;
+  /** 功能需求 */
+  featureDemand?: string;
+  /** 对比对象 */
+  comparisonTarget?: string;
+  /** 需求趋势 */
+  demandTrend?: DemandTrend;
 }
 
 export const parseKeywords = async (file: File): Promise<Keyword[]> => {

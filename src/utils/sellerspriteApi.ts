@@ -2,6 +2,8 @@ import type { Keyword, Review } from './parser';
 import {
   getActiveSellerSpriteProvider,
   getSellerSpriteEndpoint,
+  getActiveLingXingProvider,
+  getLingXingEndpoint,
   loadMcpSettings,
   type McpSettings,
   type McpProviderEntry,
@@ -185,6 +187,122 @@ function resolveSellerSpriteAuth(settings?: McpSettings | null): { secretKey: st
   return { secretKey, endpoint };
 }
 
+function resolveLingXingAuth(settings?: McpSettings | null): { apiKey: string; endpoint: string } {
+  const cfg = settings ?? loadMcpSettings();
+  const lx = getActiveLingXingProvider(cfg);
+  const apiKey = (lx?.secretKey || '').trim();
+  if (!apiKey) {
+    throw new Error('请先在「设置 → MCP 数据」中配置领星密钥（X-Mcp-Key）');
+  }
+  const endpoint = getLingXingEndpoint(lx?.mcpUrl ?? '');
+  return { apiKey, endpoint };
+}
+
+/** 领星 MCP：X-Mcp-Key 认证 */
+async function callLingXingToolBrowser(
+  toolName: string,
+  args: Record<string, unknown>,
+  settings?: McpSettings | null
+): Promise<unknown> {
+  const { apiKey, endpoint } = resolveLingXingAuth(settings);
+  const rpcBody = {
+    jsonrpc: '2.0' as const,
+    id: Date.now(),
+    method: 'tools/call',
+    params: { name: toolName, arguments: args },
+  };
+
+  // 领星：X-Mcp-Key 认证头
+  const lingHttp = async (
+    url: string,
+    body: string,
+    extraHeaders?: Record<string, string>
+  ) => {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json, text/event-stream',
+          'Content-Type': 'application/json',
+          'X-Mcp-Key': apiKey,
+          ...(extraHeaders ?? {}),
+        },
+        body,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(
+        /Failed to fetch|NetworkError|Load failed/i.test(msg)
+          ? '网络请求失败。请确认 npm run dev 已启动且领星密钥正确'
+          : msg
+      );
+    }
+    return { ok: res.ok, status: res.status, text: await res.text(), sessionId: res.headers.get('mcp-session-id') || undefined };
+  };
+
+  const direct = await lingHttp(endpoint, JSON.stringify(rpcBody), {
+    'MCP-Protocol-Version': '2025-03-26',
+    'Mcp-Method': 'tools/call',
+    'Mcp-Name': toolName,
+  });
+
+  let parsed = parseMcpHttpBody(direct.text);
+  if (direct.ok && parsed?.result !== undefined && !parsed.error) {
+    return extractToolPayload(parsed.result);
+  }
+
+  const initRes = await lingHttp(endpoint, JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-03-26',
+      capabilities: {},
+      clientInfo: { name: 'amz-market-research-app', version: '1.0.0' },
+    },
+  }), { 'MCP-Protocol-Version': '2025-03-26' });
+
+  const sessionId = initRes.sessionId;
+  if (!initRes.ok && !sessionId) {
+    const errMsg =
+      parsed?.error?.message ||
+      (direct.text || initRes.text || '').slice(0, 300) ||
+      `领星 MCP 初始化失败 (${initRes.status})`;
+    throw new Error(errMsg);
+  }
+
+  if (sessionId) {
+    await lingHttp(endpoint, JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'notifications/initialized',
+    }), {
+      'MCP-Protocol-Version': '2025-03-26',
+      'Mcp-Session-Id': sessionId,
+    });
+  }
+
+  const callRes = await lingHttp(endpoint, JSON.stringify(rpcBody), {
+    'MCP-Protocol-Version': '2025-03-26',
+    'Mcp-Method': 'tools/call',
+    'Mcp-Name': toolName,
+    ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
+  });
+
+  parsed = parseMcpHttpBody(callRes.text);
+  if (!callRes.ok || parsed?.error) {
+    throw new Error(
+      parsed?.error?.message ||
+        callRes.text.slice(0, 300) ||
+        `领星 MCP 调用失败 (${callRes.status})`
+    );
+  }
+  if (parsed?.result === undefined) {
+    throw new Error('领星 MCP 返回为空，请检查密钥或参数是否正确');
+  }
+  return extractToolPayload(parsed.result);
+}
+
 /** 浏览器端直接调用卖家精灵 MCP（经同源反代或用户自定义 URL） */
 async function callSellerSpriteToolBrowser(
   toolName: string,
@@ -288,7 +406,10 @@ export async function getSellerSpriteStatus(): Promise<{ configured: boolean; me
   };
 }
 
-async function callTool(tool: 'review' | 'traffic_keyword', args: Record<string, unknown>): Promise<unknown> {
+async function callTool(
+  tool: 'review' | 'traffic_keyword' | 'keyword_miner' | 'keyword_research' | 'aba_research_weekly',
+  args: Record<string, unknown>
+): Promise<unknown> {
   return callSellerSpriteToolBrowser(tool, args);
 }
 
@@ -568,6 +689,125 @@ export async function fetchKeywordsFromMcp(opts: FetchKeywordsOptions): Promise<
     if (meta.hasNext === false) break;
     if (meta.pages != null && page >= meta.pages) break;
     // 不要用 items.length < pageSize 提前停：接口经常少返回几条但仍有下一页
+  }
+  return [...map.values()];
+}
+
+/** 按种子关键词拉取 ABA / 关联关键词（keyword_miner） */
+export interface FetchKeywordsByKeywordOptions {
+  keyword: string;
+  marketplace: string;
+  pageSize?: number;
+  maxPages?: number;
+  onProgress?: (msg: string) => void;
+}
+
+function mapMinerKeywordItem(item: Record<string, unknown>, rank: number): Keyword {
+  // keyword_miner 与 traffic_keyword 字段略有差异，做兼容映射
+  const searches =
+    Number(item.searches) ||
+    Number(item.search) ||
+    Number(item.monthlySearches) ||
+    0;
+  const weekly =
+    Number(item.calculatedWeeklySearches) ||
+    (searches > 0 ? Math.round(searches / 4.3) : 0);
+  const bid = Number(item.bid) || Number(item.avgBid) || Number(item.ppcBid) || 0;
+  const bidMin = Number(item.bidMin);
+  const bidMax = Number(item.bidMax);
+  const monopoly =
+    Number(item.monopolyClickRate) ||
+    Number(item.araClickRate) ||
+    Number(item.top3ClickingRate) ||
+    0;
+  const top3Click = Number(item.top3ClickingRate) || monopoly;
+  const top3Conv = Number(item.top3ConversionRate) || 0;
+  const purchaseRate =
+    Number(item.purchaseRate) ||
+    Number(item.purchasesRate) ||
+    Number(item.purchase_rate) ||
+    0;
+  const difficulty = Math.round(Math.min(100, Math.max(0, monopoly * 100 || Number(item.spr) || 0)));
+
+  return {
+    id: uid(),
+    keyword: String(item.keyword || item.keywords || '').trim(),
+    translation: String(item.keywordCn || item.translation || item.keywordZh || ''),
+    wordTag: '',
+    matchType: '',
+    relevanceTier: '',
+    rank,
+    weeklySearchVolume: Math.round(weekly),
+    cpcBid: bid,
+    cpcBidRange:
+      Number.isFinite(bidMin) && Number.isFinite(bidMax)
+        ? `${bidMin.toFixed(2)}-${bidMax.toFixed(2)}`
+        : '',
+    conversionRate: purchaseRate,
+    difficulty,
+    difficultyTier: difficulty >= 70 ? '高' : difficulty >= 40 ? '中' : '低',
+    organicScrollRate: 0,
+    top3ClickShare: top3Click,
+    top3ConversionShare: top3Conv,
+    top3Asins: '',
+    aiTags: [],
+  };
+}
+
+/**
+ * 输入种子关键词 → 用 keyword_miner 抓取关联 ABA 关键词列表
+ * （比 traffic_keyword 更接近「按词反查市场词库」）
+ */
+export async function fetchKeywordsByKeywordFromMcp(
+  opts: FetchKeywordsByKeywordOptions
+): Promise<Keyword[]> {
+  const seed = opts.keyword.trim();
+  if (!seed) throw new Error('请输入种子关键词');
+  const marketplace = normalizeMarketplaceCode(opts.marketplace);
+  const pageSize = Math.min(Math.max(opts.pageSize ?? 50, 1), 50);
+  const maxPages = Math.min(Math.max(opts.maxPages ?? 3, 1), 10);
+  const map = new Map<string, Keyword>();
+
+  for (let page = 1; page <= maxPages; page++) {
+    opts.onProgress?.(
+      `正在抓取「${seed}」ABA 关联词 第 ${page}/${maxPages} 页（已获 ${map.size} 个）…`
+    );
+    let payload: unknown;
+    try {
+      payload = await callTool('keyword_miner', {
+        request: {
+          keyword: seed,
+          marketplace,
+          page,
+          size: pageSize,
+          order: { field: 'searches', desc: true },
+        },
+      });
+    } catch (e) {
+      if (page === 1) {
+        opts.onProgress?.(`「${seed}」带排序抓取失败，改用不带排序重试…`);
+        payload = await callTool('keyword_miner', {
+          request: { keyword: seed, marketplace, page, size: pageSize },
+        });
+      } else {
+        throw e;
+      }
+    }
+    const items = pickItems(payload);
+    for (const it of items) {
+      if (!it || typeof it !== 'object') continue;
+      const row = it as Record<string, unknown>;
+      const kw = String(row.keyword || row.keywords || '').trim();
+      if (!kw) continue;
+      if (!map.has(kw.toLowerCase())) {
+        map.set(kw.toLowerCase(), mapMinerKeywordItem(row, map.size + 1));
+      }
+    }
+    if (items.length === 0) break;
+    const meta = pickMeta(payload);
+    if (meta.total != null && map.size >= meta.total) break;
+    if (meta.hasNext === false) break;
+    if (meta.pages != null && page >= meta.pages) break;
   }
   return [...map.values()];
 }
