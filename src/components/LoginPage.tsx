@@ -152,7 +152,7 @@ const Nav: React.FC<{ a: string | null; on: (id: string) => void; onBrandClick: 
       <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center group-hover:shadow-sm group-hover:shadow-indigo-200/50 transition-all">
         <BarChart3 className="w-4 h-4 text-indigo-600" />
       </div>
-      <span className="text-[#1d1d1f] font-semibold text-[15px] tracking-tight group-hover:text-indigo-600 transition-colors">AmzDev Tool</span>
+      <span className="text-[#1d1d1f] font-semibold text-[15px] tracking-tight group-hover:text-indigo-600 transition-colors">Kairo</span>
     </button>
     <div className="flex items-center gap-1">
       {MENU.map((m) => (
@@ -176,15 +176,15 @@ const Nav: React.FC<{ a: string | null; on: (id: string) => void; onBrandClick: 
    ═══════════════════════════════════════ */
 const About: React.FC<{ c: () => void }> = ({ c }) => (
   <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={(e) => { if (e.target === e.currentTarget) c(); }}>
-    <div className="bg-white border border-black/[0.06] w-full max-w-lg rounded-2xl shadow-2xl">
-      <div className="p-5 border-b border-black/[0.06] flex items-center justify-between">
+    <div className="bg-white border border-black/[0.06] w-full max-w-lg rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="p-5 border-b border-black/[0.06] flex items-center justify-between sticky top-0 bg-white z-10">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center">
             <BarChart3 className="w-[18px] h-[18px] text-indigo-600" />
           </div>
           <div>
-            <h3 className="text-[#1d1d1f] font-semibold">关于 AmzDev Tool</h3>
-            <p className="text-xs text-[#86868b]">亚马逊市调与用户洞察工作台</p>
+            <h3 className="text-[#1d1d1f] font-semibold">关于 Kairo</h3>
+            <p className="text-xs text-[#86868b]">抓住时机的用户洞察工作台</p>
           </div>
         </div>
         <button type="button" onClick={c} className="p-1.5 hover:bg-black/[0.04] rounded-lg text-[#86868b] hover:text-[#1d1d1f]">
@@ -192,16 +192,24 @@ const About: React.FC<{ c: () => void }> = ({ c }) => (
         </button>
       </div>
       <div className="p-6 space-y-5 text-sm text-[#424245]">
+        <div className="rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100/60 p-4">
+          <p className="text-[13px] leading-relaxed text-[#1d1d1f]">
+            <strong className="text-indigo-600">Kairo</strong> 源自希腊语 <em>καιρός (Kairos)</em>——不是日历上的「时间」，而是<strong>恰到好处的那一刻</strong>。
+          </p>
+          <p className="text-[13px] leading-relaxed mt-2 text-[#424245]">
+            在亚马逊选品里，真正稀缺的不是数据，而是<strong>看懂用户、踩准窗口</strong>的判断力。Kairo 帮你在信号刚冒头时抓住爆品时机——用用户洞察把「感觉」变成可拍板的行动。
+          </p>
+        </div>
         <p>
-          <strong className="text-[#1d1d1f]">AmzDev Tool</strong> 把关键词、评论、竞品 Listing 收成同一套工作流，用 JTBD 视角读懂「谁要买、为什么买、还差什么」。
+          我们把关键词、评论、竞品 Listing、市场大盘收成同一套工作流，用 JTBD（用户真实要完成的任务）视角读懂<strong>「谁要买、为什么买、还差什么」</strong>——这正是用户洞察的核心。
         </p>
         <div className="space-y-3">
-          <h4 className="text-[#1d1d1f] font-semibold text-sm">系统能回答</h4>
+          <h4 className="text-[#1d1d1f] font-semibold text-sm">Kairo 帮你看见</h4>
           {[
-            { i: Search, lb: '市场规模与集中度', ds: '大盘趋势、价格带、新品窗口，一眼对齐选品方向' },
-            { i: Tags, lb: '搜索意图分层', ds: '不止搜索量/CPC，拆出认知→决策四层意图与场景×人群' },
-            { i: MessagesSquare, lb: '用户真话解码', ds: '评论按痛点/赞美/场景自动打标，可写进开发简报' },
-            { i: GitCompare, lb: '竞品差距对照', ds: '主图、五点、流量词结构并排，少翻十几个页面' },
+            { i: Search, lb: '市场时机', ds: '大盘集中度、价格带、新品窗口——判断「现在能不能进」' },
+            { i: Tags, lb: '搜索背后的需求', ds: '意图分层与 JTBD 任务聚类，看清用户在搜什么「任务」' },
+            { i: MessagesSquare, lb: '用户真话', ds: '评论打标成痛点/赞美/场景/人群，直接喂给 Listing 与开发' },
+            { i: GitCompare, lb: '竞品空白', ds: '主图、五点、流量词并排对照，找到可攻击的差距' },
           ].map(({ i: I, lb, ds }) => (
             <div key={lb} className="flex gap-3">
               <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
@@ -214,7 +222,7 @@ const About: React.FC<{ c: () => void }> = ({ c }) => (
             </div>
           ))}
         </div>
-        <p className="text-xs text-[#aeaeb2] pt-1">Version 2.0 · Built for Amazon ops & PMs</p>
+        <p className="text-xs text-[#aeaeb2] pt-1">Kairo · 为抓住时机而生</p>
       </div>
     </div>
   </div>
@@ -253,22 +261,74 @@ const Contact: React.FC<{ c: () => void }> = ({ c }) => (
 
 const Docs: React.FC<{ c: () => void }> = ({ c }) => (
   <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={(e) => { if (e.target === e.currentTarget) c(); }}>
-    <div className="bg-white border border-black/[0.06] w-full max-w-lg rounded-2xl shadow-2xl">
-      <div className="p-5 border-b border-black/[0.06] flex items-center justify-between">
+    <div className="bg-white border border-black/[0.06] w-full max-w-xl rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
+      <div className="p-5 border-b border-black/[0.06] flex items-center justify-between shrink-0">
         <h3 className="text-[#1d1d1f] font-semibold">帮助文档</h3>
         <button type="button" onClick={c} className="p-1.5 hover:bg-black/[0.04] rounded-lg text-[#86868b] hover:text-[#1d1d1f]">
           <X className="w-4 h-4" />
         </button>
       </div>
-      <div className="p-6 space-y-4 text-sm text-[#424245]">
-        <ol className="list-decimal list-inside space-y-1.5 text-[13px] text-[#86868b]">
-          <li>登录后进「市场大盘」，导入 ASIN / 关键词，先看机会与集中度</li>
-          <li>在「关键词分析」跑种子词，输出购买意图与 JTBD 任务分层</li>
-          <li>在「竞品对比」对齐 Listing、流量结构与卖点差距</li>
-          <li>在「评论洞察」提炼痛点、赞美点与未满足需求</li>
-          <li>需要测算时，用「利润计算器」验证 FBA 模型是否扛得住</li>
-        </ol>
-        <p className="text-xs text-[#aeaeb2] pt-2">更多问题请通过「联系我们」扫码咨询。</p>
+      <div className="p-6 space-y-6 text-sm text-[#424245] overflow-y-auto">
+        <section>
+          <h4 className="text-[#1d1d1f] font-semibold mb-2 flex items-center gap-2">
+            <span className="text-indigo-600 font-mono text-xs">01</span> 快速开始
+          </h4>
+          <ol className="list-decimal list-inside space-y-1.5 text-[13px] text-[#86868b]">
+            <li>注册 / 登录，或点「游客模式进入」先体验示例数据</li>
+            <li>进入后默认在「市场大盘」——可上传 Excel，或稍后接 MCP 在线抓数</li>
+            <li>左上角点 <strong className="text-[#1d1d1f]">Kairo</strong> Logo 可随时返回本主页</li>
+          </ol>
+        </section>
+        <section>
+          <h4 className="text-[#1d1d1f] font-semibold mb-2 flex items-center gap-2">
+            <span className="text-indigo-600 font-mono text-xs">02</span> 市场大盘
+          </h4>
+          <p className="text-[13px] text-[#86868b] leading-relaxed mb-2">看品类有没有量、卷不卷、窗口在哪。</p>
+          <ul className="list-disc list-inside space-y-1 text-[13px] text-[#86868b]">
+            <li>上传产品表 + 历史大盘表，或加载示例</li>
+            <li>查看趋势、价格带、集中度、品牌榜、机会扫描</li>
+            <li>用「市场细分」做 AI 聚类；一键生成市场分析报告</li>
+          </ul>
+        </section>
+        <section>
+          <h4 className="text-[#1d1d1f] font-semibold mb-2 flex items-center gap-2">
+            <span className="text-indigo-600 font-mono text-xs">03</span> 关键词与用户洞察
+          </h4>
+          <p className="text-[13px] text-[#86868b] leading-relaxed mb-2">从搜索词还原用户任务，而不是只看搜索量。</p>
+          <ul className="list-disc list-inside space-y-1 text-[13px] text-[#86868b]">
+            <li>上传关键词表，或「在线抓取」（按搜索量排名取前 N）</li>
+            <li>点「AI 用户洞察」：意图分层 + JTBD + 场景×人群</li>
+            <li>在「用户报告」Tab 生成可读的洞察摘要</li>
+          </ul>
+        </section>
+        <section>
+          <h4 className="text-[#1d1d1f] font-semibold mb-2 flex items-center gap-2">
+            <span className="text-indigo-600 font-mono text-xs">04</span> 评论洞察（用户真话）
+          </h4>
+          <ul className="list-disc list-inside space-y-1 text-[13px] text-[#86868b]">
+            <li>上传或 MCP 抓取评论</li>
+            <li>四步：标签库 → 打标 → 深度洞察报告 → 用户旅程 5W1H</li>
+            <li>结论可直接写进 Listing Brief / 开发 PRD</li>
+          </ul>
+        </section>
+        <section>
+          <h4 className="text-[#1d1d1f] font-semibold mb-2 flex items-center gap-2">
+            <span className="text-indigo-600 font-mono text-xs">05</span> 竞品对比与利润
+          </h4>
+          <ul className="list-disc list-inside space-y-1 text-[13px] text-[#86868b]">
+            <li>竞品：选 ASIN → 对照 Listing / 流量 / 父体矩阵 → AI 综合报告</li>
+            <li>利润计算器：试算 FBA 成本结构，验证模型是否扛得住</li>
+          </ul>
+        </section>
+        <section>
+          <h4 className="text-[#1d1d1f] font-semibold mb-2 flex items-center gap-2">
+            <span className="text-indigo-600 font-mono text-xs">06</span> 数据源与 AI 设置
+          </h4>
+          <p className="text-[13px] text-[#86868b] leading-relaxed">
+            「设置 → MCP 数据」填卖家精灵 / 领星密钥即可在线抓取；「设置 → API」填大模型 Key 用于报告与打标。密钥只存在本机浏览器。在「Prompt」里可编辑各分析提示词。
+          </p>
+        </section>
+        <p className="text-xs text-[#aeaeb2] pt-1">更多问题请通过「联系我们」扫码咨询。</p>
       </div>
     </div>
   </div>
@@ -365,42 +425,33 @@ const HeroPreviewCard: React.FC = () => (
           </div>
         ))}
       </div>
-      {/* Upward trending bar chart */}
-      <div className="flex items-end gap-1.5 h-24 mb-2">
+      {/* Ethereal bar chart — 5 soft translucent bars */}
+      <div className="flex items-end gap-4 h-24 mb-2 px-2">
         {[
-          { h: 0.42, label: 'Jan' },
-          { h: 0.50, label: 'Feb' },
-          { h: 0.48, label: 'Mar' },
-          { h: 0.58, label: 'Apr' },
-          { h: 0.55, label: 'May' },
-          { h: 0.68, label: 'Jun' },
-          { h: 0.62, label: 'Jul' },
-          { h: 0.78, label: 'Aug' },
-          { h: 0.72, label: 'Sep' },
-          { h: 0.88, label: 'Oct' },
-          { h: 0.82, label: 'Nov' },
-          { h: 0.96, label: 'Dec' },
+          { h: 0.36, label: 'Q1' },
+          { h: 0.55, label: 'Q2' },
+          { h: 0.48, label: 'Q3' },
+          { h: 0.72, label: 'Q4' },
+          { h: 0.88, label: 'Q5' },
         ].map(({ h, label }, i) => (
-          <div key={label} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+          <div key={label} className="flex-1 flex flex-col items-center h-full justify-end">
             <div
-              className="w-full rounded-t-md transition-all duration-700"
+              className="w-full max-w-[28px] rounded-full"
               style={{
                 height: `${h * 100}%`,
                 transformOrigin: 'bottom',
-                background: i === 11
-                  ? 'linear-gradient(180deg, #8b5cf6 0%, #6366f1 100%)'
-                  : i >= 9
-                    ? 'linear-gradient(180deg, #818cf8 0%, #6366f1 100%)'
-                    : 'linear-gradient(180deg, #c7d2fe 0%, #a5b4fc 100%)',
-                boxShadow: i === 11 ? '0 0 12px rgba(139,92,246,0.35)' : 'none',
-                animation: `bar-rise 0.8s ease-out ${i * 0.06}s both`,
+                background: i === 4
+                  ? 'linear-gradient(180deg, rgba(139,92,246,0.55) 0%, rgba(99,102,241,0.18) 100%)'
+                  : 'linear-gradient(180deg, rgba(99,102,241,0.22) 0%, rgba(167,139,250,0.06) 100%)',
+                boxShadow: i === 4 ? '0 0 24px rgba(139,92,246,0.18)' : 'none',
+                animation: `bar-rise 1s ease-out ${i * 0.12}s both`,
               }}
             />
           </div>
         ))}
       </div>
-      <div className="flex justify-between text-[11px] text-[#aeaeb2] px-0.5">
-        <span>Jan</span><span>Apr</span><span>Jul</span><span>Oct</span><span>Dec</span>
+      <div className="flex justify-between text-[11px] text-[#aeaeb2] px-1">
+        <span>H1</span><span>H2</span><span>Now</span>
       </div>
     </div>
   </div>
@@ -708,14 +759,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               把数据变成
               <br />
               <span className="bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-500 bg-clip-text text-transparent">
-                品类判断力
+                用户洞察
               </span>
             </h1>
             <p className="text-[#424245] text-lg lg:text-xl leading-snug mb-3 max-w-md">
               不是另一个数据看板——是把市场规模、搜索意图、竞品差距、用户真话收成能拍板的洞察。
             </p>
             <p className="text-[#86868b] text-[14px] leading-relaxed max-w-md mb-6">
-              输入一组 ASIN 或一个关键词，系统从四个维度交叉分析，输出可直接进评审的品类判断。
+              输入一组 ASIN 或一个关键词，系统从四个维度交叉分析，输出可直接进评审的用户洞察结论。
             </p>
 
             {/* 数据流线 */}
@@ -748,7 +799,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     <BarChart3 className="w-4 h-4 text-white" />
                   </div>
                 </div>
-                <h3 className="font-semibold text-[#1d1d1f] text-[15px]">欢迎使用 AmzDev Tool</h3>
+                <h3 className="font-semibold text-[#1d1d1f] text-[15px]">欢迎使用 Kairo</h3>
                 <p className="text-[12px] text-[#aeaeb2] mt-0.5">{mode === 'login' ? '登录您的账号以继续' : '创建新账号以开始使用'}</p>
               </div>
 
@@ -834,7 +885,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                       <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeLinecap="round" className="opacity-30" /><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
                       处理中...
                     </span>
-                  ) : mode === 'login' ? '进入系统' : '创建账号'}
+                  ) : mode === 'login' ? '开启洞察' : '创建账号'}
                 </button>
               </form>
 
@@ -846,7 +897,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
               <button type="button" onClick={enterGuest}
                 className="w-full mt-4 py-3 border border-black/[0.08] hover:border-indigo-200 bg-white/60 hover:bg-indigo-50/70 text-[#86868b] hover:text-indigo-600 font-medium rounded-xl transition-all duration-300 text-[13px]">
-                游客模式进入（含示例品类数据）
+                游客模式进入
               </button>
               <p className="text-center text-[11px] text-[#aeaeb2] mt-4">数据仅存储在本地浏览器，安全且私密</p>
             </div>
@@ -1027,8 +1078,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <BarChart3 className="w-4 h-4 text-indigo-600" />
             </div>
             <div>
-              <div className="text-sm font-semibold text-[#1d1d1f]">AmzDev Tool</div>
-              <div className="text-[11px] text-[#aeaeb2]">亚马逊市调与用户洞察</div>
+              <div className="text-sm font-semibold text-[#1d1d1f]">Kairo</div>
+              <div className="text-[11px] text-[#aeaeb2]">抓住时机 · 用户洞察</div>
             </div>
           </div>
           <div className="flex flex-wrap gap-4 text-[13px] text-[#86868b]">

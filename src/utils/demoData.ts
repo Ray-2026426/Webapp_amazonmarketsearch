@@ -39,7 +39,7 @@ export interface CompetitorDemoSnapshot {
 /** 市场大盘 AI 报告（Markdown，演示样例） */
 export const DEMO_MARKET_REPORT_MD = `# 美国站薄枕头（Bed Pillows）市场洞察报告（示例）
 
-> 本报告为演示样例，基于示例 ASIN 池生成，便于展示 AmzDev Tool 的「一键报告」能力。
+> 本报告为演示样例，基于示例 ASIN 池生成，便于展示 Kairo 的「一键报告」能力。
 
 ## 1. 市场一句话判断
 

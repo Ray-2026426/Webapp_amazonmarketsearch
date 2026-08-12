@@ -6,6 +6,7 @@ import { buildAsinPeriodStatsMap, getAsinPeriodStats } from '../utils/chartHisto
 import { formatSegmentLabel } from '../utils/subSegments';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
+import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
 
 type SortKey = 'monthlySales' | 'monthlyRevenue' | 'launchDate' | 'fbaFee' | 'subBsr';
@@ -136,7 +137,12 @@ export const ProductModal = React.memo(function ProductModal({
       const salesLabel = usePeriodStats ? '所选时段销量' : '月销量';
       const revenueLabel = usePeriodStats ? '所选时段销售额' : '月销售额';
 
-      const prompt = `你是一位资深亚马逊运营专家，请对以下单个ASIN进行深度分析。
+      const basePrompt = getPrompt('asin_analysis') || '你是一位资深亚马逊运营专家，请对单个ASIN进行深度分析。';
+      const prompt = `${basePrompt}
+
+---
+
+## 本次 ASIN 数据（请严格基于以下数据撰写）
 
 ## ASIN基本信息
 - ASIN: ${selectedProduct.asin}
@@ -153,23 +159,7 @@ export const ProductModal = React.memo(function ProductModal({
 ## 历史月度数据
 ${historyLines}
 
-## 分析要求
-请按以下结构输出分析报告（使用Markdown格式）：
-
-### 1. 销售趋势分析
-分析历史销量和销售额的变化趋势，识别增长、下降或季节性规律。
-
-### 2. 价格策略分析
-分析价格变化对销量的影响，评估当前定价是否合理。
-
-### 3. 竞争力评估
-基于评分、评论数、BSR排名，评估该ASIN的市场竞争力。
-
-### 4. 增长机会与风险
-指出该ASIN的潜在增长机会和主要风险点。
-
-### 5. 运营建议
-给出3-5条具体可执行的运营优化建议。`;
+请开始撰写分析报告：`;
 
       const result = await generateText(prompt, aiSettings);
       setAiAnalysis(result);

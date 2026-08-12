@@ -43,9 +43,12 @@ const REVIEW_TARGET_OPTIONS = [
 ];
 
 const KEYWORD_TARGET_OPTIONS = [
-  { label: '约 50 个', pages: 1 },
-  { label: '约 100 个', pages: 2 },
-  { label: '约 150 个', pages: 3 },
+  { label: '前 50 个', pages: 1 },
+  { label: '前 100 个', pages: 2 },
+  { label: '前 150 个', pages: 3 },
+  { label: '前 200 个', pages: 4 },
+  { label: '前 300 个', pages: 6 },
+  { label: '全部', pages: 99 },
 ];
 
 /** 用全屏居中弹层，避免被父级 overflow 裁切导致底部按钮点不到 */
@@ -164,8 +167,8 @@ export function McpFetchPanel({
     mode === 'reviews'
       ? `卖家精灵评论接口每页约 ${REVIEW_PAGE_SIZE} 条；选「约 100 条」= 翻 5 页`
       : useSeed
-        ? `ABA 关联词每页约 ${KEYWORD_PAGE_SIZE} 个；按目标数量自动翻页`
-        : `流量词每页约 ${KEYWORD_PAGE_SIZE} 个；按目标数量自动翻页，无需关心页码`;
+        ? `ABA 关联词每页约 ${KEYWORD_PAGE_SIZE} 个；按搜索量降序排列，选「全部」则抓取所有可获取的词`
+        : `流量词每页约 ${KEYWORD_PAGE_SIZE} 个；按搜索量降序排列，选「全部」则抓取所有可获取的词`;
 
   return (
     <>
@@ -296,7 +299,18 @@ export function McpFetchPanel({
                 </div>
                 <div>
                   <label className="text-xs text-[#86868b] font-medium block mb-1">
-                    {mode === 'reviews' ? '目标评论条数' : '目标关键词数量'}
+                    {mode === 'reviews' ? '目标评论条数' : (
+                      <span className="inline-flex items-center gap-1">
+                        目标关键词数量
+                        <span className="relative group cursor-help">
+                          <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#e8e8ed] text-[10px] font-bold text-[#86868b] leading-none">?</span>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-56 px-2.5 py-2 bg-[#1d1d1f] text-white text-[11px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-normal leading-relaxed z-50">
+                            按<b>搜索量降序</b>排名抓取，例如「前 100 个」即取搜索量最高的前 100 个关键词
+                            <span className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-[#1d1d1f]" />
+                          </span>
+                        </span>
+                      </span>
+                    )}
                   </label>
                   <select
                     value={maxPages}

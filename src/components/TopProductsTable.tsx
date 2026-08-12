@@ -7,6 +7,7 @@ import { Star, ExternalLink, TrendingUp, X, ChevronLeft, ChevronRight, ArrowUp, 
 import * as XLSX from 'xlsx';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
+import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
 import { DateRangeSelector } from './DateRangeSelector';
 
@@ -153,7 +154,8 @@ export const TopProductsTable = React.memo(function TopProductsTable({
             return `${m}: 销量=${d.sales}, 销售额=${cur}${Math.round(d.revenue)}, 均价=${cur}${d.sales > 0 ? (d.revenue / d.sales).toFixed(2) : (d.price ?? 0).toFixed(2)}`;
           }).join('\n')
         : '无历史数据';
-      const prompt = `你是一位资深亚马逊运营专家，请对以下单个ASIN进行深度分析。\n\n## ASIN基本信息\n- ASIN: ${product.asin}\n- 标题: ${product.title || '未知'}\n- 品牌: ${product.brand}\n- 当前价格: ${cur}${product.price.toFixed(2)}\n- 月销量: ${getSales(product).toLocaleString()}\n- 月销售额: ${cur}${Math.round(getRevenue(product)).toLocaleString()}\n- 评分: ${product.rating.toFixed(1)} (${product.reviewCount.toLocaleString()} 条评论)\n- FBA费用: ${product.fbaFee > 0 ? cur + product.fbaFee.toFixed(2) : '未知'}\n- 小类BSR: ${product.subBsr > 0 ? '#' + product.subBsr.toLocaleString() : '未知'}\n- 上架时间: ${product.launchDate || '未知'}\n\n## 历史月度数据\n${historyLines}\n\n## 分析要求\n请按以下结构输出分析报告（Markdown格式）：\n\n### 1. 产品定位解读\n基于标题关键词，分析该产品的核心卖点、目标人群、使用场景和差异化定位。\n\n### 2. 销售趋势分析\n分析历史销量和销售额的变化趋势，识别增长、下降或季节性规律。\n\n### 3. 价格策略分析\n分析价格变化对销量的影响，评估当前定价是否合理。\n\n### 4. 竞争力评估\n基于评分、评论数、BSR排名，评估该ASIN的市场竞争力。\n\n### 5. 增长机会与风险\n指出该ASIN的潜在增长机会和主要风险点。\n\n### 6. 运营建议\n给出3-5条具体可执行的运营优化建议。`;
+      const basePrompt = getPrompt('asin_analysis') || '你是一位资深亚马逊运营专家，请对单个ASIN进行深度分析。';
+      const prompt = `${basePrompt}\n\n---\n\n## 本次 ASIN 数据（请严格基于以下数据撰写）\n\n## ASIN基本信息\n- ASIN: ${product.asin}\n- 标题: ${product.title || '未知'}\n- 品牌: ${product.brand}\n- 当前价格: ${cur}${product.price.toFixed(2)}\n- 月销量: ${getSales(product).toLocaleString()}\n- 月销售额: ${cur}${Math.round(getRevenue(product)).toLocaleString()}\n- 评分: ${product.rating.toFixed(1)} (${product.reviewCount.toLocaleString()} 条评论)\n- FBA费用: ${product.fbaFee > 0 ? cur + product.fbaFee.toFixed(2) : '未知'}\n- 小类BSR: ${product.subBsr > 0 ? '#' + product.subBsr.toLocaleString() : '未知'}\n- 上架时间: ${product.launchDate || '未知'}\n\n## 历史月度数据\n${historyLines}\n\n请开始撰写分析报告：`;
       const result = await generateText(prompt, aiSettings);
       setAiAnalysis(result);
     } catch (err: any) {

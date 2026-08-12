@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Keyword, parseKeywords, UserIntentStage, JobType } from '../utils/parser';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
+import { getPrompt } from './AiPromptManager';
 import { fetchKeywordsFromMcp, fetchKeywordsByKeywordFromMcp } from '../utils/sellerspriteApi';
 import { toast } from 'sonner';
 import { KwView } from './KeywordAnalysisView';
@@ -584,7 +585,12 @@ ${batch.map((k, n) => `${n + 1}. ${k.keyword}（${k.translation}）`).join('\n')
       const jobs = calcJTBDStats(keywords);
       const sc = calcScenarioInsights(keywords);
       const top = [...keywords].sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume).slice(0, 30);
-      const p = `你是亚马逊用户洞察专家。基于关键词洞察数据，生成结构化用户洞察报告。
+      const baseInsight = getPrompt('user_insights') || '你是亚马逊用户洞察专家。基于关键词洞察数据，生成结构化用户洞察报告。';
+      const p = `${baseInsight}
+
+---
+
+## 本次关键词洞察数据（请严格基于以下统计）
 
 【购买意图分布】
 ${intents.map(i => `- ${INTENT_META[i.stage].label}：词数${i.count}（${(i.share * 100).toFixed(0)}%），搜索量${i.totalVolume.toLocaleString()}，CVR ${(i.avgCvr * 100).toFixed(1)}%`).join('\n')}
@@ -599,7 +605,8 @@ ${jobs.slice(0, 8).map(j => `- ${j.job}（${JOB_TYPE_META[j.jobType].label}）�
 
 【Top30 关键词】${top.map(k => `${k.keyword}(${k.translation},${k.weeklySearchVolume})`).join('，')}
 
-返回 JSON：
+## 输出格式（必须严格遵守，框架不变）
+请只返回一个 JSON 对象（不要 Markdown 代码围栏），字段对应分析框架：
 {
   "summary":"100字市场与用户总体判断",
   "userPersona":"80字用户画像：谁在用、什么场景、核心诉求",

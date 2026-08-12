@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Sparkles, Loader2, FileText, TrendingUp, Users, Info, ShieldAlert, Edit3, Save, RotateCcw, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
+import { getPrompt } from './AiPromptManager';
 import { Product, HistoryRecord } from '../utils/parser';
 import { toast } from 'sonner';
 import Markdown from 'react-markdown';
@@ -75,28 +76,25 @@ export const MarketAnalysisReport: React.FC<MarketAnalysisReportProps> = ({
       setProgress(40);
       setStatus('AI 正在撰写深度分析报告...');
 
-      const prompt = `你是一位资深的亚马逊市场分析专家。请基于以下提供的市场数据，生成一份深度市场分析报告。
-        
-报告要求：
-1. 必须包含以下章节：市场概况、需求与趋势、竞争格局、成功因素与策略洞察、机会与利基市场、风险与挑战、产业带分布参考、市场进入建议、总结、SWOT 分析。
-2. 风格专业、客观、具有实操指导意义。
-3. 使用 Markdown 格式。
-4. 报告内容要丰富，不要只给大纲。
-5. 针对中国卖家提供具体的供应链和运营建议。
-6. 在每个章节标题前加上相关的 Emoji 图标，并使用加粗、列表、引用块等 Markdown 语法增强可读性。
-        
+      const basePrompt = getPrompt('market_report') || '你是一位资深的亚马逊市场分析专家。请生成深度市场分析报告。';
+      const prompt = `${basePrompt}
+
+---
+
+## 本次市场数据（请严格基于以下数据撰写）
+
 市场基本数据：
 - 总月销售额: $${totalRevenue.toLocaleString()}
 - 总月销量: ${totalSales.toLocaleString()}
 - 平均客单价: $${avgPrice.toFixed(2)}
 - 头部品牌: ${topBrands}
-        
+
 细分市场及用户画像：
 ${segmentSummary}
-        
+
 产品示例 (前20个):
 ${products.slice(0, 20).map(p => `- ${p.title} (价格: $${p.price}, 评分: ${p.rating})`).join('\n')}
-        
+
 请开始撰写报告：`;
 
       const result = await generateText(prompt, aiSettings);
