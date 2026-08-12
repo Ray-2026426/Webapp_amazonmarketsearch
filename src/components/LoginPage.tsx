@@ -3,7 +3,7 @@ import {
   Eye, EyeOff, User, Lock, BarChart3, Search, X, MessageCircle, QrCode,
   MessageSquareWarning, KeyRound, FolderOpen, Compass, Tags, GitCompare, MessagesSquare,
   Calculator, Sparkles, Upload, Plug, ArrowDown, Layers, Route, CheckCircle2,
-  TrendingUp, Shield, Zap, Clock,
+  TrendingUp, Shield, Zap, Clock, Lightbulb, Package, FlaskConical, RefreshCw, ArrowRight,
 } from 'lucide-react';
 import { login, register, saveCreds, loadCreds, clearCreds } from '../utils/auth';
 import { toast } from 'sonner';
@@ -88,6 +88,16 @@ const pageCss = `
   @keyframes hero-float {
     0%, 100% { transform: translateY(0px); }
     50% { transform: translateY(-8px); }
+  }
+  .hero-float { animation: hero-float 6s ease-in-out infinite; }
+
+  /* Trend chart animations */
+  @keyframes trend-draw {
+    to { stroke-dashoffset: 0; }
+  }
+  @keyframes trend-reveal {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
   .hero-float { animation: hero-float 6s ease-in-out infinite; }
 
@@ -328,39 +338,66 @@ const HeroDataFlow: React.FC = () => {
    ═══════════════════════════════════════ */
 const HeroPreviewCard: React.FC = () => (
   <div className="relative hero-float">
-    <div className="glass-card p-5 w-[320px] backdrop-blur-xl">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-2 h-2 rounded-full bg-green-400 shadow-sm shadow-green-400/50" />
-        <span className="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider">Live Market · US</span>
+    <div className="glass-card p-6 w-[380px] backdrop-blur-xl">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full bg-green-400 shadow-sm shadow-green-400/50 animate-pulse" />
+          <span className="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider">Live Market · US</span>
+        </div>
+        <span className="text-[10px] font-medium text-green-500 bg-green-50 px-2 py-0.5 rounded-full">+12.4% MoM</span>
       </div>
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      {/* KPI row */}
+      <div className="grid grid-cols-3 gap-4 mb-5">
         {[
           { v: '2,847', l: 'ASINs', c: '#6366f1' },
           { v: '$42.8M', l: '月销额', c: '#8b5cf6' },
           { v: '4.3', l: '均评分', c: '#6366f1' },
         ].map(({ v, l, c }) => (
           <div key={l}>
-            <div className="text-xl font-bold" style={{ color: c }}>{v}</div>
-            <div className="text-[10px] text-[#aeaeb2] mt-0.5">{l}</div>
+            <div className="text-[1.35rem] font-bold" style={{ color: c }}>{v}</div>
+            <div className="text-[11px] text-[#aeaeb2] mt-0.5">{l}</div>
           </div>
         ))}
       </div>
-      {/* mini bars */}
-      <div className="flex items-end gap-1 h-10">
-        {[0.7, 0.9, 0.45, 0.8, 0.55, 0.95, 0.6, 0.75, 0.85, 0.5, 0.7, 0.65].map((h, i) => (
-          <div
-            key={i}
-            className="flex-1 rounded-[2px] transition-all duration-500"
-            style={{
-              height: `${h * 100}%`,
-              backgroundColor: h > 0.8 ? '#6366f1' : h > 0.6 ? '#8b5cf6' : '#e0e0e8',
-              animationDelay: `${i * 0.06}s`,
-            }}
-          />
-        ))}
-      </div>
-      <div className="flex justify-between mt-1.5 text-[10px] text-[#aeaeb2]">
-        <span>Jan</span><span>Jun</span><span>Dec</span>
+      {/* Upward trending line chart */}
+      <svg viewBox="0 0 360 80" className="w-full h-16 mb-1.5">
+        <defs>
+          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#6366f1" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.02" />
+          </linearGradient>
+          <linearGradient id="trendLine" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#6366f1" />
+            <stop offset="100%" stopColor="#8b5cf6" />
+          </linearGradient>
+        </defs>
+        {/* Area fill */}
+        <path
+          d="M0 70 L40 58 L80 62 L120 48 L160 52 L200 35 L240 42 L280 28 L320 35 L360 10 L360 80 L0 80 Z"
+          fill="url(#trendFill)"
+          style={{ animation: 'trend-reveal 1.5s ease-out forwards' }}
+        />
+        {/* Line */}
+        <path
+          d="M0 70 L40 58 L80 62 L120 48 L160 52 L200 35 L240 42 L280 28 L320 35 L360 10"
+          fill="none"
+          stroke="url(#trendLine)"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray="500"
+          strokeDashoffset="500"
+          style={{ animation: 'trend-draw 2s ease-out forwards' }}
+        />
+        {/* End dot */}
+        <circle cx="360" cy="10" r="5" fill="#8b5cf6" className="animate-pulse" />
+        <circle cx="360" cy="10" r="5" fill="#8b5cf6" opacity="0.3" style={{ animation: 'pulse-ring 2s ease-out infinite' }}>
+          <animate attributeName="r" values="5;14" dur="2s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.4;0" dur="2s" repeatCount="indefinite" />
+        </circle>
+      </svg>
+      <div className="flex justify-between text-[10px] text-[#aeaeb2]">
+        <span>Jan</span><span>Mar</span><span>May</span><span>Jul</span><span>Sep</span><span>Nov</span>
       </div>
     </div>
   </div>
@@ -534,31 +571,59 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     } finally { setIsLoading(false); }
   };
 
-  /* ── Modules ── */
-  const modules = [
+  /* ── Four Phases ── */
+  const phases = [
     {
-      icon: Compass, accent: '#6366f1', tagCls: 'bg-indigo-50 text-indigo-700 border-indigo-100',
-      title: '市场全景研判',
-      q: '这个品类的钱在哪里、谁在赚、还能不能进？',
-      points: ['市场集中度与 HHI 指数', '价格带 × 评分分布定位', '新品存活窗口期判断', '品牌梯队与份额变迁'],
+      step: '01',
+      icon: Lightbulb,
+      accent: '#6366f1',
+      accentBg: 'bg-indigo-50',
+      title: '信号洞察',
+      subtitle: '发现问题，还原需求',
+      thesis: '别停在热词，要把需求说具体。',
+      items: [
+        '发现信号：Amazon 市场/竞品/评论、搜索广告、TikTok 趋势',
+        '还原需求：人群 × 场景 × 审美 × 脚型 × 功能 × 情绪价值',
+      ],
     },
     {
-      icon: Tags, accent: '#8b5cf6', tagCls: 'bg-violet-50 text-violet-700 border-violet-100',
-      title: '搜索意图解码',
-      q: '用户搜索的不是词，是要完成的任务。',
-      points: ['认知 → 考虑 → 决策 → 忠诚四层意图', 'JTBD 任务聚类与场景 × 人群', '词群转化漏斗与竞品截流点', '品类需求演化趋势追踪'],
+      step: '02',
+      icon: Package,
+      accent: '#8b5cf6',
+      accentBg: 'bg-violet-50',
+      title: '机会商品化',
+      subtitle: '变成可开发的东西',
+      thesis: '机会必须落到"能开一款鞋"，不是一句"这里有机会"。',
+      items: [
+        '形成机会假设：现有产品为何没满足、竞争是否可进',
+        '完成商品定义：楦型、颜色材质、功能、价格带、卖点、目标用户',
+      ],
     },
     {
-      icon: GitCompare, accent: '#6366f1', tagCls: 'bg-indigo-50 text-indigo-700 border-indigo-100',
-      title: '竞品差距雷达',
-      q: '不是看别人做了啥，是看他们漏了啥。',
-      points: ['主图/五点/标题逐项对照', '流量词结构重叠与独占', '父体规格矩阵差异', 'AI 综合差距报告'],
+      step: '03',
+      icon: FlaskConical,
+      accent: '#6366f1',
+      accentBg: 'bg-indigo-50',
+      title: '市场验证',
+      subtitle: '能不能真做、先小测',
+      thesis: '有需求 ≠ 适合我们；先小实验，别直接正式开发。',
+      items: [
+        '检查可行性：毛利、供应链、品质、开发周期、品牌匹配（一票否决感）',
+        '开展最小实验：打样/小测，低成本验证需求',
+      ],
     },
     {
-      icon: MessagesSquare, accent: '#8b5cf6', tagCls: 'bg-violet-50 text-violet-700 border-violet-100',
-      title: '用户真话引擎',
-      q: '评论不是打分，是产品迭代的需求清单。',
-      points: ['好评/差评/场景/人群自动打标', '痛点聚类与严重度排序', '未满足需求的 JTBD 转写', '可写进 PRD 的用户原声'],
+      step: '04',
+      icon: RefreshCw,
+      accent: '#8b5cf6',
+      accentBg: 'bg-violet-50',
+      title: '决策与学习',
+      subtitle: '人拍板 + 闭环',
+      thesis: '每次实战都让下一次"发现信号"更准。',
+      items: [
+        '人工决策：继续 / 调整 / 停止，并记录理由',
+        '结果回流：真实市场结果写回机会卡，校准标签、门槛、评分',
+      ],
     },
   ];
 
@@ -656,19 +721,20 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <p className="text-center text-[11px] text-[#aeaeb2] mt-2">系统持续解析品类供需结构</p>
             </div>
 
-            <a href="#modules" className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-500 transition-colors">
-              探索四大研判模块 <ArrowDown className="w-4 h-4" />
+            <a href="#phases" className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-500 transition-colors">
+              探索四阶段研判流程 <ArrowDown className="w-4 h-4" />
             </a>
           </div>
         </div>
 
-        {/* 右侧：登录面板 + 浮动预览卡 */}
+        {/* 中部：浮动预览卡 */}
+        <div className="hidden lg:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none">
+          <HeroPreviewCard />
+        </div>
+
+        {/* 右侧：登录面板 */}
         <div id="login-panel" className="relative z-10 flex-1 flex items-center justify-center px-6 py-10 lg:py-16 order-1 lg:order-2">
           <div className="w-full max-w-[400px] relative">
-            {/* 浮动预览卡片 (登录面板上方) */}
-            <div className="absolute -top-32 left-1/2 -translate-x-1/2 hidden lg:block">
-              <HeroPreviewCard />
-            </div>
 
             {/* 登录面板 */}
             <div className="glass-card p-7 shadow-[0_24px_64px_-16px_rgba(79,70,229,0.15)]">
@@ -785,41 +851,75 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         </div>
       </section>
 
-      {/* ═══════ 四大研判模块 ═══════ */}
-      <section id="modules" className="bg-[#f8f9fb] border-t border-black/[0.04]">
-        <div className="max-w-5xl mx-auto px-6 lg:px-10 py-20 lg:py-24">
-          <div className="mb-14 max-w-2xl">
-            <p className="text-indigo-600 text-xs font-semibold tracking-[0.16em] uppercase mb-3">研判模块</p>
+      {/* ═══════ 四阶段研判流程 ═══════ */}
+      <section id="phases" className="bg-[#f8f9fb] border-t border-black/[0.04]">
+        <div className="max-w-6xl mx-auto px-6 lg:px-10 py-20 lg:py-24">
+          <div className="mb-14 max-w-3xl">
+            <p className="text-indigo-600 text-xs font-semibold tracking-[0.16em] uppercase mb-3">研判流程</p>
             <h2 className="font-display text-[2.2rem] lg:text-[2.5rem] text-[#1d1d1f] leading-tight mb-3">
-              四个维度交叉，锁定品类真相
+              四个阶段：从发现信号到持续进化
             </h2>
             <p className="text-[#86868b] text-sm leading-relaxed">
-              每个模块独立可用，串起来就是完整的品类研判闭环——从"能不能做"到"怎么做"。
+              不是堆数据看板，而是沿着"发现 → 商品化 → 验证 → 学习"四步闭环，让每次研判都沉淀为下一次的起点。
             </p>
           </div>
-          <div className="grid md:grid-cols-2 gap-5">
-            {modules.map(({ icon: Icon, accent, tagCls, title, q, points }) => (
-              <div key={title} className="glass-card p-6 group cursor-default">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: `${accent}10`, border: `1px solid ${accent}20` }}>
-                    <Icon className="w-5 h-5" style={{ color: accent }} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-[#1d1d1f] text-[16px]">{title}</h3>
-                    <p className="text-[13px] text-[#86868b] mt-0.5 leading-snug">{q}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {points.map((p) => (
-                    <div key={p} className="flex items-center gap-2 text-[13px] text-[#424245]">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 mt-0.5 shrink-0" />
-                      {p}
+
+          {/* Phase cards with connectors */}
+          <div className="space-y-6">
+            {phases.map(({ step, icon: Icon, accent, accentBg, title, subtitle, thesis, items }, idx) => {
+              const isLast = idx === phases.length - 1;
+              return (
+                <div key={step} className="relative">
+                  <div className="glass-card p-6 lg:p-8 flex flex-col lg:flex-row lg:items-start gap-6">
+                    {/* Left badge */}
+                    <div className="shrink-0 flex items-center lg:flex-col gap-3 lg:w-[120px]">
+                      <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                        style={{ backgroundColor: `${accent}12`, border: `1px solid ${accent}25` }}>
+                        <Icon className="w-6 h-6" style={{ color: accent }} />
+                      </div>
+                      <div>
+                        <div className="text-[1.4rem] font-bold text-[#1d1d1f] leading-none">{step}</div>
+                        <div className="text-[11px] text-[#aeaeb2] mt-0.5">阶段</div>
+                      </div>
                     </div>
-                  ))}
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-3 mb-2 flex-wrap">
+                        <h3 className="text-xl font-semibold text-[#1d1d1f]">{title}</h3>
+                        <span className="text-[13px] text-[#86868b]">— {subtitle}</span>
+                      </div>
+                      <p className="text-[13px] font-medium italic mb-4"
+                        style={{ color: `${accent}cc` }}>
+                        "{thesis}"
+                      </p>
+                      <ul className="space-y-2.5">
+                        {items.map((item) => (
+                          <li key={item} className="flex items-start gap-2.5 text-[14px] text-[#424245] leading-relaxed">
+                            <ArrowRight className="w-4 h-4 mt-0.5 shrink-0" style={{ color: accent }} />
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Connector arrow between phases */}
+                  {!isLast && (
+                    <div className="flex justify-center py-3">
+                      <div className="w-0.5 h-8 rounded-full"
+                        style={{ background: `linear-gradient(to bottom, ${phases[idx].accent}, ${phases[idx + 1].accent})` }} />
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
+          </div>
+
+          {/* Return loop indicator */}
+          <div className="mt-10 flex items-center justify-center gap-3 text-[13px] text-[#aeaeb2]">
+            <RefreshCw className="w-4 h-4 text-[#8b5cf6]" />
+            <span>第四阶段结果回流，校准第一阶段信号识别——形成持续进化的品类研判闭环</span>
           </div>
         </div>
       </section>
