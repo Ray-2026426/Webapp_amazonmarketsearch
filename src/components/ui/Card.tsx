@@ -9,7 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 export function Card({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("rounded-[20px] border border-white/[0.06] bg-[#131a2c] text-[#e8edf5] shadow-[0_4px_24px_rgba(0,0,0,0.2)]", className)}
+      className={cn("rounded-[20px] border border-black/5 bg-white text-[#1d1d1f] shadow-[0_4px_24px_rgba(0,0,0,0.04)]", className)}
       {...props}
     >
       {children}
@@ -38,7 +38,7 @@ export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHead
 export function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
   return (
     <p
-      className={cn("text-sm text-[#6b7c93]", className)}
+      className={cn("text-sm text-[#86868b]", className)}
       {...props}
     />
   );
