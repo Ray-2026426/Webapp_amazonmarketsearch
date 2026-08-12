@@ -99,6 +99,10 @@ const pageCss = `
     from { opacity: 0; }
     to { opacity: 1; }
   }
+  @keyframes bar-rise {
+    from { transform: scaleY(0); opacity: 0.4; }
+    to { transform: scaleY(1); opacity: 1; }
+  }
   .hero-float { animation: hero-float 6s ease-in-out infinite; }
 
   /* Counter flash */
@@ -234,11 +238,11 @@ const Contact: React.FC<{ c: () => void }> = ({ c }) => (
         </button>
       </div>
       <div className="p-6 flex flex-col items-center gap-4">
-        <div className="w-48 h-48 rounded-2xl overflow-hidden border border-black/[0.06] shadow-sm bg-black">
+        <div className="w-48 h-48 rounded-2xl overflow-hidden border border-black/[0.06] shadow-sm bg-white">
           <img
             src="/contact-qr.png"
             alt="联系我们二维码"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain p-2"
           />
         </div>
         <p className="text-xs text-[#86868b] text-center">扫码沟通市调工作流<br />或申请团队试用开通</p>
@@ -361,45 +365,42 @@ const HeroPreviewCard: React.FC = () => (
           </div>
         ))}
       </div>
-      {/* Upward trending line chart */}
-      <svg viewBox="0 0 360 80" className="w-full h-20 mb-2">
-        <defs>
-          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#6366f1" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.02" />
-          </linearGradient>
-          <linearGradient id="trendLine" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#6366f1" />
-            <stop offset="100%" stopColor="#8b5cf6" />
-          </linearGradient>
-        </defs>
-        {/* Area fill */}
-        <path
-          d="M0 70 L40 58 L80 62 L120 48 L160 52 L200 35 L240 42 L280 28 L320 35 L360 10 L360 80 L0 80 Z"
-          fill="url(#trendFill)"
-          style={{ animation: 'trend-reveal 1.5s ease-out forwards' }}
-        />
-        {/* Line */}
-        <path
-          d="M0 70 L40 58 L80 62 L120 48 L160 52 L200 35 L240 42 L280 28 L320 35 L360 10"
-          fill="none"
-          stroke="url(#trendLine)"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeDasharray="500"
-          strokeDashoffset="500"
-          style={{ animation: 'trend-draw 2s ease-out forwards' }}
-        />
-        {/* End dot */}
-        <circle cx="360" cy="10" r="5" fill="#8b5cf6" className="animate-pulse" />
-        <circle cx="360" cy="10" r="5" fill="#8b5cf6" opacity="0.3" style={{ animation: 'pulse-ring 2s ease-out infinite' }}>
-          <animate attributeName="r" values="5;14" dur="2s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0.4;0" dur="2s" repeatCount="indefinite" />
-        </circle>
-      </svg>
-      <div className="flex justify-between text-[11px] text-[#aeaeb2]">
-        <span>Jan</span><span>Mar</span><span>May</span><span>Jul</span><span>Sep</span><span>Nov</span>
+      {/* Upward trending bar chart */}
+      <div className="flex items-end gap-1.5 h-24 mb-2">
+        {[
+          { h: 0.42, label: 'Jan' },
+          { h: 0.50, label: 'Feb' },
+          { h: 0.48, label: 'Mar' },
+          { h: 0.58, label: 'Apr' },
+          { h: 0.55, label: 'May' },
+          { h: 0.68, label: 'Jun' },
+          { h: 0.62, label: 'Jul' },
+          { h: 0.78, label: 'Aug' },
+          { h: 0.72, label: 'Sep' },
+          { h: 0.88, label: 'Oct' },
+          { h: 0.82, label: 'Nov' },
+          { h: 0.96, label: 'Dec' },
+        ].map(({ h, label }, i) => (
+          <div key={label} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+            <div
+              className="w-full rounded-t-md transition-all duration-700"
+              style={{
+                height: `${h * 100}%`,
+                transformOrigin: 'bottom',
+                background: i === 11
+                  ? 'linear-gradient(180deg, #8b5cf6 0%, #6366f1 100%)'
+                  : i >= 9
+                    ? 'linear-gradient(180deg, #818cf8 0%, #6366f1 100%)'
+                    : 'linear-gradient(180deg, #c7d2fe 0%, #a5b4fc 100%)',
+                boxShadow: i === 11 ? '0 0 12px rgba(139,92,246,0.35)' : 'none',
+                animation: `bar-rise 0.8s ease-out ${i * 0.06}s both`,
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between text-[11px] text-[#aeaeb2] px-0.5">
+        <span>Jan</span><span>Apr</span><span>Jul</span><span>Oct</span><span>Dec</span>
       </div>
     </div>
   </div>
