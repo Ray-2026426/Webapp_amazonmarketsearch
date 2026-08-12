@@ -672,12 +672,26 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
             {/* 登录面板 */}
             <div className="glass-card p-7 shadow-[0_24px_64px_-16px_rgba(79,70,229,0.15)]">
-              <div className="flex bg-black/[0.03] rounded-xl p-1 mb-6">
+              {/* 面板头部 */}
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-sm shadow-indigo-500/25">
+                    <BarChart3 className="w-4 h-4 text-white" />
+                  </div>
+                </div>
+                <h3 className="font-semibold text-[#1d1d1f] text-[15px]">欢迎使用 AmzDev Tool</h3>
+                <p className="text-[12px] text-[#aeaeb2] mt-0.5">{mode === 'login' ? '登录您的账号以继续' : '创建新账号以开始使用'}</p>
+              </div>
+
+              {/* Tab 切换 */}
+              <div className="flex bg-gradient-to-r from-indigo-50/60 to-violet-50/60 rounded-xl p-1 mb-5">
                 {(['login', 'register'] as const).map((m) => (
                   <button
                     key={m} type="button" onClick={() => setMode(m)}
-                    className={`flex-1 py-2.5 rounded-lg text-[13px] font-semibold transition-all duration-200 ${
-                      mode === m ? 'bg-white text-[#1d1d1f] shadow-sm ring-1 ring-black/[0.06]' : 'text-[#86868b] hover:text-[#1d1d1f]'
+                    className={`flex-1 py-2.5 rounded-lg text-[13px] font-semibold transition-all duration-300 ${
+                      mode === m
+                        ? 'bg-white text-[#1d1d1f] shadow-sm shadow-black/[0.04]'
+                        : 'text-[#86868b] hover:text-[#1d1d1f]'
                     }`}
                   >
                     {m === 'login' ? '登录' : '注册'}
@@ -685,27 +699,30 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 ))}
               </div>
 
-              <form onSubmit={submit} className="space-y-3.5">
+              <form onSubmit={submit} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[12px] font-medium text-[#424245]">用户名</label>
-                  <div className="relative">
-                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#aeaeb2]" />
+                  <label className="text-[12px] font-semibold text-[#424245]">用户名</label>
+                  <div className="relative group">
+                    <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-400/0 via-indigo-400/0 to-violet-400/0 group-focus-within:from-indigo-400/6 group-focus-within:via-indigo-400/10 group-focus-within:to-violet-400/6 transition-all duration-300 pointer-events-none" />
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#aeaeb2] group-focus-within:text-indigo-400 transition-colors z-10" />
                     <input type="text" value={username} onChange={(e) => setUsername(e.target.value)}
                       placeholder="请输入用户名" required
-                      className="w-full pl-10 pr-4 py-3 bg-black/[0.02] border border-black/[0.08] rounded-xl text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-300 text-sm transition-all" />
+                      className="relative w-full pl-10 pr-4 py-3 bg-white border border-black/[0.08] rounded-xl text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:border-indigo-300 text-sm transition-all shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]" />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[12px] font-medium text-[#424245]">密码</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#aeaeb2]" />
+                  <label className="text-[12px] font-semibold text-[#424245]">密码</label>
+                  <div className="relative group">
+                    <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-400/0 via-indigo-400/0 to-violet-400/0 group-focus-within:from-indigo-400/6 group-focus-within:via-indigo-400/10 group-focus-within:to-violet-400/6 transition-all duration-300 pointer-events-none" />
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#aeaeb2] group-focus-within:text-indigo-400 transition-colors z-10" />
                     <input type={showPassword ? 'text' : 'password'} value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={mode === 'register' ? '至少 6 位' : '请输入密码'} required
-                      className="w-full pl-10 pr-12 py-3 bg-black/[0.02] border border-black/[0.08] rounded-xl text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-300 text-sm transition-all" />
+                      className="relative w-full pl-10 pr-12 py-3 bg-white border border-black/[0.08] rounded-xl text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:border-indigo-300 text-sm transition-all shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]" />
                     <button type="button" onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#aeaeb2] hover:text-[#1d1d1f] transition-colors">
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#aeaeb2] hover:text-indigo-500 transition-colors z-10 p-1"
+                      tabIndex={-1}>
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
@@ -713,21 +730,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
                 {mode === 'register' && (
                   <div className="space-y-1.5">
-                    <label className="text-[12px] font-medium text-[#424245]">确认密码</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#aeaeb2]" />
+                    <label className="text-[12px] font-semibold text-[#424245]">确认密码</label>
+                    <div className="relative group">
+                      <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-400/0 via-indigo-400/0 to-violet-400/0 group-focus-within:from-indigo-400/6 group-focus-within:via-indigo-400/10 group-focus-within:to-violet-400/6 transition-all duration-300 pointer-events-none" />
+                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#aeaeb2] group-focus-within:text-indigo-400 transition-colors z-10" />
                       <input type={showPassword ? 'text' : 'password'} value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="再次输入密码" required
-                        className="w-full pl-10 pr-4 py-3 bg-black/[0.02] border border-black/[0.08] rounded-xl text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-300 text-sm transition-all" />
+                        className="relative w-full pl-10 pr-4 py-3 bg-white border border-black/[0.08] rounded-xl text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:border-indigo-300 text-sm transition-all shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]" />
                     </div>
                   </div>
                 )}
 
                 <div className="flex items-center gap-3 pt-1">
                   <button type="button" onClick={() => setRememberMe(!rememberMe)}
-                    className={`w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-all ${
-                      rememberMe ? 'bg-indigo-500 border-indigo-500' : 'border-black/15 bg-transparent'
+                    className={`w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-all duration-200 ${
+                      rememberMe
+                        ? 'bg-indigo-500 border-indigo-500 shadow-sm shadow-indigo-500/25'
+                        : 'border-black/15 bg-transparent hover:border-indigo-300'
                     }`} aria-pressed={rememberMe}>
                     {rememberMe && (
                       <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -739,19 +759,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </div>
 
                 <button type="submit" disabled={isLoading}
-                  className="w-full py-3.5 mt-2 bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white font-semibold rounded-xl transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-[14px] tracking-wide active:scale-[0.99]">
-                  {isLoading ? '处理中...' : mode === 'login' ? '进入系统' : '创建账号'}
+                  className="w-full py-3.5 mt-2 bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white font-semibold rounded-xl transition-all duration-300 shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed text-[14px] tracking-wide active:scale-[0.98]">
+                  {isLoading ? (
+                    <span className="inline-flex items-center gap-2">
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeLinecap="round" className="opacity-30" /><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
+                      处理中...
+                    </span>
+                  ) : mode === 'login' ? '进入系统' : '创建账号'}
                 </button>
               </form>
 
-              <div className="flex items-center gap-3 mt-6">
-                <div className="flex-1 h-px bg-black/[0.06]" />
-                <span className="text-xs text-[#aeaeb2]">或者</span>
-                <div className="flex-1 h-px bg-black/[0.06]" />
+              <div className="flex items-center gap-3 mt-5">
+                <div className="flex-1 h-px bg-gradient-to-r from-transparent via-black/[0.06] to-transparent" />
+                <span className="text-[11px] font-medium text-[#aeaeb2] uppercase tracking-wider">或者</span>
+                <div className="flex-1 h-px bg-gradient-to-r from-transparent via-black/[0.06] to-transparent" />
               </div>
 
               <button type="button" onClick={enterGuest}
-                className="w-full mt-4 py-3 border border-black/[0.08] hover:border-indigo-200 bg-transparent hover:bg-indigo-50/50 text-[#86868b] hover:text-indigo-600 font-medium rounded-xl transition-all text-[13px]">
+                className="w-full mt-4 py-3 border border-black/[0.08] hover:border-indigo-200 bg-white/60 hover:bg-indigo-50/70 text-[#86868b] hover:text-indigo-600 font-medium rounded-xl transition-all duration-300 text-[13px]">
                 游客模式进入（含示例品类数据）
               </button>
               <p className="text-center text-[11px] text-[#aeaeb2] mt-4">数据仅存储在本地浏览器，安全且私密</p>
