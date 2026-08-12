@@ -27,7 +27,7 @@ import { Toaster, toast } from 'sonner';
 import { getCurrentUser, logout, type SessionUser } from './utils/auth';
 import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
 import { loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
-import { getDemoData } from './utils/demoData';
+import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
 import { LoginPage } from './components/LoginPage';
 import { AiSettingsPanel } from './components/AiSettingsPanel';
 import { savePromptItem, resetPromptToDefault } from './components/AiPromptManager';
@@ -236,8 +236,30 @@ export default function App() {
   /** 是否打开「点页面添加批注」模式 */
   const [annotateMode, setAnnotateMode] = useState(false);
   const [selectedCompareAsins, setSelectedCompareAsins] = useState<string[]>([]);
+  /** 示例竞品快照：游客/示例模式下让竞品分析页直接有结果可看 */
+  const [competitorDemo, setCompetitorDemo] = useState<CompetitorDemoSnapshot | null>(null);
 
   const isRegisteredUser = Boolean(currentUser && currentUser.id !== 'guest');
+
+  const applyDemoWorkspace = useCallback((opts?: { toastMsg?: boolean }) => {
+    const demo = getDemoData();
+    setProducts(demo.products);
+    setHistory(demo.history);
+    setMonths(demo.months);
+    setMarketplace(demo.marketplace);
+    setHistorySourceLabel(demo.sourceLabel);
+    setKeywords(demo.keywords);
+    setReviews(demo.reviews);
+    setCompetitorDemo(demo.competitorDemo);
+    setSelectedCompareAsins(demo.competitorDemo.selectedAsins.slice(0, 5));
+    setIsDataLoaded(true);
+    setIsDemoData(true);
+    void set('demoDataVersion', demo.demoVersion);
+    void set('isDemoData', true);
+    if (opts?.toastMsg) {
+      toast.success('已加载示例数据（含主图 / 评论 / 关键词 / 竞品）');
+    }
+  }, []);
 
   const toggleCompareAsin = useCallback((asin: string) => {
     setSelectedCompareAsins((prev) => {
@@ -538,8 +560,20 @@ export default function App() {
         }
         if (savedActiveView) setActiveView(savedActiveView);
         
-        // If data was loaded before, try to restore it sequentially to avoid OOM
-        if (savedIsDataLoaded) {
+        const [savedDemoVersion, savedIsDemoFlag, savedHistorySourceLabelEarly] = await Promise.all([
+          get('demoDataVersion'),
+          get('isDemoData'),
+          get('historySourceLabel'),
+        ]);
+        const looksLikeDemo =
+          savedIsDemoFlag === true ||
+          (typeof savedHistorySourceLabelEarly === 'string' && savedHistorySourceLabelEarly.includes('示例数据'));
+        const demoNeedsUpgrade = looksLikeDemo && savedDemoVersion !== DEMO_DATA_VERSION;
+
+        if (demoNeedsUpgrade) {
+          applyDemoWorkspace();
+          console.log('Upgraded demo workspace to', DEMO_DATA_VERSION);
+        } else if (savedIsDataLoaded) {
           console.log("Restoring heavy data from IDB...");
           
           const savedProducts = await get('products');
@@ -618,9 +652,20 @@ export default function App() {
               if (validMonthSubset(savedLastYearKpiMonths, available))
                 setLastYearKpiMonths(savedLastYearKpiMonths);
             }
+
+            if (looksLikeDemo) {
+              const demo = getDemoData();
+              setCompetitorDemo(demo.competitorDemo);
+              setIsDemoData(true);
+              if (!savedKeywords?.length) setKeywords(demo.keywords);
+              if (!savedReviews?.length) setReviews(demo.reviews);
+              setSelectedCompareAsins(demo.competitorDemo.selectedAsins.slice(0, 5));
+            }
             
             setIsDataLoaded(true);
             console.log("App state restored successfully.");
+          } else {
+            applyDemoWorkspace();
           }
         } else {
           // 新用户：没有任何已保存的市场数据，加载演示数据让用户直观看到 APP 效果
@@ -633,15 +678,7 @@ export default function App() {
           const hasSavedReviews = savedReviews && Array.isArray(savedReviews) && savedReviews.length > 0;
 
           if (!hasSavedReviews) {
-            // 首次进入，加载演示数据
-            const demo = getDemoData();
-            setProducts(demo.products);
-            setHistory(demo.history);
-            setMonths(demo.months);
-            setMarketplace(demo.marketplace);
-            setHistorySourceLabel(demo.sourceLabel);
-            setIsDataLoaded(true);
-            setIsDemoData(true);
+            applyDemoWorkspace();
             console.log('Loaded demo data for first-time user.');
           } else {
             // 有保存的评论但没有市场数据
@@ -908,6 +945,9 @@ export default function App() {
       await new Promise(resolve => setTimeout(resolve, 100));
       setIsDataLoaded(true);
       setIsDemoData(false);
+      setCompetitorDemo(null);
+      void set('isDemoData', false);
+      void set('demoDataVersion', '');
       setDemoBannerDismissed(false);
       
       toast.success("数据加载成功！");
@@ -1264,8 +1304,8 @@ export default function App() {
                 <div className="flex items-center gap-2 text-sm text-indigo-800">
                   <Sparkles className="w-4 h-4 shrink-0" />
                   <span>
-                    当前为<strong>示例数据</strong>（美国站薄枕头品类），方便你预览 APP 功能。
-                    上传你自己的市场数据即可切换。
+                    当前为<strong>示例</strong>：含 ASIN 主图、销量趋势、评论、关键词洞察与竞品对比，可直接点左侧各板块预览。
+                    上传你自己的市场数据即可切换为工作台。
                   </span>
                 </div>
                 <button
@@ -1498,6 +1538,7 @@ export default function App() {
                     marketplaceCode={marketplace.code}
                     domain={marketplace.domain}
                     preselectedAsins={selectedCompareAsins}
+                    demoSnapshot={isDemoData ? competitorDemo : null}
                   />
                 </div>
               )}

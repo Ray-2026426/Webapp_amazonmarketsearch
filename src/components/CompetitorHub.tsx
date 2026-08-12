@@ -21,6 +21,7 @@ import {
 } from '../utils/sellerspriteApi';
 import { parseSingleCompetitorZip } from '../utils/competitorArchiveParser';
 import type { Product } from '../utils/parser';
+import type { CompetitorDemoSnapshot } from '../utils/demoData';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
@@ -33,6 +34,8 @@ interface CompetitorHubProps {
   marketplaceCode?: string;
   domain?: string;
   preselectedAsins?: string[];
+  /** 示例模式：直接展示真实竞品对比结果（无需再点「开始对比」） */
+  demoSnapshot?: CompetitorDemoSnapshot | null;
 }
 
 interface AsinPack {
@@ -188,23 +191,41 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   products,
   marketplaceCode = 'US',
   preselectedAsins = [],
+  demoSnapshot = null,
 }) => {
   const [step, setStep] = useState<WizardStep>(1);
   const [asinInput, setAsinInput] = useState('');
   const [selected, setSelected] = useState<string[]>(() =>
-    preselectedAsins.slice(0, MAX_ASINS).map((a) => a.toUpperCase())
+    (demoSnapshot?.selectedAsins?.length
+      ? demoSnapshot.selectedAsins
+      : preselectedAsins
+    )
+      .slice(0, MAX_ASINS)
+      .map((a) => a.toUpperCase())
   );
   const [marketplace, setMarketplace] = useState(normalizeMarketplaceCode(marketplaceCode));
-  const [packs, setPacks] = useState<Record<string, AsinPack>>({});
+  const [packs, setPacks] = useState<Record<string, AsinPack>>(() => {
+    if (!demoSnapshot?.packs) return {};
+    const next: Record<string, AsinPack> = {};
+    for (const [asin, pack] of Object.entries(demoSnapshot.packs)) {
+      next[asin.toUpperCase()] = {
+        zipName: pack.zipName,
+        mainPreviewUrls: [...pack.mainPreviewUrls],
+        aplusCount: pack.aplusCount,
+        bulletPoints: pack.bulletPoints,
+      };
+    }
+    return next;
+  });
   const [parsingAsin, setParsingAsin] = useState<string | null>(null);
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
-  const [hasResult, setHasResult] = useState(false);
+  const [hasResult, setHasResult] = useState(() => Boolean(demoSnapshot?.details?.length));
   const [resultTab, setResultTab] = useState<ResultTab>('listing');
 
-  const [details, setDetails] = useState<AsinDetailSnapshot[]>([]);
+  const [details, setDetails] = useState<AsinDetailSnapshot[]>(() => demoSnapshot?.details ?? []);
   const [trafficStats, setTrafficStats] = useState<TrafficStatSnapshot[]>([]);
   const [topKeywords, setTopKeywords] = useState<Record<string, TrafficKeywordDetail[]>>({});
   const [matrices, setMatrices] = useState<ParentMatrixSnapshot[]>([]);
@@ -214,11 +235,34 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   const [aiReportHtml, setAiReportHtml] = useState('');
   const [aiReportOpen, setAiReportOpen] = useState(false);
 
-  // 大盘勾选变化时同步进对比池
+  // 示例快照：直接进入结果页，展示真实 Listing / 主图
   useEffect(() => {
+    if (!demoSnapshot?.details?.length) return;
+    const asins = demoSnapshot.selectedAsins.slice(0, MAX_ASINS).map((a) => a.toUpperCase());
+    setSelected(asins);
+    const nextPacks: Record<string, AsinPack> = {};
+    for (const [asin, pack] of Object.entries(demoSnapshot.packs || {})) {
+      nextPacks[asin.toUpperCase()] = {
+        zipName: pack.zipName,
+        mainPreviewUrls: [...pack.mainPreviewUrls],
+        aplusCount: pack.aplusCount,
+        bulletPoints: pack.bulletPoints,
+      };
+    }
+    setPacks(nextPacks);
+    setDetails(demoSnapshot.details);
+    setBrandSiblings(extractBrandSiblingsFromProducts(products, demoSnapshot.details, []));
+    setHasResult(true);
+    setStep(3);
+    setResultTab('listing');
+  }, [demoSnapshot, products]);
+
+  // 大盘勾选变化时同步进对比池（示例模式不覆盖已选对比池）
+  useEffect(() => {
+    if (demoSnapshot?.details?.length) return;
     if (!preselectedAsins.length) return;
     setSelected(preselectedAsins.slice(0, MAX_ASINS).map((a) => a.toUpperCase()));
-  }, [preselectedAsins.join('|')]);
+  }, [preselectedAsins.join('|'), demoSnapshot]);
 
   const productMap = useMemo(() => {
     const m = new Map<string, Product>();
@@ -261,7 +305,11 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     setPacks((prev) => {
       const next = { ...prev };
       const pack = next[asin];
-      if (pack) pack.mainPreviewUrls.forEach((u) => URL.revokeObjectURL(u));
+      if (pack) {
+        pack.mainPreviewUrls.forEach((u) => {
+          if (u.startsWith('blob:')) URL.revokeObjectURL(u);
+        });
+      }
       delete next[asin];
       return next;
     });
@@ -278,7 +326,11 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
       }
       setPacks((prev) => {
         const old = prev[asin];
-        if (old) old.mainPreviewUrls.forEach((u) => URL.revokeObjectURL(u));
+        if (old) {
+          old.mainPreviewUrls.forEach((u) => {
+            if (u.startsWith('blob:')) URL.revokeObjectURL(u);
+          });
+        }
         return {
           ...prev,
           [asin]: {
@@ -304,7 +356,11 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     setPacks((prev) => {
       const next = { ...prev };
       const pack = next[asin];
-      if (pack) pack.mainPreviewUrls.forEach((u) => URL.revokeObjectURL(u));
+      if (pack) {
+        pack.mainPreviewUrls.forEach((u) => {
+          if (u.startsWith('blob:')) URL.revokeObjectURL(u);
+        });
+      }
       delete next[asin];
       return next;
     });
