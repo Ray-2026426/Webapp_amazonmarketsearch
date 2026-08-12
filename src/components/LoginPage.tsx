@@ -4,6 +4,7 @@ import {
   MessageSquareWarning, KeyRound, FolderOpen, Compass, Tags, GitCompare, MessagesSquare,
   Calculator, Sparkles, Upload, Plug, ArrowDown, Layers, Route, CheckCircle2,
   TrendingUp, Shield, Zap, Clock, Lightbulb, Package, FlaskConical, RefreshCw, ArrowRight,
+  Users, Target, Map, Megaphone, Palette, Quote, Brain,
 } from 'lucide-react';
 import { login, register, saveCreds, loadCreds, clearCreds } from '../utils/auth';
 import { toast } from 'sonner';
@@ -637,7 +638,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       thesis: '别停在热词，要把需求说具体。',
       items: [
         '发现信号：Amazon 市场/竞品/评论、搜索广告、TikTok 趋势',
-        '还原需求：人群 × 场景 × 审美 × 脚型 × 功能 × 情绪价值',
+        '还原需求：人群 × 场景 × 审美 × 功能 × 情绪价值',
       ],
     },
     {
@@ -647,10 +648,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       accentBg: 'bg-violet-50',
       title: '机会商品化',
       subtitle: '变成可开发的东西',
-      thesis: '机会必须落到"能开一款鞋"，不是一句"这里有机会"。',
+      thesis: '机会必须落到"能开一款产品"，不是一句"这里有机会"。',
       items: [
         '形成机会假设：现有产品为何没满足、竞争是否可进',
-        '完成商品定义：楦型、颜色材质、功能、价格带、卖点、目标用户',
+        '完成商品定义：规格、材质、功能、价格带、卖点、目标用户',
       ],
     },
     {
@@ -681,19 +682,95 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     },
   ];
 
-  /* ── 洞察：来自真实退款分析 ── */
+  /* ── 洞察深度：搜索词 + 评论 → 画像 / JTBD / 决策路径 → 方案 ── */
+  const insightPipeline = [
+    {
+      step: '01',
+      icon: Search,
+      accent: '#6366f1',
+      title: '输入信号',
+      subtitle: '搜索词 × 评论',
+      points: [
+        '关键词：意图分层（认知 → 考虑 → 决策 → 忠诚）',
+        '评论：痛点 / 赞美 / 场景 / 人群自动打标',
+        'AI 清洗噪音，保留可验证的事实证据',
+      ],
+    },
+    {
+      step: '02',
+      icon: Users,
+      accent: '#8b5cf6',
+      title: '用户画像',
+      subtitle: '谁在买、谁在用',
+      points: [
+        '决策者 vs 使用者是否同一人',
+        '高频人群标签与购买触发条件',
+        '一句话 persona，可直接写进 Brief',
+      ],
+    },
+    {
+      step: '03',
+      icon: Target,
+      accent: '#6366f1',
+      title: 'JTBD 任务',
+      subtitle: '用户雇用产品做什么',
+      points: [
+        '功能任务 / 情感任务 / 社会任务分层',
+        '同类搜索词收敛成可开发的任务名',
+        '机会分：搜索量 × 竞争空隙交叉排序',
+      ],
+    },
+    {
+      step: '04',
+      icon: Map,
+      accent: '#8b5cf6',
+      title: '决策路径',
+      subtitle: '从搜到下单怎么走',
+      points: [
+        '认知：发现痛点与解决方案',
+        '考虑：对比属性、评测、适用场景',
+        '决策：规格锁定与信任信号触发购买',
+      ],
+    },
+  ];
+
+  const solutionPillars = [
+    {
+      icon: Package,
+      accent: '#6366f1',
+      title: '产品方案',
+      desc: '规格、材质、功能组合、价格带与差异化卖点——对齐 JTBD 里尚未被满足的任务。',
+      bullets: ['主规格与变体矩阵', '必改痛点 vs 可延后项', '首发验证假设清单'],
+    },
+    {
+      icon: Palette,
+      accent: '#8b5cf6',
+      title: '视觉方案',
+      desc: '主图叙事、场景图、信息图与 A+ 结构——让买家在 3 秒内看懂「适不适合我」。',
+      bullets: ['主图卖点优先级', '场景 × 人群露出', '误买风险点提前说清'],
+    },
+    {
+      icon: Megaphone,
+      accent: '#6366f1',
+      title: '推广方案',
+      desc: '词库分层、广告切入点与 Listing 话术——跟着决策路径投放，而不是广撒网。',
+      bullets: ['核心词 / 长尾 / 防御词', '广告与自然位协同', '标题五点话术素材'],
+    },
+  ];
+
+  /* ── 洞察：来自真实退款分析（品类无关示例） ── */
   const realInsightCards = [
     {
       icon: Shield, iconColor: '#6366f1', iconBg: 'bg-indigo-50',
       title: '高退货变体的品类级缺陷',
-      stat: '56.1%', statDesc: '集中在塑料套装',
-      detail: '准确度/尺码偏差投诉是金属套装的 2.5 倍，但竞品 A+ 页面完全没有针对性解释。',
+      stat: '56.1%', statDesc: '集中在某一材质线',
+      detail: '准确度/规格偏差投诉是对照线的 2.5 倍，但竞品 A+ 页面完全没有针对性解释。',
     },
     {
       icon: TrendingUp, iconColor: '#8b5cf6', iconBg: 'bg-violet-50',
       title: '误买根因不在产品在 Listing',
       stat: '2.8×', statDesc: '不兼容投诉倍率',
-      detail: '金属套装不兼容投诉是塑料的 2.8 倍——标题描述的适用场景不够精确。优化 Listing 文案即可压降。',
+      detail: '不兼容投诉倍率显著偏高——标题描述的适用场景不够精确。优化 Listing 文案即可压降。',
     },
     {
       icon: Clock, iconColor: '#6366f1', iconBg: 'bg-indigo-50',
@@ -755,18 +832,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <span className="text-[11px] font-bold text-indigo-600 tracking-[0.10em] uppercase">Amazon Market Intelligence</span>
             </div>
 
-            <h1 className="font-display text-[2.8rem] sm:text-[3.2rem] lg:text-[3.8rem] text-[#1d1d1f] tracking-tight leading-[1.06] mb-4">
-              把数据变成
+            <h1 className="font-display text-[2.6rem] sm:text-[3rem] lg:text-[3.5rem] text-[#1d1d1f] tracking-tight leading-[1.08] mb-4">
+              洞察数据背后的
               <br />
               <span className="bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-500 bg-clip-text text-transparent">
-                用户洞察
+                真需求
               </span>
             </h1>
             <p className="text-[#424245] text-lg lg:text-xl leading-snug mb-3 max-w-md">
-              不是另一个数据看板——是把市场规模、搜索意图、竞品差距、用户真话收成能拍板的洞察。
+              AI 读懂搜索词与买家真话，把零散数据还原成用户洞察——谁要买、为何买、还缺什么。
             </p>
             <p className="text-[#86868b] text-[14px] leading-relaxed max-w-md mb-6">
-              输入一组 ASIN 或一个关键词，系统从四个维度交叉分析，输出可直接进评审的用户洞察结论。
+              输入关键词或评论，AI 自动抽出画像、JTBD 任务与决策路径，再落到可评审的产品 / 视觉 / 推广方案。
             </p>
 
             {/* 数据流线 */}
@@ -978,34 +1055,187 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         </div>
       </section>
 
-      {/* ═══════ 洞察深度 — 真实数据示例 ═══════ */}
+      {/* ═══════ 洞察深度 — 搜索/评论 → 画像/JTBD/路径 → 方案 ═══════ */}
       <section className="bg-white border-t border-black/[0.04]">
-        <div className="max-w-5xl mx-auto px-6 lg:px-10 py-20 lg:py-24">
-          <div className="mb-14 max-w-2xl">
+        <div className="max-w-6xl mx-auto px-6 lg:px-10 py-24 lg:py-32">
+          {/* Header */}
+          <div className="mb-16 max-w-3xl">
             <p className="text-violet-600 text-xs font-semibold tracking-[0.16em] uppercase mb-3 flex items-center gap-2">
-              <Search className="w-3.5 h-3.5" /> 洞察深度
+              <Brain className="w-3.5 h-3.5" /> 洞察深度
             </p>
-            <h2 className="font-display text-[2.2rem] lg:text-[2.5rem] text-[#1d1d1f] leading-tight mb-3">
-              数据不只是报表
+            <h2 className="font-display text-[2.4rem] lg:text-[3rem] text-[#1d1d1f] leading-tight mb-4">
+              从搜索词与评论，到可落地的产品方案
             </h2>
-            <p className="text-[#86868b] text-sm leading-relaxed">
-              以下是一次真实品类分析的输出摘录——你会发现，埋在退货记录和搜索行为里的，是完整的品类逻辑。
+            <p className="text-[#86868b] text-[15px] leading-relaxed">
+              AI 不是再堆一张表——它把搜索行为与买家真话，还原成<strong className="text-[#424245] font-medium">用户画像、JTBD 任务、决策路径</strong>，再落到产品 / 视觉 / 推广三套动作。下面是完整链路示意。
             </p>
           </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {realInsightCards.map(({ icon: Icon, iconColor, iconBg, title, stat, statDesc, detail }) => (
-              <div key={title} className="glass-card p-5 card-glow-violet">
-                <div className={`w-8 h-8 rounded-lg ${iconBg} flex items-center justify-center mb-4`}>
-                  <Icon className="w-4 h-4" style={{ color: iconColor }} />
+
+          {/* Pipeline: 4 stages — large */}
+          <div className="mb-20">
+            <div className="flex items-center gap-2 mb-8">
+              <div className="h-px flex-1 bg-gradient-to-r from-indigo-200/80 to-transparent" />
+              <span className="text-[12px] font-semibold text-indigo-600 tracking-wider uppercase">洞察链路</span>
+              <div className="h-px flex-1 bg-gradient-to-l from-violet-200/80 to-transparent" />
+            </div>
+            <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-5 lg:gap-6">
+              {insightPipeline.map(({ step, icon: Icon, accent, title, subtitle, points }, idx) => (
+                <div key={step} className="relative glass-card p-6 lg:p-7 min-h-[280px] flex flex-col">
+                  <div className="flex items-center justify-between mb-5">
+                    <div className="w-11 h-11 rounded-2xl flex items-center justify-center"
+                      style={{ backgroundColor: `${accent}12`, border: `1px solid ${accent}22` }}>
+                      <Icon className="w-5 h-5" style={{ color: accent }} />
+                    </div>
+                    <span className="text-[1.5rem] font-bold text-[#1d1d1f]/opacity-25 font-mono">{step}</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-[#1d1d1f] mb-1">{title}</h3>
+                  <p className="text-[13px] mb-5" style={{ color: accent }}>{subtitle}</p>
+                  <ul className="space-y-3 mt-auto">
+                    {points.map((p) => (
+                      <li key={p} className="flex items-start gap-2 text-[13px] text-[#424245] leading-relaxed">
+                        <ArrowRight className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: accent }} />
+                        {p}
+                      </li>
+                    ))}
+                  </ul>
+                  {idx < insightPipeline.length - 1 && (
+                    <div className="hidden xl:block absolute -right-3 top-1/2 -translate-y-1/2 z-10 text-[#aeaeb2]">
+                      <ArrowRight className="w-5 h-5" />
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-baseline gap-1.5 mb-2">
-                  <span className="text-[1.7rem] font-bold" style={{ color: iconColor }}>{stat}</span>
-                  <span className="text-[11px] text-[#86868b]">{statDesc}</span>
-                </div>
-                <h4 className="font-semibold text-[#1d1d1f] text-[14px] mb-1.5">{title}</h4>
-                <p className="text-[12px] text-[#86868b] leading-relaxed">{detail}</p>
+              ))}
+            </div>
+          </div>
+
+          {/* Example insight block: persona + JTBD + path */}
+          <div className="mb-20 grid lg:grid-cols-5 gap-6 lg:gap-8">
+            <div className="lg:col-span-2 glass-card p-7 lg:p-8 card-glow-violet">
+              <div className="flex items-center gap-2 mb-5">
+                <Quote className="w-4 h-4 text-violet-500" />
+                <span className="text-[12px] font-semibold text-violet-600 uppercase tracking-wider">示例 · 用户画像</span>
               </div>
-            ))}
+              <p className="text-[15px] text-[#1d1d1f] leading-relaxed mb-6">
+                「25–40 岁都市轻办公人群，为通勤与短途出行选购；决策者多为本人，常在对比「便携 / 耐用 / 颜值」后下单，对误买与退货成本敏感。」
+              </p>
+              <div className="space-y-3">
+                {[
+                  { k: '核心场景', v: '通勤、差旅、居家办公' },
+                  { k: '触发条件', v: '旧物损坏 / 礼赠 / 换季升级' },
+                  { k: '决策标准', v: '场景匹配 > 价格 > 品牌' },
+                ].map(({ k, v }) => (
+                  <div key={k} className="flex gap-3 text-[13px]">
+                    <span className="text-[#aeaeb2] w-16 shrink-0">{k}</span>
+                    <span className="text-[#424245] font-medium">{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="lg:col-span-3 space-y-5">
+              <div className="glass-card p-7 lg:p-8">
+                <div className="flex items-center gap-2 mb-5">
+                  <Target className="w-4 h-4 text-indigo-500" />
+                  <span className="text-[12px] font-semibold text-indigo-600 uppercase tracking-wider">示例 · JTBD 任务聚类</span>
+                </div>
+                <div className="grid sm:grid-cols-3 gap-4">
+                  {[
+                    { type: '功能任务', job: '便携收纳', vol: '高搜索量', tip: '未满足：一手可拿 + 不皱' },
+                    { type: '情感任务', job: '显品味', vol: '中搜索量', tip: '未满足：低调但不廉价' },
+                    { type: '社会任务', job: '送礼得体', vol: '长尾机会', tip: '未满足：开箱仪式感' },
+                  ].map(({ type, job, vol, tip }) => (
+                    <div key={job} className="rounded-xl bg-gradient-to-br from-indigo-50/80 to-violet-50/40 border border-indigo-100/50 p-4">
+                      <div className="text-[11px] text-[#86868b] mb-1">{type}</div>
+                      <div className="text-[16px] font-semibold text-[#1d1d1f] mb-1">{job}</div>
+                      <div className="text-[11px] text-indigo-500 font-medium mb-2">{vol}</div>
+                      <div className="text-[12px] text-[#424245] leading-snug">{tip}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="glass-card p-7 lg:p-8">
+                <div className="flex items-center gap-2 mb-5">
+                  <Map className="w-4 h-4 text-violet-500" />
+                  <span className="text-[12px] font-semibold text-violet-600 uppercase tracking-wider">示例 · 用户决策路径</span>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-0 sm:items-stretch">
+                  {[
+                    { stage: '认知', desc: '搜痛点词 / how-to，确认有没有解决方案' },
+                    { stage: '考虑', desc: '比材质、尺寸、场景适配；看评测与差评' },
+                    { stage: '决策', desc: '锁规格与价格带；信任信号决定是否下单' },
+                    { stage: '使用', desc: '开箱与首次使用决定留评或退货' },
+                  ].map(({ stage, desc }, i) => (
+                    <div key={stage} className="flex-1 relative sm:px-3">
+                      <div className="text-[13px] font-semibold text-[#1d1d1f] mb-1.5 flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 text-[11px] font-bold flex items-center justify-center">{i + 1}</span>
+                        {stage}
+                      </div>
+                      <p className="text-[12px] text-[#86868b] leading-relaxed">{desc}</p>
+                      {i < 3 && <div className="hidden sm:block absolute right-0 top-3 w-px h-8 bg-gradient-to-b from-indigo-200 to-violet-200" />}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Solution pillars: 产品 / 视觉 / 推广 */}
+          <div className="mb-20">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="w-4 h-4 text-indigo-500" />
+              <span className="text-[12px] font-semibold text-indigo-600 uppercase tracking-wider">落地输出</span>
+            </div>
+            <h3 className="text-xl lg:text-2xl font-semibold text-[#1d1d1f] mb-2">洞察之后：三套可评审方案</h3>
+            <p className="text-[14px] text-[#86868b] mb-8 max-w-2xl">
+              画像与任务对齐后，AI 协助把结论拆成产品、视觉、推广三份动作清单——方便直接进评审，而不是停在「感觉有机会」。
+            </p>
+            <div className="grid md:grid-cols-3 gap-5 lg:gap-6">
+              {solutionPillars.map(({ icon: Icon, accent, title, desc, bullets }) => (
+                <div key={title} className="glass-card p-7 lg:p-8 min-h-[260px] flex flex-col">
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-5"
+                    style={{ backgroundColor: `${accent}12`, border: `1px solid ${accent}22` }}>
+                    <Icon className="w-6 h-6" style={{ color: accent }} />
+                  </div>
+                  <h4 className="text-lg font-semibold text-[#1d1d1f] mb-2">{title}</h4>
+                  <p className="text-[13px] text-[#86868b] leading-relaxed mb-5">{desc}</p>
+                  <ul className="space-y-2.5 mt-auto">
+                    {bullets.map((b) => (
+                      <li key={b} className="flex items-center gap-2 text-[13px] text-[#424245]">
+                        <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: accent }} />
+                        {b}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Evidence cards from refund analysis */}
+          <div>
+            <div className="mb-8 max-w-2xl">
+              <p className="text-[12px] font-semibold text-[#86868b] uppercase tracking-wider mb-2">证据摘录</p>
+              <h3 className="text-xl font-semibold text-[#1d1d1f] mb-2">评论与退货里藏着可改的产品逻辑</h3>
+              <p className="text-[14px] text-[#86868b] leading-relaxed">
+                以下是一次真实品类分析的输出摘录——你会发现，埋在退货记录和搜索行为里的，是完整的用户与 Listing 逻辑。
+              </p>
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5">
+              {realInsightCards.map(({ icon: Icon, iconColor, iconBg, title, stat, statDesc, detail }) => (
+                <div key={title} className="glass-card p-6 card-glow-violet min-h-[200px]">
+                  <div className={`w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center mb-4`}>
+                    <Icon className="w-4 h-4" style={{ color: iconColor }} />
+                  </div>
+                  <div className="flex items-baseline gap-1.5 mb-2">
+                    <span className="text-[1.7rem] font-bold" style={{ color: iconColor }}>{stat}</span>
+                    <span className="text-[11px] text-[#86868b]">{statDesc}</span>
+                  </div>
+                  <h4 className="font-semibold text-[#1d1d1f] text-[14px] mb-1.5">{title}</h4>
+                  <p className="text-[12px] text-[#86868b] leading-relaxed">{detail}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
