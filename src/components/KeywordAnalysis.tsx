@@ -179,6 +179,7 @@ export function calcJTBDStats(kws: Keyword[]): JTBDStat[] {
   })
   .filter(j => j.count >= 3)  // 过滤碎片任务（< 3 个关键词的合并）
   .sort((a, b) => b.opportunityScore - a.opportunityScore);
+}
 
 /** 场景 / 人群 / 痛点 / 功能洞察 */
 export function calcScenarioInsights(kws: Keyword[]): ScenarioInsights {
