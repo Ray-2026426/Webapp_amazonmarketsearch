@@ -92,6 +92,29 @@ const pageCss = `
   }
   .hero-float { animation: hero-float 6s ease-in-out infinite; }
 
+  @keyframes cta-pulse {
+    0%, 100% { box-shadow: 0 10px 28px rgba(79,70,229,0.28), 0 0 0 0 rgba(99,102,241,0.45); transform: translateY(0); }
+    50% { box-shadow: 0 14px 36px rgba(79,70,229,0.38), 0 0 0 10px rgba(99,102,241,0); transform: translateY(-1px); }
+  }
+  @keyframes cta-shine {
+    0% { transform: translateX(-120%); }
+    100% { transform: translateX(120%); }
+  }
+  .cta-insight {
+    position: relative;
+    overflow: hidden;
+    animation: cta-pulse 2.4s ease-in-out infinite;
+  }
+  .cta-insight::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.35) 50%, transparent 65%);
+    transform: translateX(-120%);
+    animation: cta-shine 2.8s ease-in-out infinite;
+    pointer-events: none;
+  }
+
   /* Trend chart animations */
   @keyframes trend-draw {
     to { stroke-dashoffset: 0; }
@@ -140,7 +163,9 @@ const pageCss = `
 
   @media (prefers-reduced-motion: reduce) {
     .amz-login-page .hero-float,
-    .amz-login-page .drift-particle { animation: none !important; }
+    .amz-login-page .drift-particle,
+    .amz-login-page .cta-insight,
+    .amz-login-page .cta-insight::after { animation: none !important; }
   }
 `;
 
@@ -150,9 +175,7 @@ const pageCss = `
 const Nav: React.FC<{ a: string | null; on: (id: string) => void; onBrandClick: () => void }> = ({ a, on, onBrandClick }) => (
   <nav className="sticky top-0 z-50 flex items-center justify-between px-6 lg:px-10 h-14 border-b border-black/[0.06] bg-white/80 backdrop-blur-xl">
     <button type="button" onClick={onBrandClick} className="flex items-center gap-2.5 group">
-      <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center group-hover:shadow-sm group-hover:shadow-indigo-200/50 transition-all">
-        <BarChart3 className="w-4 h-4 text-indigo-600" />
-      </div>
+      <img src="/logo.svg" alt="" className="w-8 h-8" />
       <span className="text-[#1d1d1f] font-semibold text-[15px] tracking-tight group-hover:text-indigo-600 transition-colors">Kairo</span>
     </button>
     <div className="flex items-center gap-1">
@@ -346,6 +369,36 @@ function formatMoney(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)} 万`;
   return formatInt(n);
 }
+
+/* ═══════════════════════════════════════
+   Hero Data Flow SVG — 科技感数据流线
+   ═══════════════════════════════════════ */
+const HeroDataFlow: React.FC = () => {
+  const points = [
+    { x: 0, y: 48 }, { x: 64, y: 32 }, { x: 128, y: 52 }, { x: 192, y: 20 },
+    { x: 256, y: 40 }, { x: 320, y: 16 }, { x: 384, y: 36 }, { x: 448, y: 12 },
+  ];
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+
+  return (
+    <div className="relative w-full max-w-[460px] mx-auto">
+      <svg viewBox="0 0 448 64" className="w-full h-16" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="flowGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#6366f1" stopOpacity="0.15" />
+            <stop offset="50%" stopColor="#8b5cf6" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#6366f1" stopOpacity="0.15" />
+          </linearGradient>
+        </defs>
+        <path d={pathD} fill="none" stroke="url(#flowGrad)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />
+        <path d={pathD} fill="none" stroke="url(#flowGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1000" opacity="0.8" style={{ animation: 'data-flow 4.5s linear infinite' }} />
+        {points.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r="3" fill={i % 3 === 0 ? '#6366f1' : i % 3 === 1 ? '#8b5cf6' : '#4f46e5'} style={{ animation: `data-node-pulse ${2.4 + i * 0.3}s ease-in-out ${i * 0.3}s infinite` }} />
+        ))}
+      </svg>
+    </div>
+  );
+};
 
 /* ═══════════════════════════════════════
    Hero Preview Card — 浮动的"大盘预览"
@@ -793,9 +846,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               输入关键词或评论，AI 自动抽出画像、JTBD 任务与决策路径，再落到可评审的产品 / 视觉 / 推广方案。
             </p>
 
-            {/* 品牌氛围图 */}
-            <div className="mb-6 rounded-2xl overflow-hidden border border-indigo-100/50 shadow-[0_12px_40px_-20px_rgba(79,70,229,0.35)]">
-              <img src="/brand/kairo-hero.jpg" alt="信号汇入洞察" className="w-full h-[160px] sm:h-[180px] object-cover" />
+            {/* 数据流线 */}
+            <div className="mb-6">
+              <HeroDataFlow />
+              <p className="text-center text-[11px] text-[#aeaeb2] mt-2">系统持续解析品类供需结构</p>
             </div>
 
             <a href="#phases" className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-500 transition-colors">
@@ -817,10 +871,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             <div className="glass-card p-7 shadow-[0_24px_64px_-16px_rgba(79,70,229,0.15)]">
               {/* 面板头部 */}
               <div className="text-center mb-6">
-                <div className="inline-flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-sm shadow-indigo-500/25">
-                    <BarChart3 className="w-4 h-4 text-white" />
-                  </div>
+                <div className="inline-flex items-center justify-center mb-3">
+                  <img src="/logo.svg" alt="Kairo" className="w-12 h-12" />
                 </div>
                 <h3 className="font-semibold text-[#1d1d1f] text-[15px]">欢迎使用 Kairo</h3>
                 <p className="text-[12px] text-[#aeaeb2] mt-0.5">{mode === 'login' ? '登录您的账号以继续' : '创建新账号以开始使用'}</p>
@@ -902,7 +954,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </div>
 
                 <button type="submit" disabled={isLoading}
-                  className="w-full py-3.5 mt-2 bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white font-semibold rounded-xl transition-all duration-300 shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed text-[14px] tracking-wide active:scale-[0.98]">
+                  className={`w-full py-3.5 mt-2 bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 text-white font-semibold rounded-xl transition-all duration-300 shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed text-[14px] tracking-wide active:scale-[0.98] ${!isLoading && mode === 'login' ? 'cta-insight' : ''}`}>
                   {isLoading ? (
                     <span className="inline-flex items-center gap-2">
                       <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeLinecap="round" className="opacity-30" /><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
@@ -1061,9 +1113,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           {/* Example insight block: persona + JTBD + path */}
           <div className="mb-20 grid lg:grid-cols-5 gap-6 lg:gap-8">
             <div className="lg:col-span-2 glass-card p-7 lg:p-8 card-glow-violet">
-              <div className="flex items-center gap-2 mb-5">
+              <div className="flex items-center gap-2 mb-4">
                 <Quote className="w-4 h-4 text-violet-500" />
                 <span className="text-[12px] font-semibold text-violet-600 uppercase tracking-wider">示例 · 用户画像</span>
+              </div>
+              <div className="mb-5 rounded-xl overflow-hidden border border-violet-100/60">
+                <img src="/brand/kairo-persona.jpg" alt="用户画像分析" className="w-full h-40 object-cover" />
               </div>
               <p className="text-[15px] text-[#1d1d1f] leading-relaxed mb-6">
                 「25–40 岁都市轻办公人群，为通勤与短途出行选购；决策者多为本人，常在对比「便携 / 耐用 / 颜值」后下单，对误买与退货成本敏感。」
@@ -1216,6 +1271,65 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 <p className="text-[13px] text-[#86868b] leading-relaxed">{desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════ 效率提升价值页 ═══════ */}
+      <section className="bg-white border-t border-black/[0.04]">
+        <div className="max-w-5xl mx-auto px-6 lg:px-10 py-20 lg:py-24">
+          <div className="mb-12 max-w-2xl">
+            <p className="text-indigo-600 text-xs font-semibold tracking-[0.16em] uppercase mb-3 flex items-center gap-2">
+              <TrendingUp className="w-3.5 h-3.5" /> 效率提升
+            </p>
+            <h2 className="font-display text-[2.2rem] lg:text-[2.5rem] text-[#1d1d1f] leading-tight mb-3">
+              这套系统，能帮团队省下什么
+            </h2>
+            <p className="text-[#86868b] text-sm leading-relaxed">
+              不是再堆一个看板——把「找词、读评论、对竞品、写结论」收成同一条链路，把重复劳动换成可评审的洞察。
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+            {[
+              { v: '55%', l: '重复劳动可压缩', d: '抓取、清洗、打标、汇总报告' },
+              { v: '3→1', l: '工具跳转次数', d: '词库 / 评论 / 竞品同一工作台' },
+              { v: '1 次', l: '生成可评审结论', d: '画像 + 路径 + Listing/产品动作' },
+              { v: '本机', l: '数据留在浏览器', d: '密钥与文件不上传服务器' },
+            ].map(item => (
+              <div key={item.l} className="glass-card p-5">
+                <div className="text-3xl font-bold text-indigo-600 mb-1 tabular-num">{item.v}</div>
+                <div className="text-sm font-semibold text-[#1d1d1f] mb-1">{item.l}</div>
+                <p className="text-[12px] text-[#86868b] leading-relaxed">{item.d}</p>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50/80 to-violet-50/50 p-6 lg:p-8">
+            <div className="grid md:grid-cols-3 gap-6 text-[13px] text-[#424245]">
+              <div>
+                <div className="font-semibold text-[#1d1d1f] mb-2">以前</div>
+                <ul className="space-y-1.5 text-[#86868b]">
+                  <li>· 多个工具来回导出 Excel</li>
+                  <li>· 评论人工翻页记痛点</li>
+                  <li>· 结论散落在聊天与表格</li>
+                </ul>
+              </div>
+              <div>
+                <div className="font-semibold text-[#1d1d1f] mb-2">用 Kairo 之后</div>
+                <ul className="space-y-1.5 text-[#86868b]">
+                  <li>· 关键词 / 评论 / 竞品一站交叉</li>
+                  <li>· AI 打标 + 结构化报告</li>
+                  <li>· 直接进评审的三套动作清单</li>
+                </ul>
+              </div>
+              <div>
+                <div className="font-semibold text-[#1d1d1f] mb-2">适合谁</div>
+                <ul className="space-y-1.5 text-[#86868b]">
+                  <li>· 选品 / 产品经理周复盘</li>
+                  <li>· 运营准备 Listing 改版</li>
+                  <li>· 需要对外讲清「为什么开这款」</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
       </section>

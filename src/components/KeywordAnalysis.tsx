@@ -72,8 +72,18 @@ export interface AiInsight {
   decisionSummary: string;
   insightAnalysis: string;
   listingPlan: { title: string; bullets: string[]; keywords: string; visual: string };
-  productPlan: { core: string; differentiation: string; priceRange: string; mustFix: string[] };
-  productRoadmap: { phase: string; name: string; target: string; priority: string }[];
+  productPlan: {
+    core: string;
+    differentiation: string;
+    priceRange: string;
+    mustFix: string[];
+    /** 一个父体下如何设变体与优先级 */
+    parentStructure?: {
+      summary: string;
+      variants: { name: string; role: string; priority: string; rationale: string }[];
+    };
+  };
+  productRoadmap: { phase: string; name: string; target: string; priority: string; rationale?: string }[];
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -161,7 +171,7 @@ export function calcJTBDStats(kws: Keyword[]): JTBDStat[] {
     // 取该任务下出现最多的 jobType
     const typeCount: Record<string, number> = {};
     list.forEach(k => {
-      const t = k.jobType || 'functional';
+      const t = (k.jobType && JOB_TYPE_META[k.jobType as JobType] ? k.jobType : 'functional') as JobType;
       typeCount[t] = (typeCount[t] || 0) + 1;
     });
     const jobType = (Object.entries(typeCount).sort((a, b) => b[1] - a[1])[0]?.[0] || 'functional') as JobType;
@@ -632,8 +642,8 @@ ${jobs.slice(0, 8).map(j => `- ${j.job}（${JOB_TYPE_META[j.jobType].label}）�
   "decisionSummary":"80-120字决策路径总述",
   "insightAnalysis":"200-300字综合洞察：把画像、任务、痛点、路径串成可拍板判断",
   "listingPlan":{"title":"标题方向","bullets":["五点素材1","五点素材2","五点素材3"],"keywords":"核心词/长尾/防御词布局","visual":"主图与A+视觉策略"},
-  "productPlan":{"core":"核心规格与功能组合","differentiation":"差异化方向","priceRange":"建议价格带","mustFix":["必改项1","必改项2"]},
-  "productRoadmap":[{"phase":"P1","name":"产品线名称","target":"目标人群","priority":"高/中"}]
+  "productPlan":{"core":"核心规格与功能组合","differentiation":"差异化方向","priceRange":"建议价格带","mustFix":["必改项1","必改项2"],"parentStructure":{"summary":"一个父体怎么铺变体的总原则","variants":[{"name":"主推变体","role":"流量锚点","priority":"P0","rationale":"为何先做"}]}},
+  "productRoadmap":[{"phase":"P1","name":"产品线名称","target":"目标人群","priority":"高/中","rationale":"为何此时做、验证什么"}]
 }`;
       const r = await generateText(p, cfg, { jsonMode: true });
       const m = r.match(/\{.*\}/s);

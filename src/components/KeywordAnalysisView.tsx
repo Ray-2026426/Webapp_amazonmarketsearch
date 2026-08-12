@@ -50,10 +50,13 @@ const TB = () => (
   </div>
 );
 
+const safeJobMeta = (jobType?: string) =>
+  (jobType && JOB_TYPE_META[jobType as keyof typeof JOB_TYPE_META]) || JOB_TYPE_META.functional;
+
 const JTBDTip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload as JTBDStat & { color: string };
-  const jm = JOB_TYPE_META[d.jobType];
+  const jm = safeJobMeta(d.jobType);
   return (
     <div className="bg-white border border-black/10 rounded-2xl shadow-xl p-4 max-w-[260px]">
       <div className="flex items-center justify-between gap-2 mb-2">
@@ -64,7 +67,7 @@ const JTBDTip = ({ active, payload }: any) => {
         </span>
       </div>
       <div className="space-y-1 text-xs text-[#86868b]">
-        {[['任务类型', jm.label], ['周搜索量', d.totalVolume.toLocaleString()], ['平均CPC', `$${d.avgCpc.toFixed(2)}`], ['均CVR', `${(d.avgCvr * 100).toFixed(1)}%`], ['平均难度', d.avgDifficulty.toFixed(1)], ['词数', String(d.count)],
+        {[['任务类型', jm.label], ['周搜索量', d.totalVolume.toLocaleString()], ['平均CPC', `$${Number(d.avgCpc || 0).toFixed(2)}`], ['均CVR', `${(Number(d.avgCvr || 0) * 100).toFixed(1)}%`], ['平均难度', Number(d.avgDifficulty || 0).toFixed(1)], ['词数', String(d.count)],
         ].map(([l, v]) => (
           <div key={String(l)} className="flex justify-between gap-4"><span>{l}</span><span className="font-semibold text-[#1d1d1f]">{v}</span></div>
         ))}
@@ -177,7 +180,7 @@ export function KwView(p: KwViewProps) {
           return <button key={id} onClick={() => setTab(id)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${tab === id ? 'bg-white text-[#1d1d1f] shadow-sm' : 'text-[#86868b] hover:text-[#1d1d1f]'}`}><meta.I className="w-4 h-4" />{meta.l}</button>;
         })}</div>
         {!hasInsight && <QuickGuide />}
-        {tab === 'intent' && <IntentTab hasInsight={hasInsight} intentStats={intentStats} tStat={tStat} />}
+        {tab === 'intent' && <IntentTab hasInsight={hasInsight} intentStats={intentStats} tStat={tStat} keywords={keywords} />}
         {tab === 'jtbd' && hasInsight && <JtbdTab jtbdStats={jtbdStats} keywords={keywords} seg={seg} setSeg={setSeg} />}
         {tab === 'scenario' && hasInsight && <ScenarioTab insights={scenarioInsights} keywords={keywords} seg={seg} setSeg={setSeg} />}
         {tab === 'report' && <ReportTab ins={ins} hasInsight={hasInsight} genIns={genIns} onGenAI={onGenAI} />}
@@ -195,9 +198,32 @@ const INTENT_STRATEGY: Record<string, string> = {
 };
 
 /* ─── IntentTab ─── */
-function IntentTab({ hasInsight, intentStats, tStat }: { hasInsight: boolean; intentStats: IntentStat[]; tStat: { name: string; count: number; vol: number }[] }) {
+function IntentTab({ hasInsight, intentStats, tStat, keywords }: { hasInsight: boolean; intentStats: IntentStat[]; tStat: { name: string; count: number; vol: number }[]; keywords: Keyword[] }) {
+  const [selStage, setSelStage] = useState<string | null>(null);
+  const [selTag, setSelTag] = useState<string | null>(null);
   const dominant = useMemo(() => { if (!intentStats.length) return null; return [...intentStats].sort((a, b) => b.share - a.share)[0]; }, [intentStats]);
-  const funnelData = useMemo(() => intentStats.map(s => ({ name: INTENT_META[s.stage].label, count: s.count, share: Math.round(s.share * 100), color: INTENT_META[s.stage].color })), [intentStats]);
+  const funnelData = useMemo(() => intentStats.map(s => ({
+    stage: s.stage,
+    name: INTENT_META[s.stage].label,
+    count: s.count,
+    share: Math.round(s.share * 100),
+    color: INTENT_META[s.stage].color,
+  })), [intentStats]);
+
+  const stageWords = useMemo(() => {
+    if (!selStage) return [];
+    return [...keywords]
+      .filter(k => k.userIntentStage === selStage)
+      .sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume);
+  }, [keywords, selStage]);
+
+  const tagWords = useMemo(() => {
+    if (!selTag) return [];
+    return [...keywords]
+      .filter(k => (k.aiTags || []).includes(selTag))
+      .sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume);
+  }, [keywords, selTag]);
+
   if (!hasInsight) return (<div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 flex items-center gap-3"><Sparkles className="w-5 h-5 text-indigo-500 shrink-0" /><p className="text-sm text-indigo-700">请先点击「AI 用户洞察」完成标注。</p></div>);
   return (<div className="space-y-6">
     {dominant && (
@@ -210,18 +236,80 @@ function IntentTab({ hasInsight, intentStats, tStat }: { hasInsight: boolean; in
             <p className="text-[13px] text-indigo-700 mt-2 font-medium">{INTENT_STRATEGY[dominant.stage]}</p>
             <div className="flex flex-wrap gap-2 mt-3">
               {intentStats.map(s => (
-                <span key={s.stage} className="text-[11px] px-2.5 py-1 rounded-full bg-white/80 border border-black/5 text-[#424245]">
+                <button key={s.stage} type="button" onClick={() => setSelStage(s.stage)} className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${selStage === s.stage ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white/80 border-black/5 text-[#424245] hover:border-indigo-200'}`}>
                   {INTENT_META[s.stage].label} · CPC ${s.avgCpc.toFixed(2)} · CVR {(s.avgCvr * 100).toFixed(1)}%
-                </span>
+                </button>
               ))}
             </div>
           </div>
         </div>
       </div>
     )}
-    <Card className="border-none shadow-sm"><CardHeader><CardTitle className="text-base font-semibold flex items-center gap-2"><Route className="w-4 h-4 text-violet-600" />购买意图漏斗</CardTitle></CardHeader><CardContent className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={funnelData} layout="vertical" margin={{ left: 8, right: 50 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" axisLine={false} tickLine={false} fontSize={12} width={70} /><Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={22} label={{ position: 'right', fontSize: 11 }}>{funnelData.map((d, i) => <Cell key={i} fill={d.color} />)}</Bar></BarChart></ResponsiveContainer></CardContent></Card>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{intentStats.map(s => { const m = INTENT_META[s.stage]; return (<Card key={s.stage} className="border-none shadow-sm overflow-hidden"><CardHeader className={`${m.bg} border-b border-black/5`}><CardTitle className="text-sm font-semibold flex items-center justify-between"><span style={{ color: m.color }}>{m.label}</span><span className="text-xs text-[#86868b]">{s.count} 词 · {(s.share * 100).toFixed(0)}%</span></CardTitle></CardHeader><CardContent className="p-4"><div className="flex gap-4 mb-3 text-[12px] text-[#86868b]"><span>搜索量 {s.totalVolume.toLocaleString()}</span><span>CPC ${s.avgCpc.toFixed(2)}</span><span>CVR {(s.avgCvr * 100).toFixed(1)}%</span></div><div className="flex flex-wrap gap-1.5">{s.topKeywords.slice(0, 6).map(kw => (<span key={kw} className="px-2 py-0.5 bg-[#f5f5f7] text-[#1d1d1f] rounded-full text-[11px] border border-black/5">{kw}</span>))}</div></CardContent></Card>); })}</div>
-    {tStat.length > 0 && (<Card className="border-none shadow-sm"><CardHeader><CardTitle className="text-base font-semibold flex items-center gap-2"><Tag className="w-4 h-4 text-violet-600" />词类分布</CardTitle></CardHeader><CardContent className="h-[240px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={tStat} layout="vertical" margin={{ left: 8, right: 40 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" axisLine={false} tickLine={false} fontSize={11} width={60} /><Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={16} label={{ position: 'right', fontSize: 10 }}>{tStat.map((_, i) => <Cell key={i} fill={SC[i % SC.length]} />)}</Bar></BarChart></ResponsiveContainer></CardContent></Card>)}
+    <div className="text-xs text-[#86868b] bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 flex items-start gap-2">
+      <MousePointerClick className="w-3.5 h-3.5 text-blue-500 mt-0.5 shrink-0" />
+      <span>点击漏斗条、意图卡片或词类柱，可打开对应关键词明细。</span>
+    </div>
+    <Card className="border-none shadow-sm">
+      <CardHeader><CardTitle className="text-base font-semibold flex items-center gap-2"><Route className="w-4 h-4 text-violet-600" />购买意图漏斗</CardTitle></CardHeader>
+      <CardContent className="h-[280px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={funnelData} layout="vertical" margin={{ left: 8, right: 50 }}>
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" />
+            <XAxis type="number" hide />
+            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} fontSize={12} width={70} />
+            <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={22} label={{ position: 'right', fontSize: 11 }} cursor="pointer"
+              onClick={(data: any) => { const stage = data?.stage || data?.payload?.stage; if (stage) setSelStage(stage); }}>
+              {funnelData.map((d, i) => <Cell key={i} fill={d.color} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {intentStats.map(s => {
+        const m = INTENT_META[s.stage];
+        return (
+          <button key={s.stage} type="button" onClick={() => setSelStage(s.stage)} className={`text-left rounded-2xl overflow-hidden border transition-all ${selStage === s.stage ? 'border-indigo-300 shadow-md ring-2 ring-indigo-100' : 'border-transparent shadow-sm hover:border-indigo-100'}`}>
+            <Card className="border-none shadow-none">
+              <CardHeader className={`${m.bg} border-b border-black/5`}>
+                <CardTitle className="text-sm font-semibold flex items-center justify-between">
+                  <span style={{ color: m.color }}>{m.label}</span>
+                  <span className="text-xs text-[#86868b]">{s.count} 词 · {(s.share * 100).toFixed(0)}%</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4">
+                <div className="flex gap-4 mb-3 text-[12px] text-[#86868b]"><span>搜索量 {s.totalVolume.toLocaleString()}</span><span>CPC ${s.avgCpc.toFixed(2)}</span><span>CVR {(s.avgCvr * 100).toFixed(1)}%</span></div>
+                <p className="text-[12px] text-[#424245] mb-3 leading-relaxed">{INTENT_STRATEGY[s.stage]}</p>
+                <div className="flex flex-wrap gap-1.5">{s.topKeywords.slice(0, 6).map(kw => (<span key={kw} className="px-2 py-0.5 bg-[#f5f5f7] text-[#1d1d1f] rounded-full text-[11px] border border-black/5">{kw}</span>))}</div>
+              </CardContent>
+            </Card>
+          </button>
+        );
+      })}
+    </div>
+    {tStat.length > 0 && (
+      <Card className="border-none shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold flex items-center gap-2"><Tag className="w-4 h-4 text-violet-600" />词类分布</CardTitle>
+          <CardDescription>点击某一词类柱，查看该标签下的关键词，用于标题/后台词布局。</CardDescription>
+        </CardHeader>
+        <CardContent className="h-[260px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={tStat} layout="vertical" margin={{ left: 8, right: 40 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" />
+              <XAxis type="number" hide />
+              <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} fontSize={11} width={60} />
+              <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={16} label={{ position: 'right', fontSize: 10 }} cursor="pointer"
+                onClick={(data: any) => { const name = data?.name || data?.payload?.name; if (name) setSelTag(name); }}>
+                {tStat.map((_, i) => <Cell key={i} fill={SC[i % SC.length]} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    )}
+    {selStage && <KeywordDrillModal title={`${INTENT_META[selStage as keyof typeof INTENT_META]?.label || selStage} · 关键词`} words={stageWords} onClose={() => setSelStage(null)} />}
+    {selTag && <KeywordDrillModal title={`词类「${selTag}」`} words={tagWords} onClose={() => setSelTag(null)} />}
   </div>);
 }
 
@@ -357,14 +445,18 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
     return { topScene, topIntent };
   }, [keywords]);
 
-  const jobScat = useMemo(() => ranked.map((s, i) => ({
-    ...s,
-    x: s.totalVolume,
-    y: s.avgCpc,
-    z: Math.max(s.count * 8, 60),
-    color: JOB_TYPE_META[s.jobType].color || SC[i % SC.length],
-    label: s.job,
-  })), [ranked]);
+  const jobScat = useMemo(() => ranked.map((s, i) => {
+    const meta = safeJobMeta(s.jobType);
+    return {
+      ...s,
+      jobType: (JOB_TYPE_META[s.jobType as keyof typeof JOB_TYPE_META] ? s.jobType : 'functional') as typeof s.jobType,
+      x: s.totalVolume,
+      y: s.avgCpc,
+      z: Math.max(s.count * 8, 60),
+      color: meta.color || SC[i % SC.length],
+      label: s.job,
+    };
+  }), [ranked]);
 
   const kwScat = useMemo(() => {
     const withJob = keywords.filter(k => (k.jobToBeDone || '').trim()).sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume).slice(0, 80);
@@ -424,7 +516,7 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
             <button key={j.job} type="button" onClick={() => openJob(j.job)} className="text-left rounded-xl bg-white/80 border border-amber-100/80 p-4 hover:border-amber-300 transition-colors">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[11px] font-bold text-amber-600">#{i + 1} · {j.opportunityScore} 分</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: `${JOB_TYPE_META[j.jobType].color}15`, color: JOB_TYPE_META[j.jobType].color }}>{JOB_TYPE_META[j.jobType].label}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: `${safeJobMeta(j.jobType).color}15`, color: safeJobMeta(j.jobType).color }}>{safeJobMeta(j.jobType).label}</span>
               </div>
               <div className="font-semibold text-sm text-[#1d1d1f] mb-1">{j.job}</div>
               <p className="text-[12px] text-[#86868b] leading-relaxed">
@@ -460,8 +552,8 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-[#1d1d1f] text-sm truncate">{j.job}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border" style={{ background: `${JOB_TYPE_META[j.jobType].color}15`, color: JOB_TYPE_META[j.jobType].color }}>{JOB_TYPE_META[j.jobType].label}</span>
-                    {intent && <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ color: INTENT_META[intent as keyof typeof INTENT_META].color, background: `${INTENT_META[intent as keyof typeof INTENT_META].color}15` }}>{INTENT_META[intent as keyof typeof INTENT_META].label}</span>}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border" style={{ background: `${safeJobMeta(j.jobType).color}15`, color: safeJobMeta(j.jobType).color }}>{safeJobMeta(j.jobType).label}</span>
+                    {intent && INTENT_META[intent as keyof typeof INTENT_META] && <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ color: INTENT_META[intent as keyof typeof INTENT_META].color, background: `${INTENT_META[intent as keyof typeof INTENT_META].color}15` }}>{INTENT_META[intent as keyof typeof INTENT_META].label}</span>}
                     <span className="text-[10px] text-[#86868b]">{j.count}词 · {j.totalVolume.toLocaleString()}/周</span>
                   </div>
                   <div className="text-xs text-[#86868b] mt-1 truncate">
@@ -515,8 +607,11 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
               <XAxis type="number" dataKey="x" name="需求" tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} label={{ value: '需求（周搜）', position: 'insideBottom', offset: -12, fontSize: 11 }} />
               <YAxis type="number" dataKey="y" name="CPC" tickFormatter={(v: number) => `$${v.toFixed(2)}`} label={{ value: '竞争 CPC', angle: -90, position: 'insideLeft', offset: 8, fontSize: 11 }} />
               <ZAxis type="number" dataKey="z" range={[60, 280]} />
-              <Tooltip content={<JTBDTip />} />
-              <Scatter data={jobScat} onClick={(d: any) => { const job = d?.job || d?.payload?.job; if (job) openJob(job); }} cursor="pointer">
+              <Tooltip content={JTBDTip} />
+              <Scatter data={jobScat} onClick={(d: any) => {
+                const job = d?.job || d?.payload?.job || (Array.isArray(d) ? d[0]?.payload?.job : undefined);
+                if (job) openJob(String(job));
+              }} cursor="pointer">
                 {jobScat.map((d, i) => <Cell key={i} fill={d.color} fillOpacity={0.82} />)}
               </Scatter>
             </ScatterChart>

@@ -139,22 +139,41 @@ export function InsightReportPanels({
               <div className="rounded-xl bg-white/80 p-3 border border-violet-100/60"><div className="text-[11px] text-[#86868b] mb-1">价格带</div>{product?.priceRange || '—'}</div>
             </div>
             {mustFix.length > 0 && (
-              <div>
+              <div className="mb-4">
                 <div className="text-[11px] font-semibold text-rose-600 mb-1.5">必改项</div>
                 <ul className="space-y-1">{mustFix.map(x => <li key={x} className="text-[13px] text-[#424245] flex gap-2"><span className="text-rose-400">·</span>{x}</li>)}</ul>
+              </div>
+            )}
+            {product?.parentStructure && (
+              <div className="rounded-xl bg-white/90 border border-violet-100 p-4">
+                <div className="text-[11px] font-semibold text-violet-700 uppercase tracking-wider mb-1">父体结构建议</div>
+                <p className="text-[13px] text-[#424245] mb-3 leading-relaxed">{product.parentStructure.summary || '—'}</p>
+                <div className="space-y-2">
+                  {(product.parentStructure.variants || []).map((v, i) => (
+                    <div key={`${v.name}-${i}`} className="flex gap-3 items-start rounded-lg bg-violet-50/60 border border-violet-100/70 px-3 py-2.5">
+                      <span className="text-[10px] font-bold text-violet-700 bg-white px-2 py-0.5 rounded-full border border-violet-100 shrink-0">{v.priority || `P${i}`}</span>
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-semibold text-[#1d1d1f]">{v.name} <span className="text-[11px] font-medium text-violet-600">· {v.role}</span></div>
+                        <div className="text-[12px] text-[#86868b] mt-0.5 leading-relaxed">{v.rationale}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
 
           <div>
-            <div className="flex items-center gap-2 mb-3"><Target className="w-4 h-4 text-emerald-600" /><h4 className="text-sm font-semibold text-[#1d1d1f]">产品路线图（产品矩阵）</h4></div>
+            <div className="flex items-center gap-2 mb-2"><Target className="w-4 h-4 text-emerald-600" /><h4 className="text-sm font-semibold text-[#1d1d1f]">产品路线图（产品矩阵）</h4></div>
+            <p className="text-[12px] text-[#86868b] mb-3 leading-relaxed">不是简单列款名——每阶段说明「先做谁、为什么、要验证什么」，方便评审拍板节奏。</p>
             {roadmap.length ? (
               <div className="grid sm:grid-cols-3 gap-3">
                 {roadmap.map((r, i) => (
                   <div key={`${r.phase}-${i}`} className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
                     <div className="text-[11px] font-semibold text-emerald-700 mb-1">{r.phase || `P${i + 1}`} · {r.priority || '—'}</div>
                     <div className="text-sm font-semibold text-[#1d1d1f] mb-1">{r.name || '—'}</div>
-                    <div className="text-[12px] text-[#86868b]">目标：{r.target || '—'}</div>
+                    <div className="text-[12px] text-[#86868b] mb-2">目标：{r.target || '—'}</div>
+                    {r.rationale && <p className="text-[12px] text-[#424245] leading-relaxed border-t border-emerald-100/80 pt-2">{r.rationale}</p>}
                   </div>
                 ))}
               </div>
@@ -200,6 +219,17 @@ export function tryParseAiInsight(raw: string): AiInsight | null {
         differentiation: String(obj.productPlan?.differentiation || ''),
         priceRange: String(obj.productPlan?.priceRange || ''),
         mustFix: asList(obj.productPlan?.mustFix),
+        parentStructure: obj.productPlan?.parentStructure ? {
+          summary: String(obj.productPlan.parentStructure.summary || ''),
+          variants: Array.isArray(obj.productPlan.parentStructure.variants)
+            ? obj.productPlan.parentStructure.variants.map((v: any) => ({
+                name: String(v?.name || ''),
+                role: String(v?.role || ''),
+                priority: String(v?.priority || ''),
+                rationale: String(v?.rationale || ''),
+              }))
+            : [],
+        } : undefined,
       },
       productRoadmap: Array.isArray(obj.productRoadmap)
         ? obj.productRoadmap.map((r: any) => ({
@@ -207,6 +237,7 @@ export function tryParseAiInsight(raw: string): AiInsight | null {
             name: String(r?.name || ''),
             target: String(r?.target || ''),
             priority: String(r?.priority || ''),
+            rationale: String(r?.rationale || ''),
           }))
         : [],
     };

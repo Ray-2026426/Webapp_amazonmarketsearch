@@ -119,10 +119,11 @@ const DEFAULT_PROMPTS: Omit<AiPromptConfig, 'currentPrompt'>[] = [
 ## 产品方案要求
 - core / differentiation / priceRange 必须具体
 - mustFix：至少 2 条「不做就会输」的必改项
+- parentStructure：必须给出「一个父体」的变体设置建议（2～4 个变体），每条含 name / role（如流量锚点、利润款、防御款）/ priority（P0/P1/P2）/ rationale
 
 ## 产品路线图要求
 - 2～3 个阶段（P1 先验证，P2 补矩阵，P3 可选延伸）
-- 每阶段写清产品名、目标人群、优先级
+- 每阶段写清产品名、目标人群、优先级，以及 rationale（为什么做、先验证什么）
 
 ## 写作要求
 - 能量化的用比例/频次（基于我所给统计）
@@ -149,8 +150,8 @@ const DEFAULT_PROMPTS: Omit<AiPromptConfig, 'currentPrompt'>[] = [
 
 ## Listing / 产品 / 路线图要求
 - listingPlan：title、bullets（≥3）、keywords、visual
-- productPlan：core、differentiation、priceRange、mustFix（≥2）
-- productRoadmap：phase / name / target / priority
+- productPlan：core、differentiation、priceRange、mustFix（≥2）；并给出 parentStructure（一个父体下 2～4 个变体：name/role/priority/rationale）
+- productRoadmap：phase / name / target / priority / rationale（说明为何排这个顺序、验证什么）
 
 ## 输出格式（必须严格遵守）
 请只返回一个 JSON 对象（不要 Markdown 代码围栏）：
@@ -163,8 +164,8 @@ const DEFAULT_PROMPTS: Omit<AiPromptConfig, 'currentPrompt'>[] = [
   "decisionSummary":"80-120字决策路径总述",
   "insightAnalysis":"200-300字综合洞察",
   "listingPlan":{"title":"标题方向","bullets":["五点1","五点2","五点3"],"keywords":"词布局","visual":"主图与A+策略"},
-  "productPlan":{"core":"核心规格","differentiation":"差异化","priceRange":"价格带","mustFix":["必改1","必改2"]},
-  "productRoadmap":[{"phase":"P1","name":"产品线","target":"人群","priority":"高"}]
+  "productPlan":{"core":"核心规格","differentiation":"差异化","priceRange":"价格带","mustFix":["必改1","必改2"],"parentStructure":{"summary":"一个父体怎么铺变体","variants":[{"name":"主推规格","role":"流量锚点","priority":"P0","rationale":"依据评论高频痛点优先"}]}},
+  "productRoadmap":[{"phase":"P1","name":"产品线","target":"人群","priority":"高","rationale":"先验证什么"}]
 }` },
   { id: 'voc_user_journey_5w1h', name: 'VOC Step4: 用户旅程5W1H', description: '基于评论生成各阶段用户旅程5W1H与劣势表',
     defaultPrompt: '作为用户体验研究专家，请严格依据我提供的亚马逊商品评论，分析用户在与该产品互动的全旅程中各阶段（如搜索、浏览、购买、开箱、使用、收纳、售后、评论）的真实体验。请遵循 5W1H（Who、Where、When、What、Why、How），从评论中提炼每个阶段的核心事实，并必须附上 1–3 条最具代表性的用户评论原句作为佐证；同时基于负面评论，总结该阶段的「当前方案劣势」与「可能的改进方案」。\n\n## 关键约束\n\n1. 绝对基于事实：仅分析评论中明确提及的阶段和细节。**如某阶段在评论中没有任何线索，请整行省略，不要输出空行或一堆 “-”。**\n2. 不得编造任何评论原句、人物或场景；找不到原句就用真实评论的简短摘要。\n\n## 输出格式（必须严格遵守）\n\n请**只输出**一个 JSON 对象，不要任何解释文字、不要使用代码围栏、不要 Markdown 表格，结构如下：\n\n{"rows":[{"stage":"用户旅程阶段名","who":"…","where":"…","when":"…","what":"…","why":"…","how":"…","quote":"…","weakness":"…","improvement":"…"}]}\n\n字段说明：\n- `stage`：阶段名（如「搜索」「使用」「售后」）\n- `who`/`where`/`when`/`what`/`why`/`how`：5W1H 字段，简明短句\n- `quote`：1–3 条代表评论原句，多条之间用 `\\n` 换行；保持英文原文\n- `weakness`：当前方案劣势\n- `improvement`：可能的改进方案\n\n所有字符串请使用纯文本，不要包含未转义的双引号；JSON 必须可被 `JSON.parse` 直接解析。' },

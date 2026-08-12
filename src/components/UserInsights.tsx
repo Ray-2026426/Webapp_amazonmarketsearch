@@ -1709,14 +1709,51 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                 </div>
               </CardHeader>
               <CardContent className="p-6">
-                <div className="flex flex-col items-center justify-center py-8 text-[#86868b]">
-                  <FileText className="w-12 h-12 mb-3 text-zinc-200"/>
-                  <p className="text-sm text-center">
-                    {deepReport
-                      ? (deepInsight ? '结构化报告已就绪。点击「查看报告」打开独立阅读页。' : '报告已生成（旧版格式）。点击查看；重新生成可升级为新结构。')
-                      : '点击「生成深度洞察」，AI 将输出与关键词报告同构的三块结论。'}
-                  </p>
-                </div>
+                {deepInsight ? (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+                      <div className="text-[11px] font-semibold text-indigo-600 uppercase tracking-wider mb-1">用户画像摘要</div>
+                      <p className="text-sm text-[#1d1d1f] leading-relaxed line-clamp-3">{deepInsight.userPersona}</p>
+                    </div>
+                    <div className="grid sm:grid-cols-3 gap-3 text-[12px]">
+                      <div className="rounded-xl bg-[#f8f9fb] border border-black/5 p-3">
+                        <div className="text-[#86868b] mb-1">场景</div>
+                        <div className="text-[#1d1d1f] font-medium">{(deepInsight.userScenes || []).slice(0, 2).join(' · ') || '—'}</div>
+                      </div>
+                      <div className="rounded-xl bg-[#f8f9fb] border border-black/5 p-3">
+                        <div className="text-[#86868b] mb-1">痛点</div>
+                        <div className="text-[#1d1d1f] font-medium">{(deepInsight.userPainPoints || []).slice(0, 2).join(' · ') || '—'}</div>
+                      </div>
+                      <div className="rounded-xl bg-[#f8f9fb] border border-black/5 p-3">
+                        <div className="text-[#86868b] mb-1">决策阶段</div>
+                        <div className="text-[#1d1d1f] font-medium">{(deepInsight.decisionStages || []).map(s => s.name).filter(Boolean).join(' → ') || '—'}</div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 pt-1">
+                      <button type="button" onClick={() => setDeepReportOpen(true)} className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">
+                        <FileText className="w-4 h-4" />打开完整报告
+                      </button>
+                      <button type="button" onClick={() => void runDeepReport()} disabled={isReportLoading} className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-indigo-200 text-indigo-700 rounded-xl text-sm font-semibold hover:bg-indigo-50 disabled:opacity-60">
+                        {isReportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                        重新生成
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-6 text-[#86868b]">
+                    <FileText className="w-10 h-10 mb-3 text-zinc-200"/>
+                    <p className="text-sm text-center max-w-md">
+                      {deepReport
+                        ? '已有旧版报告。可直接查看，或点击「生成深度洞察」升级为结构化三块报告。'
+                        : '点击右上角「生成深度洞察」，将在本区直接展示画像 / 路径 / 结论摘要。'}
+                    </p>
+                    {deepReport && (
+                      <button type="button" onClick={() => setDeepReportOpen(true)} className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold">
+                        查看已有报告
+                      </button>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 

@@ -110,11 +110,19 @@ export const DEMO_KEYWORD_AI_INSIGHT = {
     differentiation: '睡姿×高度可视化，而不是再堆「骨科/豪华」形容词',
     priceRange: '锚定对标中位价，用高度变体做价格带而非盲目低价',
     mustFix: ['标题与主图必须出现真实英寸', '开箱膨松步骤写进 Listing，避免真空压缩差评'],
+    parentStructure: {
+      summary: '建议一个父体按「高度英寸」做主轴变体，先打透趴睡薄枕，再补尺寸与凉感升级，避免一上来铺全睡姿。',
+      variants: [
+        { name: '2.5" Standard 主推', role: '流量锚点', priority: 'P0', rationale: '决策期词与评论痛点最集中，先验证厚度预期管理' },
+        { name: '2.75" Standard', role: '利润/扩展款', priority: 'P1', rationale: '承接略高仰睡需求，拉开价格带' },
+        { name: 'King 同高度', role: '矩阵补齐', priority: 'P2', rationale: '大床用户补齐，不抢主推流量词' },
+      ],
+    },
   },
   productRoadmap: [
-    { phase: 'P1', name: '趴睡薄枕主推款', target: '趴睡与低枕仰睡用户', priority: '高' },
-    { phase: 'P2', name: '精确高度变体矩阵', target: '用英寸筛选的决策期用户', priority: '高' },
-    { phase: 'P3', name: '凉感可洗套升级款', target: '夏季与敏感睡眠用户', priority: '中' },
+    { phase: 'P1', name: '趴睡薄枕主推款', target: '趴睡与低枕仰睡用户', priority: '高', rationale: '先用单规格验证「高度可视化」能否降退货、提转化' },
+    { phase: 'P2', name: '精确高度变体矩阵', target: '用英寸筛选的决策期用户', priority: '高', rationale: '主推成立后再铺 2–3 个高度，形成父体矩阵' },
+    { phase: 'P3', name: '凉感可洗套升级款', target: '夏季与敏感睡眠用户', priority: '中', rationale: '在矩阵稳定后用材质升级抬客单，不宜过早分流广告预算' },
   ],
 };
 
@@ -153,9 +161,9 @@ export const DEMO_VOC_DEEP_REPORT_HTML = `<div style="font-family:system-ui,sans
 /** 竞品 AI 综合报告 HTML（演示样例） */
 export const DEMO_COMPETITOR_AI_HTML = `<div style="font-family:system-ui,sans-serif;line-height:1.65;color:#1d1d1f">
   <h2 style="margin:0 0 8px;font-size:20px">竞品综合对比报告（示例）</h2>
-  <p style="color:#86868b;font-size:13px;margin:0 0 18px">对比 ASIN：Huhu Sleep / Bluewave / MINUPWELL / Iwacool · 演示样例</p>
+  <p style="color:#86868b;font-size:13px;margin:0 0 18px">对比 ASIN：Huhu Sleep / Bluewave / Iwacool · 演示样例</p>
   <h3 style="font-size:16px">1. Listing 结构对比</h3>
-  <p><strong>Bluewave</strong>：评价池与多 loft 矩阵最强，五点强调密度与可洗套，价格带偏高。<strong>MINUPWELL</strong>：价格更友好，强调 2.5" 与棉质凉感，适合走性价比。<strong>Huhu</strong>：可用「更清晰的高度可视化 + 睡姿指南」打差异。<strong>Iwacool</strong>：需看流量词是否过度依赖广告。</p>
+  <p><strong>Bluewave</strong>：评价池与多 loft 矩阵最强，五点强调密度与可洗套，价格带偏高。<strong>Huhu</strong>：可用「更清晰的高度可视化 + 睡姿指南」打差异。<strong>Iwacool</strong>：需看流量词是否过度依赖广告。</p>
   <h3 style="font-size:16px">2. 流量词启示</h3>
   <p>自然流量应优先稳住 thin pillow / stomach sleeper 决策词；广告侧测试精确高度词与竞品品牌防御词。避免只堆 soft pillow 等宽泛词导致转化稀释。</p>
   <h3 style="font-size:16px">3. 产品矩阵建议</h3>
@@ -1850,7 +1858,7 @@ function bulletsFromFeatures(features: string[]): string {
 }
 
 const COMPETITOR_DEMO: CompetitorDemoSnapshot = {
-  selectedAsins: ['B0FH4SBYH4', 'B06XPMNP76', 'B0CBG2T9L1', 'B0C2KPM8N5'],
+  selectedAsins: ['B0FH4SBYH4', 'B06XPMNP76', 'B0C2KPM8N5'],
   packs: {
     B0FH4SBYH4: {
       zipName: 'B0FH4SBYH4_demo_pack.zip',
@@ -1873,16 +1881,6 @@ const COMPETITOR_DEMO: CompetitorDemoSnapshot = {
       aplusCount: 6,
       bulletPoints: bulletsFromFeatures(COMPETITOR_DETAILS[1].features),
     },
-    B0CBG2T9L1: {
-      zipName: 'B0CBG2T9L1_demo_pack.zip',
-      mainPreviewUrls: [
-        'https://m.media-amazon.com/images/I/31l-P7jZeLL._AC_US600_.jpg',
-        'https://m.media-amazon.com/images/I/31l-P7jZeLL._AC_US400_.jpg',
-        'https://m.media-amazon.com/images/I/713qlJP+ZtL._SY200.jpg',
-      ],
-      aplusCount: 4,
-      bulletPoints: bulletsFromFeatures(COMPETITOR_DETAILS[2].features),
-    },
     B0C2KPM8N5: {
       zipName: 'B0C2KPM8N5_demo_pack.zip',
       mainPreviewUrls: [
@@ -1894,7 +1892,7 @@ const COMPETITOR_DEMO: CompetitorDemoSnapshot = {
       bulletPoints: bulletsFromFeatures(COMPETITOR_DETAILS[3].features),
     },
   },
-  details: COMPETITOR_DETAILS,
+  details: COMPETITOR_DETAILS.filter(d => d.asin !== 'B0CBG2T9L1'),
   aiReportHtml: DEMO_COMPETITOR_AI_HTML,
 };
 
