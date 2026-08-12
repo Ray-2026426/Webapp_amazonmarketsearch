@@ -1,23 +1,23 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: #f5f5f7;
-  color: #1d1d1f;
+  background-color: #060912;
+  color: #e8edf5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 .markdown-body {
-  @apply text-[#1d1d1f] leading-relaxed;
+  @apply text-[#e8edf5] leading-relaxed;
 }
 
 .markdown-body h1 {
-  @apply text-3xl font-bold mt-12 mb-6 pb-4 border-b border-black/5;
+  @apply text-3xl font-bold mt-12 mb-6 pb-4 border-b border-white/5;
 }
 
 .markdown-body h2 {
@@ -29,7 +29,7 @@ body {
 }
 
 .markdown-body p {
-  @apply mb-4 text-[16px] text-[#424245];
+  @apply mb-4 text-[16px] text-[#8899b4];
 }
 
 .markdown-body ul, .markdown-body ol {
@@ -45,31 +45,31 @@ body {
 }
 
 .markdown-body li {
-  @apply text-[16px] text-[#424245];
+  @apply text-[16px] text-[#8899b4];
 }
 
 .markdown-body blockquote {
-  @apply border-l-4 border-indigo-500 bg-indigo-50/50 p-6 rounded-r-2xl my-8 italic text-indigo-900;
+  @apply border-l-4 border-[#00e5a0] bg-[#00e5a0]/5 p-6 rounded-r-2xl my-8 text-[#e8edf5];
 }
 
 .markdown-body strong {
-  @apply font-bold text-[#1d1d1f];
+  @apply font-bold text-[#e8edf5];
 }
 
 .markdown-body hr {
-  @apply my-12 border-black/5;
+  @apply my-12 border-white/5;
 }
 
 .markdown-body table {
-  @apply w-full border-collapse mb-8 rounded-2xl overflow-hidden border border-black/5;
+  @apply w-full border-collapse mb-8 rounded-2xl overflow-hidden border border-white/5;
 }
 
 .markdown-body th {
-  @apply bg-[#f5f5f7] p-4 text-left font-bold text-sm uppercase tracking-wider border-b border-black/5;
+  @apply bg-white/[0.03] p-4 text-left font-bold text-sm uppercase tracking-wider border-b border-white/5 text-[#6b7c93];
 }
 
 .markdown-body td {
-  @apply p-4 text-sm border-b border-black/5;
+  @apply p-4 text-sm border-b border-white/5 text-[#8899b4];
 }
 
 @media print {
@@ -77,13 +77,12 @@ body {
     display: none !important;
   }
   body {
-    background: white;
+    background: #060912;
   }
   .markdown-body {
     font-size: 12pt;
   }
 
-  /* 应用内「存为 PDF」：仅在有标记时隐藏侧栏与工具条，并展开主栏使图表、表格全部进入纸面 */
   @page {
     margin: 10mm;
   }
@@ -91,7 +90,7 @@ body {
   body.app-print-export {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
-    background: #fff !important;
+    background: #060912 !important;
   }
 
   body.app-print-export aside {
@@ -147,12 +146,11 @@ body {
   }
 }
 
-/* 拖放批注时让命中测试穿过气泡，落到下层锚点区域 */
+/* 拖放批注时让命中测试穿过气泡 */
 body.annotation-pin-pass-through [data-annotation-pin] {
   pointer-events: none !important;
 }
 
-/* 从侧栏「定位」时短暂高亮锚点模块 */
 .annotate-anchor-flash {
   outline: 2px solid rgb(245 158 11);
   outline-offset: 3px;

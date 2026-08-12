@@ -81,15 +81,15 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-[#f5f5f7] flex flex-col items-center justify-center p-8 text-center">
-          <div className="bg-white p-12 rounded-[32px] shadow-xl max-w-2xl border border-black/5">
+        <div className="min-h-screen bg-white/[0.04] flex flex-col items-center justify-center p-8 text-center">
+          <div className="bg-white p-12 rounded-[32px] shadow-xl max-w-2xl border border-white/[0.05]">
             <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6">
               <Activity className="w-10 h-10 text-rose-500" />
             </div>
-            <h2 className="text-2xl font-bold text-[#1d1d1f] mb-4">抱歉，应用遇到了错误</h2>
-            <p className="text-[#86868b] mb-4 leading-relaxed">由于数据量过大或系统异常，应用暂时无法继续运行。点击下方仅清空当前工作区数据，不会删除您的登录账号与市场历史。</p>
+            <h2 className="text-2xl font-bold text-[#e8edf5] mb-4">抱歉，应用遇到了错误</h2>
+            <p className="text-[#6b7c93] mb-4 leading-relaxed">由于数据量过大或系统异常，应用暂时无法继续运行。点击下方仅清空当前工作区数据，不会删除您的登录账号与市场历史。</p>
             {this.state.errorMessage && (
-              <pre className="text-left text-xs bg-[#f5f5f7] rounded-xl p-4 mb-6 overflow-auto max-h-48 text-rose-600 border border-rose-100">{this.state.errorMessage}</pre>
+              <pre className="text-left text-xs bg-white/[0.04] rounded-xl p-4 mb-6 overflow-auto max-h-48 text-rose-600 border border-rose-100">{this.state.errorMessage}</pre>
             )}
             <button 
               onClick={async () => {
@@ -101,7 +101,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
                 window.dispatchEvent(new CustomEvent('reset-app'));
                 this.setState({ hasError: false });
               }}
-              className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-semibold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
+              className="w-full py-4 bg-[#00e5a0] text-white rounded-2xl font-semibold hover:bg-[#00b87a] transition-all shadow-lg shadow-[#00e5a0]/15"
             >
               重置应用
             </button>
@@ -1112,19 +1112,19 @@ export default function App() {
       ) : (
       <>
       {isLoading || isInitializing || isRestoring ? (
-        <div className="min-h-screen bg-[#f5f5f7] flex flex-col items-center justify-center">
-          <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
-          <h2 className="text-xl font-medium text-[#1d1d1f]">
+        <div className="min-h-screen bg-white/[0.04] flex flex-col items-center justify-center">
+          <Loader2 className="w-12 h-12 text-[#00e5a0] animate-spin mb-4" />
+          <h2 className="text-xl font-medium text-[#e8edf5]">
             {isRestoring ? '正在恢复数据...' : (isInitializing ? '正在初始化...' : '正在处理数据...')}
           </h2>
-          <p className="text-[#86868b] mt-2">这可能需要一些时间，取决于文件大小。</p>
+          <p className="text-[#6b7c93] mt-2">这可能需要一些时间，取决于文件大小。</p>
         </div>
       ) : (
-        <div className="min-h-screen bg-[#f5f5f7] font-sans text-[#1d1d1f] flex">
+        <div className="min-h-screen bg-[#060912] font-sans text-[#e8edf5] flex">
           {/* Sidebar */}
-          <aside className="w-64 bg-white border-r border-black/5 hidden md:flex flex-col">
-        <div className="p-6 border-b border-black/5">
-          <div className="flex items-center space-x-2.5 font-semibold text-lg text-[#1d1d1f]">
+          <aside className="w-64 bg-[#0d111d] border-r border-white/[0.05] hidden md:flex flex-col">
+        <div className="p-6 border-b border-white/[0.05]">
+          <div className="flex items-center space-x-2.5 font-semibold text-lg text-[#e8edf5]">
             <img src="/logo.png?v=20260812" alt="AmzDev Tool" className="w-9 h-9 rounded-xl object-contain shadow-sm" />
             <span>AmzDev Tool</span>
           </div>
@@ -1132,41 +1132,41 @@ export default function App() {
         <nav className="flex-1 p-4 space-y-1">
           <button 
             onClick={() => setActiveView('market')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'market' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'market' ? 'bg-[#00e5a0]/10 text-[#00e5a0]' : 'text-[#6b7c93] hover:bg-white/[0.04] hover:text-[#e8edf5]'}`}
           >
             <LayoutDashboard className="w-5 h-5" />
             <span>市场大盘</span>
           </button>
           <button 
             onClick={() => setActiveView('competitors')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'competitors' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'competitors' ? 'bg-[#00e5a0]/10 text-[#00e5a0]' : 'text-[#6b7c93] hover:bg-white/[0.04] hover:text-[#e8edf5]'}`}
           >
             <Crosshair className="w-5 h-5" />
             <span>竞品分析</span>
           </button>
           <button 
             onClick={() => setActiveView('insights')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'insights' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'insights' ? 'bg-[#00e5a0]/10 text-[#00e5a0]' : 'text-[#6b7c93] hover:bg-white/[0.04] hover:text-[#e8edf5]'}`}
           >
             <Users className="w-5 h-5" />
             <span>用户洞察</span>
           </button>
           <button 
             onClick={() => setActiveView('keywords')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'keywords' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'keywords' ? 'bg-[#00e5a0]/10 text-[#00e5a0]' : 'text-[#6b7c93] hover:bg-white/[0.04] hover:text-[#e8edf5]'}`}
           >
             <TrendingUp className="w-5 h-5" />
             <span>关键词分析</span>
           </button>
           <button 
             onClick={() => setActiveView('profit')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'profit' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'profit' ? 'bg-[#00e5a0]/10 text-[#00e5a0]' : 'text-[#6b7c93] hover:bg-white/[0.04] hover:text-[#e8edf5]'}`}
           >
             <Calculator className="w-5 h-5" />
             <span>利润计算器</span>
           </button>
         </nav>
-        <div className="p-4 border-t border-black/5 space-y-2">
+        <div className="p-4 border-t border-white/[0.05] space-y-2">
           {isRegisteredUser && (
             <div className="flex items-stretch gap-1.5 px-2">
               <button
@@ -1174,7 +1174,7 @@ export default function App() {
                 title="我的市场历史"
                 aria-label="我的市场历史"
                 onClick={() => setIsMarketHistoryOpen(true)}
-                className="shrink-0 w-10 flex items-center justify-center rounded-xl border border-black/5 bg-[#f5f5f7] text-[#86868b] hover:bg-white hover:text-indigo-600 hover:border-indigo-100 transition-colors"
+                className="shrink-0 w-10 flex items-center justify-center rounded-xl border border-white/[0.05] bg-white/[0.04] text-[#6b7c93] hover:bg-[#131a2c] hover:text-[#00e5a0] hover:border-[#00e5a0]/20 transition-colors"
               >
                 <History className="w-4 h-4" />
               </button>
@@ -1183,7 +1183,7 @@ export default function App() {
                 title="保存当前市场到历史"
                 onClick={() => void handleSaveMarketToHistory()}
                 disabled={!isDataLoaded}
-                className="flex-1 min-w-0 py-2 px-2 rounded-xl border border-black/5 bg-[#f5f5f7] text-xs font-semibold text-[#86868b] hover:bg-white hover:text-indigo-600 hover:border-indigo-100 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                className="flex-1 min-w-0 py-2 px-2 rounded-xl border border-white/[0.05] bg-white/[0.04] text-xs font-semibold text-[#6b7c93] hover:bg-[#131a2c] hover:text-[#00e5a0] hover:border-[#00e5a0]/20 transition-colors disabled:opacity-40 disabled:pointer-events-none"
               >
                 保存市场
               </button>
@@ -1191,43 +1191,43 @@ export default function App() {
           )}
           <button 
             onClick={handleReupload}
-            className="w-full flex items-center space-x-3 px-3 py-2 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] rounded-xl font-medium transition-colors"
+            className="w-full flex items-center space-x-3 px-3 py-2 text-[#6b7c93] hover:bg-white/[0.04] hover:text-[#e8edf5] rounded-xl font-medium transition-colors"
           >
             <Package className="w-5 h-5" />
             <span>重新上传数据</span>
           </button>
           <button 
             onClick={() => setIsAiSettingsOpen(true)}
-            className="w-full flex items-center space-x-3 px-3 py-2 text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f] rounded-xl font-medium transition-colors"
+            className="w-full flex items-center space-x-3 px-3 py-2 text-[#6b7c93] hover:bg-white/[0.04] hover:text-[#e8edf5] rounded-xl font-medium transition-colors"
           >
             <Settings className="w-5 h-5" />
             <span>设置</span>
           </button>
-          <div className="flex items-center justify-between px-3 py-2 mt-1 bg-[#f5f5f7] rounded-xl">
+          <div className="flex items-center justify-between px-3 py-2 mt-1 bg-white/[0.04] rounded-xl">
             <div className="flex items-center gap-2 min-w-0">
               {isRegisteredUser ? (
                 <button
                   type="button"
                   title="点击设置头像"
                   onClick={() => setIsAvatarSettingsOpen(true)}
-                  className="w-7 h-7 rounded-full overflow-hidden border border-black/10 shrink-0 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-7 h-7 rounded-full overflow-hidden border border-white/[0.10] shrink-0 focus:outline-none focus:ring-2 focus:ring-[#00e5a0]/40"
                 >
                   {currentUser?.avatarDataUrl ? (
                     <img src={currentUser.avatarDataUrl} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <span className="w-full h-full bg-indigo-600 flex items-center justify-center text-white text-[10px] font-bold">
+                    <span className="w-full h-full bg-[#00e5a0] flex items-center justify-center text-white text-[10px] font-bold">
                       {currentUser?.username?.[0]?.toUpperCase()}
                     </span>
                   )}
                 </button>
               ) : (
-                <div className="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center shrink-0">
+                <div className="w-7 h-7 bg-[#00e5a0] rounded-full flex items-center justify-center shrink-0">
                   <span className="text-white text-[10px] font-bold">{currentUser?.username?.[0]?.toUpperCase()}</span>
                 </div>
               )}
-              <span className="text-xs font-medium text-[#1d1d1f] truncate">{currentUser?.username}</span>
+              <span className="text-xs font-medium text-[#e8edf5] truncate">{currentUser?.username}</span>
             </div>
-            <button onClick={handleLogout} className="text-[10px] text-[#86868b] hover:text-rose-600 transition-colors shrink-0 ml-2">退出</button>
+            <button onClick={handleLogout} className="text-[10px] text-[#6b7c93] hover:text-rose-600 transition-colors shrink-0 ml-2">退出</button>
           </div>
         </div>
       </aside>
@@ -1235,13 +1235,13 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-black/5 px-8 py-4 flex items-center justify-between z-10 sticky top-0">
+        <header className="bg-[#0d111d]/80 backdrop-blur-md border-b border-white/[0.05] px-8 py-4 flex items-center justify-between z-10 sticky top-0">
           <div className="flex items-center space-x-4">
             <div>
-              <h1 className="text-[28px] font-semibold tracking-tight text-[#1d1d1f]">
+              <h1 className="text-[28px] font-semibold tracking-tight text-[#e8edf5]">
                 {activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品分析' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
               </h1>
-              <p className="text-[15px] text-[#86868b] mt-1">
+              <p className="text-[15px] text-[#6b7c93] mt-1">
                 {activeView === 'market' 
                   ? '分析市场趋势、竞争对手及产品机会。' 
                   : activeView === 'competitors'
@@ -1254,7 +1254,7 @@ export default function App() {
               </p>
             </div>
             {activeView === 'market' && isDataLoaded && (
-              <div className="flex items-center space-x-1 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-sm font-medium ml-4">
+              <div className="flex items-center space-x-1 bg-[#00e5a0]/10 text-[#00e5a0] px-3 py-1 rounded-full text-sm font-medium ml-4">
                 <MapPin className="w-4 h-4" />
                 <span>{marketplace.code}</span>
               </div>
@@ -1265,9 +1265,9 @@ export default function App() {
             <button
               type="button"
               onClick={handleExportPdf}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-black/10 bg-white text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-white/[0.10] bg-[#131a2c] text-[#e8edf5] hover:bg-[#131a2c] transition-colors shadow-sm"
             >
-              <Printer className="w-4 h-4 text-indigo-600" />
+              <Printer className="w-4 h-4 text-[#00e5a0]" />
               存为 PDF
             </button>
             {activeView === 'market' && isDataLoaded && (
@@ -1276,12 +1276,12 @@ export default function App() {
               <div className="flex items-center space-x-2">
                 <button 
                   onClick={() => setIsSegmentationOpen(true)}
-                  className="flex items-center space-x-2 px-4 py-2 bg-white border border-black/5 rounded-xl text-sm font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors shadow-sm"
+                  className="flex items-center space-x-2 px-4 py-2 bg-[#131a2c] border border-white/[0.05] rounded-xl text-sm font-medium text-[#e8edf5] hover:bg-white/[0.04] transition-colors shadow-sm"
                 >
-                  <Layers className="w-4 h-4 text-indigo-600" />
+                  <Layers className="w-4 h-4 text-[#00e5a0]" />
                   <span>市场细分</span>
                   {isSegAiRunning && !isSegmentationOpen && (
-                    <span className="flex items-center gap-1 bg-indigo-600 text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">
+                    <span className="flex items-center gap-1 bg-[#00e5a0] text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">
                       <Loader2 className="w-2.5 h-2.5 animate-spin"/> AI运行中
                     </span>
                   )}
@@ -1290,22 +1290,22 @@ export default function App() {
 
               {/* Segment Filter */}
               <div className="relative">
-                <div className="flex items-center gap-2 bg-white/60 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-black/[0.06] shadow-sm hover:border-indigo-200 transition-colors group cursor-pointer">
-                  <Filter className="w-3.5 h-3.5 text-indigo-400 group-hover:text-indigo-600 transition-colors" />
+                <div className="flex items-center gap-2 bg-[#131a2c]/60 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-white/[0.06] shadow-sm hover:border-[#00e5a0]/30 transition-colors group cursor-pointer">
+                  <Filter className="w-3.5 h-3.5 text-[#6b7c93] group-hover:text-[#00e5a0] transition-colors" />
                   <select 
                     value={selectedSegment}
                     onChange={(e) => setSelectedSegment(e.target.value)}
-                    className="appearance-none bg-transparent text-sm font-medium text-[#1d1d1f] focus:outline-none cursor-pointer pr-4 min-w-[120px]"
+                    className="appearance-none bg-transparent text-sm font-medium text-[#e8edf5] focus:outline-none cursor-pointer pr-4 min-w-[120px]"
                   >
                     {segmentFilterOptions.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
-                  <div className="w-0 h-0 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-[#86868b] group-hover:border-t-indigo-600 transition-colors" />
+                  <div className="w-0 h-0 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-[#6b7c93] group-hover:border-t-[#00e5a0] transition-colors" />
                 </div>
               </div>
-              <div className="text-[13px] font-medium text-[#86868b] bg-[#f5f5f7] px-3 py-1.5 rounded-full border border-black/5">
-                ASIN总数: <span className="text-[#1d1d1f]">{filteredProducts.length}</span>
+              <div className="text-[13px] font-medium text-[#6b7c93] bg-white/[0.04] px-3 py-1.5 rounded-full border border-white/[0.05]">
+                ASIN总数: <span className="text-[#e8edf5]">{filteredProducts.length}</span>
               </div>
             </div>
             )}
@@ -1322,8 +1322,8 @@ export default function App() {
           {activeView === 'market' && <PageQuickNav />}
           {isDemoData && !demoBannerDismissed && (
             <div className="max-w-7xl mx-auto mb-4">
-              <div className="rounded-2xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 px-5 py-3 flex items-center justify-between gap-3 animate-in fade-in">
-                <div className="flex items-center gap-2 text-sm text-indigo-800">
+              <div className="rounded-2xl bg-gradient-to-r from-[#00e5a0]/5 to-[#7c5cfc]/5 border border-[#00e5a0]/30 px-5 py-3 flex items-center justify-between gap-3 animate-in fade-in">
+                <div className="flex items-center gap-2 text-sm text-[#00e5a0]">
                   <Sparkles className="w-4 h-4 shrink-0" />
                   <span>
                     当前为<strong>示例</strong>：含 ASIN 主图、销量趋势、评论、关键词洞察与竞品对比，可直接点左侧各板块预览。
@@ -1333,7 +1333,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setDemoBannerDismissed(true)}
-                  className="shrink-0 p-1.5 rounded-lg hover:bg-indigo-100 text-indigo-600 transition-colors"
+                  className="shrink-0 p-1.5 rounded-lg hover:bg-white/[0.06] text-[#00e5a0] transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1343,13 +1343,13 @@ export default function App() {
           {!isDataLoaded && activeView === 'market' ? (
             <div className="h-full flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-700">
               <div className="text-center space-y-2">
-                <h2 className="text-[32px] font-bold text-[#1d1d1f] tracking-tight">欢迎使用 Amazon 市场洞察</h2>
-                <p className="text-[#86868b] text-lg">上传您的市场数据，开启深度分析之旅</p>
+                <h2 className="text-[32px] font-bold text-[#e8edf5] tracking-tight">欢迎使用 Amazon 市场洞察</h2>
+                <p className="text-[#6b7c93] text-lg">上传您的市场数据，开启深度分析之旅</p>
               </div>
               <FileUpload onDataLoaded={handleDataLoaded} />
               <button 
                 onClick={handleReset}
-                className="text-sm text-[#86868b] hover:text-rose-600 transition-colors"
+                className="text-sm text-[#6b7c93] hover:text-rose-600 transition-colors"
               >
                 重置应用并清除缓存
               </button>
@@ -1366,12 +1366,12 @@ export default function App() {
                   )}
 
                   <div className="flex items-center justify-between">
-                    <h2 className="text-[20px] font-semibold text-[#1d1d1f]">核心指标</h2>
+                    <h2 className="text-[20px] font-semibold text-[#e8edf5]">核心指标</h2>
                     <div className="flex items-center gap-4">
                       {segments.length > 0 && (
                         <button 
                           onClick={openMarketReport}
-                          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 animate-in fade-in zoom-in duration-500"
+                          className="flex items-center gap-2 px-4 py-2 bg-[#00e5a0] text-white rounded-xl text-sm font-semibold hover:bg-[#00b87a] transition-all shadow-md shadow-[#00e5a0]/10 animate-in fade-in zoom-in duration-500"
                         >
                           <Sparkles className="w-4 h-4" />
                           生成市场分析报告
@@ -1397,23 +1397,23 @@ export default function App() {
                       : selectedSegment;
                     if (!activeDesc) return null;
                     return (
-                      <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm animate-in fade-in slide-in-from-top-2">
+                      <div className="bg-[#131a2c] p-6 rounded-2xl border border-white/[0.05] shadow-sm animate-in fade-in slide-in-from-top-2">
                         <div className="flex items-center gap-2 mb-4">
-                          <Users className="w-5 h-5 text-indigo-600" />
-                          <h3 className="text-lg font-semibold text-[#1d1d1f]">细分市场画像：{activeLabel}</h3>
+                          <Users className="w-5 h-5 text-[#00e5a0]" />
+                          <h3 className="text-lg font-semibold text-[#e8edf5]">细分市场画像：{activeLabel}</h3>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                           <div className="space-y-1">
-                            <div className="text-[11px] font-bold text-[#86868b] uppercase tracking-widest">目标人群</div>
-                            <p className="text-[14px] text-[#1d1d1f] leading-relaxed">{activeDesc.people}</p>
+                            <div className="text-[11px] font-bold text-[#6b7c93] uppercase tracking-widest">目标人群</div>
+                            <p className="text-[14px] text-[#e8edf5] leading-relaxed">{activeDesc.people}</p>
                           </div>
                           <div className="space-y-1">
-                            <div className="text-[11px] font-bold text-[#86868b] uppercase tracking-widest">使用场景</div>
-                            <p className="text-[14px] text-[#1d1d1f] leading-relaxed">{activeDesc.scenarios}</p>
+                            <div className="text-[11px] font-bold text-[#6b7c93] uppercase tracking-widest">使用场景</div>
+                            <p className="text-[14px] text-[#e8edf5] leading-relaxed">{activeDesc.scenarios}</p>
                           </div>
                           <div className="space-y-1">
-                            <div className="text-[11px] font-bold text-[#86868b] uppercase tracking-widest">核心诉求与痛点</div>
-                            <p className="text-[14px] text-[#1d1d1f] leading-relaxed">{activeDesc.needs}</p>
+                            <div className="text-[11px] font-bold text-[#6b7c93] uppercase tracking-widest">核心诉求与痛点</div>
+                            <p className="text-[14px] text-[#e8edf5] leading-relaxed">{activeDesc.needs}</p>
                           </div>
                         </div>
                       </div>
@@ -1676,13 +1676,13 @@ export default function App() {
 
       {confirmAction && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl p-6 animate-in fade-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-semibold text-[#1d1d1f] mb-4">确认操作</h3>
-            <p className="text-sm text-[#86868b] mb-6">{confirmAction.message}</p>
+          <div className="bg-[#131a2c] w-full max-w-sm rounded-[24px] shadow-2xl p-6 animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-semibold text-[#e8edf5] mb-4">确认操作</h3>
+            <p className="text-sm text-[#6b7c93] mb-6">{confirmAction.message}</p>
             <div className="flex justify-end gap-3">
               <button 
                 onClick={() => setConfirmAction(null)}
-                className="px-4 py-2 text-sm font-medium text-[#86868b] hover:text-[#1d1d1f] transition-colors"
+                className="px-4 py-2 text-sm font-medium text-[#6b7c93] hover:text-[#e8edf5] transition-colors"
               >
                 取消
               </button>
@@ -1710,7 +1710,7 @@ export default function App() {
         <button
           type="button"
           onClick={openMarketReport}
-          className="fixed right-6 bottom-6 z-[65] px-4 py-3 rounded-2xl bg-indigo-600 text-white text-sm font-semibold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-colors"
+          className="fixed right-6 bottom-6 z-[65] px-4 py-3 rounded-2xl bg-[#00e5a0] text-white text-sm font-semibold shadow-lg shadow-[#00e5a0]/15 hover:bg-[#00b87a] transition-colors"
         >
           查看后台报告
         </button>
