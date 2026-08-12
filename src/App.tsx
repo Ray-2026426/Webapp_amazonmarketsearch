@@ -250,14 +250,36 @@ export default function App() {
     setHistorySourceLabel(demo.sourceLabel);
     setKeywords(demo.keywords);
     setReviews(demo.reviews);
+    setPersona(demo.persona);
     setCompetitorDemo(demo.competitorDemo);
     setSelectedCompareAsins(demo.competitorDemo.selectedAsins.slice(0, 5));
+    // 示例报告指纹按「无分层」计算，同步清空分层以免缓存对不上
+    setSegments([]);
+    setAsinToSegment({});
+    setSegmentChildren({});
+    setAsinToSubSegment({});
+    setSegmentDescriptions({});
+    setSegmentSubDescriptions({});
+    setSegmentLevel3Children({});
+    setAsinToLevel3Segment({});
+    setSegmentLevel3Descriptions({});
+    setSegmentDepth(1);
+    // 与空分层默认态指纹对齐，便于打开「市场报告」直接看到示例文案
+    const reportFp = computeMarketReportFingerprint(
+      demo.products, [], {}, {}, {}, {}, {}, {}, {}, {}, 1
+    );
+    const reportCache = { fingerprint: reportFp, body: demo.marketReportMarkdown };
+    setMarketReportCache(reportCache);
     setIsDataLoaded(true);
     setIsDemoData(true);
     void set('demoDataVersion', demo.demoVersion);
     void set('isDemoData', true);
+    void set('persona', demo.persona);
+    void set('marketReportCache', reportCache);
+    void set('keywords', demo.keywords);
+    void set('reviews', demo.reviews);
     if (opts?.toastMsg) {
-      toast.success('已加载示例数据（含主图 / 评论 / 关键词 / 竞品）');
+      toast.success('已加载示例数据（含 AI 洞察报告 / 主图 / 评论 / 关键词 / 竞品）');
     }
   }, []);
 
@@ -1557,6 +1579,7 @@ export default function App() {
                     setPersona={setPersona}
                     insightsUiActive={activeView === 'insights'}
                     marketplaceCode={marketplace.code}
+                    initialDeepReport={isDemoData ? getDemoData().vocDeepReportHtml : null}
                   />
                 </div>
               )}
@@ -1568,6 +1591,7 @@ export default function App() {
                     setKeywords={setKeywords}
                     marketplaceCode={marketplace.code}
                     suggestAsins={products.slice(0, 8).map((p) => p.asin).filter(Boolean)}
+                    initialInsight={isDemoData ? getDemoData().keywordAiInsight : null}
                   />
                 </div>
               }

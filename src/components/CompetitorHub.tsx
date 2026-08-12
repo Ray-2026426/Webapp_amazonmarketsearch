@@ -232,7 +232,7 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   const [brandSiblings, setBrandSiblings] = useState<BrandSiblingRow[]>([]);
 
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiReportHtml, setAiReportHtml] = useState('');
+  const [aiReportHtml, setAiReportHtml] = useState(() => demoSnapshot?.aiReportHtml ?? '');
   const [aiReportOpen, setAiReportOpen] = useState(false);
 
   // 示例快照：直接进入结果页，展示真实 Listing / 主图
@@ -255,6 +255,9 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     setHasResult(true);
     setStep(3);
     setResultTab('listing');
+    if (demoSnapshot.aiReportHtml) {
+      setAiReportHtml(demoSnapshot.aiReportHtml);
+    }
   }, [demoSnapshot, products]);
 
   // 大盘勾选变化时同步进对比池（示例模式不覆盖已选对比池）

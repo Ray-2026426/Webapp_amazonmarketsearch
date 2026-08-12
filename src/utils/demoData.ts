@@ -17,7 +17,7 @@ import type {
 } from './parser';
 import type { AsinDetailSnapshot } from './sellerspriteApi';
 
-export const DEMO_DATA_VERSION = 'huhu-thin-pillow-v3';
+export const DEMO_DATA_VERSION = 'huhu-thin-pillow-v4';
 
 export interface CompetitorDemoSnapshot {
   selectedAsins: string[];
@@ -32,7 +32,131 @@ export interface CompetitorDemoSnapshot {
     }
   >;
   details: AsinDetailSnapshot[];
+  /** 示例预置的竞品 AI 综合报告 HTML（演示用，非实时生成） */
+  aiReportHtml?: string;
 }
+
+/** 市场大盘 AI 报告（Markdown，演示样例） */
+export const DEMO_MARKET_REPORT_MD = `# 美国站薄枕头（Bed Pillows）市场洞察报告（示例）
+
+> 本报告为演示样例，基于示例 ASIN 池生成，便于展示 AmzDev Tool 的「一键报告」能力。
+
+## 1. 市场一句话判断
+
+薄枕头不是「矮一点的普通枕」，而是**侧睡/趴睡颈椎诉求**驱动的细分赛道：买家用搜索与评论反复确认「厚度是否够薄、会不会顶脖子、盖子能不能洗」。头部品牌靠**多厚度矩阵 + 长期评价沉淀**占位，新品牌机会在**更清晰的高度表达、凉感与可洗体验叙事**。
+
+## 2. 规模与格局（示例解读）
+
+| 观察点 | 结论 |
+| --- | --- |
+| 需求稳定性 | ABA 与大盘销量显示「thin / flat / stomach sleeper」相关需求持续存在 |
+| 价格带 | 约 $20–$45 为主战场；过低易被质疑支撑力，过高需证明材质与耐久 |
+| 头部打法 | Bluewave 等以多 loft 规格覆盖不同睡姿；评价池是护城河 |
+| 新品窗口 | 标题/主图把「精确高度（英寸）」做成可扫一眼的卖点，仍有转化空间 |
+
+## 3. 用户要完成的任务（JTBD）
+
+1. **睡姿匹配**：找到不会把颈椎顶高的薄枕（趴睡/仰睡/偏薄侧睡）。
+2. **长期舒适**：凉感、不塌陷、可机洗套，减少「买了又退」的试错成本。
+3. **规格可信**：看懂 1.75" / 2.5" / 2.75" 差异，避免「看起来薄、到手偏厚」。
+
+## 4. 机会与风险
+
+**机会**
+- 把高度做成可视化对比（主图尺子/人体侧睡示意），降低决策摩擦。
+- 针对偏硬记忆棉投诉，强化「适度回弹 / 凉感凝胶」差异化。
+- A+ 用「睡姿 → 推荐高度」路径图，承接关键词意图。
+
+**风险**
+- 厚度体感因个体差异大，差评集中在「太硬 / 不如预期薄」。
+- 真空压缩开箱体验差，需在 Listing 明确「开箱膨松步骤」。
+
+## 5. 给运营的下一步（可执行）
+
+1. 大盘锁定 3–5 个对标 ASIN，做 Listing + 流量词对照（示例竞品页已预置）。
+2. 关键词侧优先承接 \`thin pillow\` / \`stomach sleeper pillow\` 决策期词，并补齐场景词。
+3. 评论侧盯「厚度预期差、硬度、凉感」三类标签，反哺五点与主图 Brief。
+`;
+
+/** 关键词模块「AI 用户洞察报告」结构（演示样例） */
+export const DEMO_KEYWORD_AI_INSIGHT = {
+  summary:
+    '薄枕头搜索以「睡姿匹配 + 精确厚度」为主：认知期看 thin/flat，决策期落到 stomach sleeper / cervical 等可转化词。市场不缺流量词，缺的是把高度与睡姿讲清楚的 Listing 表达。',
+  userPersona:
+    '25–45 岁北美用户，多为趴睡或希望更低枕头高度的仰睡者；常有颈椎不适或「酒店枕头太高」经历，愿意为明确英寸高度与可洗套支付溢价，但会仔细核对真实厚度与软硬度。',
+  decisionPath:
+    '先搜 thin/flat pillow → 对比主图厚度与评价里的真实体感 → 确认睡姿匹配（stomach/back）→ 看是否凉感、可洗、退货率相关评价 → 下单。广告承接应覆盖决策期词，详情页用高度对比缩短决策。',
+  whitespace:
+    '「偏软但仍支撑颈椎的薄枕」「侧睡友好但仍偏薄」表达不足；高度可视化与睡姿推荐路径仍是多数 Listing 的空白。',
+  listingAdvice:
+    '标题前置精确高度与睡姿；主图第 1–2 张做尺子/侧睡对比；五点按「高度→材质→凉感→可洗→矩阵规格」排序；A+ 放「选高度指南」。广告侧：决策词精确匹配，认知词用于拓量。',
+  topOpportunities: [
+    {
+      segment: '趴睡薄枕（stomach sleeper）',
+      reason: '决策意图清晰、转化高，适合作为核心流量池与主图故事主角。',
+    },
+    {
+      segment: '精确高度规格词（2.5" / 2.75"）',
+      reason: '用户用英寸筛选，标题与变体命名对齐可降低预期差评。',
+    },
+    {
+      segment: '凉感 + 可洗套组合诉求',
+      reason: '评论高频加分项，适合做成差异化卖点与 A+ 模块。',
+    },
+  ],
+  userPainPoints:
+    '到手比想象厚/硬、记忆棉闷热、真空包装开箱难膨松、侧睡支撑不够却标称多睡姿通用。',
+};
+
+/** 用户洞察：人群/场景/需求三段（演示样例） */
+export const DEMO_PERSONA = {
+  people:
+    '趴睡与偏薄仰睡用户为主，兼有偏矮侧睡者；关注颈椎舒适，习惯在评价里核对真实厚度。',
+  scenarios:
+    '日常卧室睡眠、旅行替代酒店高枕、夏季需要更凉的薄枕、长期使用后更换塌陷旧枕。',
+  needs:
+    '精确可控的高度、不顶脖子、凉感与可机洗、开箱后易恢复、规格选择不踩坑。',
+};
+
+/** 用户洞察「深度报告」HTML（演示样例） */
+export const DEMO_VOC_DEEP_REPORT_HTML = `<div style="font-family:system-ui,sans-serif;line-height:1.65;color:#1d1d1f">
+  <h2 style="margin:0 0 12px;font-size:20px">薄枕头 VOC 深度洞察（示例报告）</h2>
+  <p style="color:#86868b;margin:0 0 20px;font-size:13px">基于示例评论池生成，仅用于产品演示，非实时抓取结论。</p>
+  <h3 style="font-size:16px;margin:20px 0 8px">一、总体情绪</h3>
+  <p>好评集中在「终于找到够薄的枕」「脖子不那么酸」「凉感明显」；差评集中在「比预期硬/厚」「不适合侧睡」「记忆棉体感闷」。整体是<strong>高度预期管理</strong>问题，多于材质本身失效。</p>
+  <h3 style="font-size:16px;margin:20px 0 8px">二、高频痛点（可进 Listing）</h3>
+  <ol>
+    <li><strong>厚度预期差</strong>：广告说 ultra slim，体感仍偏高或偏硬。</li>
+    <li><strong>睡姿错配</strong>：侧睡用户买到偏薄规格后支撑不足。</li>
+    <li><strong>开箱体验</strong>：真空压缩需膨松说明不到位。</li>
+  </ol>
+  <h3 style="font-size:16px;margin:20px 0 8px">三、可复制的好评点</h3>
+  <ul>
+    <li>精确英寸高度（1.75" / 2.5" / 2.75"）带来「买对了」感</li>
+    <li>可拆洗套与凉感，提高长期使用满意度</li>
+    <li>多规格矩阵降低「一家品牌买错」成本</li>
+  </ul>
+  <h3 style="font-size:16px;margin:20px 0 8px">四、行动建议</h3>
+  <p>主图强化尺子对比；五点写清「推荐睡姿 × 高度」；评论区置顶「开箱膨松」图文；变体命名避免模糊的 soft/firm，改用英寸。</p>
+</div>`;
+
+/** 竞品 AI 综合报告 HTML（演示样例） */
+export const DEMO_COMPETITOR_AI_HTML = `<div style="font-family:system-ui,sans-serif;line-height:1.65;color:#1d1d1f">
+  <h2 style="margin:0 0 8px;font-size:20px">竞品综合对比报告（示例）</h2>
+  <p style="color:#86868b;font-size:13px;margin:0 0 18px">对比 ASIN：Huhu Sleep / Bluewave / MINUPWELL / Iwacool · 演示样例</p>
+  <h3 style="font-size:16px">1. Listing 结构对比</h3>
+  <p><strong>Bluewave</strong>：评价池与多 loft 矩阵最强，五点强调密度与可洗套，价格带偏高。<strong>MINUPWELL</strong>：价格更友好，强调 2.5" 与棉质凉感，适合走性价比。<strong>Huhu</strong>：可用「更清晰的高度可视化 + 睡姿指南」打差异。<strong>Iwacool</strong>：需看流量词是否过度依赖广告。</p>
+  <h3 style="font-size:16px">2. 流量词启示</h3>
+  <p>自然流量应优先稳住 thin pillow / stomach sleeper 决策词；广告侧测试精确高度词与竞品品牌防御词。避免只堆 soft pillow 等宽泛词导致转化稀释。</p>
+  <h3 style="font-size:16px">3. 产品矩阵建议</h3>
+  <p>父体建议覆盖 1.75"–3.25" 关键档位；主推图放在中位高度（如 2.5"–2.75"），用 A+「选高度」降低退货。同品牌其他链接在大盘中可作流量承接，不宜互相抢同一主图故事。</p>
+  <h3 style="font-size:16px">4. 可落地动作（本周）</h3>
+  <ul>
+    <li>对标 Bluewave 主图信息密度，补「尺子 + 睡姿」两张图</li>
+    <li>五点第一句写清推荐高度与睡姿，避免空泛舒适话术</li>
+    <li>抽 20 条差评做「预期差」归因，反哺标题禁用词</li>
+  </ul>
+</div>`;
 
 const months = ['202601', '202602', '202603', '202604', '202605', '202606', '202607'] as const;
 
@@ -1761,6 +1885,7 @@ const COMPETITOR_DEMO: CompetitorDemoSnapshot = {
     },
   },
   details: COMPETITOR_DETAILS,
+  aiReportHtml: DEMO_COMPETITOR_AI_HTML,
 };
 
 // ─── Export ─────────────────────────────────────────────────────────────────
@@ -1774,6 +1899,10 @@ export function getDemoData(): {
   keywords: Keyword[];
   reviews: Review[];
   competitorDemo: CompetitorDemoSnapshot;
+  persona: { people: string; scenarios: string; needs: string };
+  marketReportMarkdown: string;
+  keywordAiInsight: typeof DEMO_KEYWORD_AI_INSIGHT;
+  vocDeepReportHtml: string;
   demoVersion: string;
 } {
   return {
@@ -1785,6 +1914,10 @@ export function getDemoData(): {
     keywords: DEMO_KEYWORDS,
     reviews: DEMO_REVIEWS,
     competitorDemo: COMPETITOR_DEMO,
+    persona: DEMO_PERSONA,
+    marketReportMarkdown: DEMO_MARKET_REPORT_MD,
+    keywordAiInsight: DEMO_KEYWORD_AI_INSIGHT,
+    vocDeepReportHtml: DEMO_VOC_DEEP_REPORT_HTML,
     demoVersion: DEMO_DATA_VERSION,
   };
 }

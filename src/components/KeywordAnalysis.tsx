@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Keyword, parseKeywords, UserIntentStage, JobType } from '../utils/parser';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { fetchKeywordsFromMcp, fetchKeywordsByKeywordFromMcp } from '../utils/sellerspriteApi';
@@ -296,6 +296,8 @@ interface Props {
   setKeywords: React.Dispatch<React.SetStateAction<Keyword[]>>;
   marketplaceCode?: string;
   suggestAsins?: string[];
+  /** 示例数据预置的 AI 用户洞察报告 */
+  initialInsight?: AiInsight | null;
 }
 
 export const KeywordAnalysis = React.memo(function KeywordAnalysis({
@@ -303,6 +305,7 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
   setKeywords,
   marketplaceCode = 'US',
   suggestAsins = [],
+  initialInsight = null,
 }: Props) {
   const [isAI, setIsAI] = useState(false);
   const [prog, setProg] = useState({ c: 0, t: 0 });
@@ -311,12 +314,19 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
   const [etags, setEtags] = useState<string[]>([]);
   const [cat, setCat] = useState('all');
   const [seg, setSeg] = useState<string | null>(null);
-  const [tab, setTab] = useState<'intent' | 'jtbd' | 'scenario' | 'report'>('intent');
-  const [ins, setIns] = useState<AiInsight | null>(null);
+  const [tab, setTab] = useState<'intent' | 'jtbd' | 'scenario' | 'report'>(
+    () => (initialInsight ? 'report' : 'intent')
+  );
+  const [ins, setIns] = useState<AiInsight | null>(() => initialInsight ?? null);
   const [genIns, setGenIns] = useState(false);
   const [showT, setShowT] = useState(false);
   const [seedHint, setSeedHint] = useState('');
   const abort = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!initialInsight) return;
+    setIns(initialInsight);
+  }, [initialInsight]);
 
   const hasInsight = useMemo(() => hasInsightTags(keywords), [keywords]);
   const intentStats = useMemo(() => hasInsight ? calcIntentStats(keywords) : [], [keywords, hasInsight]);

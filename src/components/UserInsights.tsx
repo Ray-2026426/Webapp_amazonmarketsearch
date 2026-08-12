@@ -34,6 +34,8 @@ interface UserInsightsProps {
   insightsUiActive?: boolean;
   /** 当前市场站点，用于在线抓取默认值 */
   marketplaceCode?: string;
+  /** 示例数据预置的 VOC 深度报告（HTML 或 Markdown） */
+  initialDeepReport?: string | null;
 }
 
 const COLORS = ['#6366f1','#8b5cf6','#ec4899','#f43f5e','#f59e0b','#10b981','#06b6d4','#3b82f6','#84cc16','#f97316'];
@@ -341,12 +343,12 @@ function parseTagLinesFromInput(text: string): string[] {
   return out;
 }
 
-export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products, reviews, setReviews, persona, setPersona, insightsUiActive = true, marketplaceCode = 'US' }) => {
+export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products, reviews, setReviews, persona, setPersona, insightsUiActive = true, marketplaceCode = 'US', initialDeepReport = null }) => {
   // ── State ──────────────────────────────────────────────
   const [step, setStep] = useState<'idle'|'step1'|'step2'|'done'>('idle');
   const [stepProgress, setStepProgress] = useState('');
   const [tagLib, setTagLib] = useState<TagLibrary | null>(null);
-  const [deepReport, setDeepReport] = useState<string | null>(null);
+  const [deepReport, setDeepReport] = useState<string | null>(() => initialDeepReport ?? null);
   const [isReportLoading, setIsReportLoading] = useState(false);
   const [deepReportOpen, setDeepReportOpen] = useState(false);
   const [journeyReportRaw, setJourneyReportRaw] = useState<string | null>(null);
@@ -390,6 +392,11 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
   const journeyQuoteTrRef = useRef<Record<string, string>>({});
   journeyQuoteTrRef.current = journeyQuoteTr;
   const [expandedReviewIds, setExpandedReviewIds] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!initialDeepReport) return;
+    setDeepReport(initialDeepReport);
+  }, [initialDeepReport]);
 
   const deepReportHtml = useMemo(
     () => {
