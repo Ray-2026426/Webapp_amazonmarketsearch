@@ -17,7 +17,7 @@ import type {
 } from './parser';
 import type { AsinDetailSnapshot } from './sellerspriteApi';
 
-export const DEMO_DATA_VERSION = 'huhu-thin-pillow-v2';
+export const DEMO_DATA_VERSION = 'huhu-thin-pillow-v3';
 
 export interface CompetitorDemoSnapshot {
   selectedAsins: string[];
