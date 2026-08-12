@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Eye, EyeOff, User, Lock, BarChart3, Search, X, MessageCircle, QrCode,
+  Eye, EyeOff, User, Lock, BarChart3, Search, X, MessageCircle,
   MessageSquareWarning, KeyRound, FolderOpen, Compass, Tags, GitCompare, MessagesSquare,
   Calculator, Sparkles, Upload, Plug, ArrowDown, Layers, Route, CheckCircle2,
   TrendingUp, Shield, Zap, Clock, Lightbulb, Package, FlaskConical, RefreshCw, ArrowRight,
@@ -234,10 +234,12 @@ const Contact: React.FC<{ c: () => void }> = ({ c }) => (
         </button>
       </div>
       <div className="p-6 flex flex-col items-center gap-4">
-        <div className="w-44 h-44 rounded-2xl bg-[#f5f5f7] border border-dashed border-black/10 flex flex-col items-center justify-center text-[#aeaeb2] gap-2">
-          <QrCode className="w-10 h-10" />
-          <span className="text-xs">二维码占位</span>
-          <span className="text-[10px]">后续替换为实际二维码</span>
+        <div className="w-48 h-48 rounded-2xl overflow-hidden border border-black/[0.06] shadow-sm bg-black">
+          <img
+            src="/contact-qr.png"
+            alt="联系我们二维码"
+            className="w-full h-full object-cover"
+          />
         </div>
         <p className="text-xs text-[#86868b] text-center">扫码沟通市调工作流<br />或申请团队试用开通</p>
       </div>
@@ -338,29 +340,29 @@ const HeroDataFlow: React.FC = () => {
    ═══════════════════════════════════════ */
 const HeroPreviewCard: React.FC = () => (
   <div className="relative hero-float">
-    <div className="glass-card p-6 w-[380px] backdrop-blur-xl">
-      <div className="flex items-center justify-between mb-4">
+    <div className="glass-card p-7 w-[440px] backdrop-blur-xl shadow-[0_20px_60px_-16px_rgba(79,70,229,0.18)]">
+      <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full bg-green-400 shadow-sm shadow-green-400/50 animate-pulse" />
-          <span className="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider">Live Market · US</span>
+          <span className="text-[12px] font-semibold text-[#86868b] uppercase tracking-wider">Live Market · US</span>
         </div>
-        <span className="text-[10px] font-medium text-green-500 bg-green-50 px-2 py-0.5 rounded-full">+12.4% MoM</span>
+        <span className="text-[11px] font-medium text-green-500 bg-green-50 px-2.5 py-0.5 rounded-full">+12.4% MoM</span>
       </div>
       {/* KPI row */}
-      <div className="grid grid-cols-3 gap-4 mb-5">
+      <div className="grid grid-cols-3 gap-5 mb-6">
         {[
           { v: '2,847', l: 'ASINs', c: '#6366f1' },
           { v: '$42.8M', l: '月销额', c: '#8b5cf6' },
           { v: '4.3', l: '均评分', c: '#6366f1' },
         ].map(({ v, l, c }) => (
           <div key={l}>
-            <div className="text-[1.35rem] font-bold" style={{ color: c }}>{v}</div>
-            <div className="text-[11px] text-[#aeaeb2] mt-0.5">{l}</div>
+            <div className="text-[1.55rem] font-bold" style={{ color: c }}>{v}</div>
+            <div className="text-[12px] text-[#aeaeb2] mt-0.5">{l}</div>
           </div>
         ))}
       </div>
       {/* Upward trending line chart */}
-      <svg viewBox="0 0 360 80" className="w-full h-16 mb-1.5">
+      <svg viewBox="0 0 360 80" className="w-full h-20 mb-2">
         <defs>
           <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#6366f1" stopOpacity="0.18" />
@@ -396,7 +398,7 @@ const HeroPreviewCard: React.FC = () => (
           <animate attributeName="opacity" values="0.4;0" dur="2s" repeatCount="indefinite" />
         </circle>
       </svg>
-      <div className="flex justify-between text-[10px] text-[#aeaeb2]">
+      <div className="flex justify-between text-[11px] text-[#aeaeb2]">
         <span>Jan</span><span>Mar</span><span>May</span><span>Jul</span><span>Sep</span><span>Nov</span>
       </div>
     </div>
