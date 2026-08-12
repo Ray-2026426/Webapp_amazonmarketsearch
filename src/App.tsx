@@ -1227,17 +1227,20 @@ export default function App() {
               </div>
 
               {/* Segment Filter */}
-              <div className="flex items-center space-x-2 bg-[#f5f5f7] px-4 py-2 rounded-xl border border-black/5">
-                <Filter className="w-4 h-4 text-[#86868b]" />
-                <select 
-                  value={selectedSegment}
-                  onChange={(e) => setSelectedSegment(e.target.value)}
-                  className="bg-transparent text-sm font-medium focus:outline-none cursor-pointer"
-                >
-                  {segmentFilterOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
+              <div className="relative">
+                <div className="flex items-center gap-2 bg-white/60 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-black/[0.06] shadow-sm hover:border-indigo-200 transition-colors group cursor-pointer">
+                  <Filter className="w-3.5 h-3.5 text-indigo-400 group-hover:text-indigo-600 transition-colors" />
+                  <select 
+                    value={selectedSegment}
+                    onChange={(e) => setSelectedSegment(e.target.value)}
+                    className="appearance-none bg-transparent text-sm font-medium text-[#1d1d1f] focus:outline-none cursor-pointer pr-4 min-w-[120px]"
+                  >
+                    {segmentFilterOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <div className="w-0 h-0 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-[#86868b] group-hover:border-t-indigo-600 transition-colors" />
+                </div>
               </div>
               <div className="text-[13px] font-medium text-[#86868b] bg-[#f5f5f7] px-3 py-1.5 rounded-full border border-black/5">
                 ASIN总数: <span className="text-[#1d1d1f]">{filteredProducts.length}</span>

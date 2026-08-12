@@ -170,7 +170,8 @@ export function calcJTBDStats(kws: Keyword[]): JTBDStat[] {
       topKeywords: [...list].sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume).slice(0, 5).map(k => k.keyword),
       opportunityScore: calcOpportunityScore(ac, acvr, tv, maxVolume, ad),
     };
-  }).sort((a, b) => b.opportunityScore - a.opportunityScore);
+  })
+  .filter(j => j.count >= 3)  // 过滤碎片任务（< 3 个关键词的合并）
 }
 
 /** 场景 / 人群 / 痛点 / 功能洞察 */
@@ -472,7 +473,7 @@ ${sampleTop.map((k, i) => `${i + 1}. ${k.keyword}（${k.translation}，搜索量
 - loyalty：品牌词、复购、replacement、配件/耗材
 
 【分析 2：JTBD 用户任务】
-- job：用户雇用产品要完成的任务，2-8 个中文字（如「便携携带」「隔音降噪」「送礼表达」）
+- job：用户雇用产品要完成的任务，2-8 个中文字（如「便携携带」「隔音降噪」「送礼表达」）。⚠️ 任务必须概括而非具体——同类关键词共用同一任务名。尽量用 5-8 个任务覆盖所有词，不要每个词一个任务。
 - jobType：functional（功能）/ emotional（情感）/ social（社会）
 若关键词只是泛品类词、无明显任务，job 与 jobType 可留空字符串
 

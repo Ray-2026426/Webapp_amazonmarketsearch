@@ -703,31 +703,27 @@ export interface FetchKeywordsByKeywordOptions {
 }
 
 function mapMinerKeywordItem(item: Record<string, unknown>, rank: number): Keyword {
-  // keyword_miner 与 traffic_keyword 字段略有差异，做兼容映射
-  const searches =
-    Number(item.searches) ||
-    Number(item.search) ||
-    Number(item.monthlySearches) ||
-    0;
+  // keyword_miner 字段映射：字段名与 traffic_keyword 略有差异
+  // searches=月搜索量, purchasesRate=购买率(0-1), monopolyClickRate=点击集中度(0-1)
+  const searches = Number(item.searches) || 0;
   const weekly =
     Number(item.calculatedWeeklySearches) ||
     (searches > 0 ? Math.round(searches / 4.3) : 0);
-  const bid = Number(item.bid) || Number(item.avgBid) || Number(item.ppcBid) || 0;
+  const bid = Number(item.bid) || 0;
   const bidMin = Number(item.bidMin);
   const bidMax = Number(item.bidMax);
-  const monopoly =
-    Number(item.monopolyClickRate) ||
-    Number(item.araClickRate) ||
-    Number(item.top3ClickingRate) ||
-    0;
+  // 点击集中度 (0-1)：keyword_miner 返回 monopolyClickRate，也可能叫 araClickRate
+  const monopoly = Number(item.monopolyClickRate) || Number(item.araClickRate) || 0;
   const top3Click = Number(item.top3ClickingRate) || monopoly;
   const top3Conv = Number(item.top3ConversionRate) || 0;
+  // keyword_miner 的"购买率"字段名是 purchasesRate（见其 filter 参数命名 minPurchasesRate/maxPurchasesRate）
   const purchaseRate =
-    Number(item.purchaseRate) ||
     Number(item.purchasesRate) ||
-    Number(item.purchase_rate) ||
+    Number(item.purchaseRate) ||
     0;
-  const difficulty = Math.round(Math.min(100, Math.max(0, monopoly * 100 || Number(item.spr) || 0)));
+  // 难度用点击集中度 * 100 做近似（SPR 来自另一套体系，不混用）
+  const rawDifficulty = Math.round(monopoly * 100);
+  const difficulty = Number.isFinite(rawDifficulty) ? Math.min(100, Math.max(0, rawDifficulty)) : 0;
 
   return {
     id: uid(),
@@ -780,6 +776,7 @@ export async function fetchKeywordsByKeywordFromMcp(
           marketplace,
           page,
           size: pageSize,
+          filterRootWord: 1,       // 只保留包含种子词的词（排除毫不相关的）
           order: { field: 'searches', desc: true },
         },
       });
@@ -787,7 +784,7 @@ export async function fetchKeywordsByKeywordFromMcp(
       if (page === 1) {
         opts.onProgress?.(`「${seed}」带排序抓取失败，改用不带排序重试…`);
         payload = await callTool('keyword_miner', {
-          request: { keyword: seed, marketplace, page, size: pageSize },
+          request: { keyword: seed, marketplace, page, size: pageSize, filterRootWord: 1 },
         });
       } else {
         throw e;
