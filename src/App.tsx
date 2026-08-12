@@ -1130,7 +1130,7 @@ export default function App() {
             title="返回主页"
             className="flex items-center space-x-2.5 font-semibold text-lg text-[#1d1d1f] hover:text-indigo-600 transition-colors group"
           >
-            <img src="/logo.png?v=20260812" alt="Kairo" className="w-9 h-9 rounded-xl object-contain shadow-sm group-hover:shadow-indigo-200/60" />
+            <img src="/logo.svg?v=20260812b" alt="Kairo" className="w-9 h-9 object-contain" />
             <span>Kairo</span>
           </button>
         </div>

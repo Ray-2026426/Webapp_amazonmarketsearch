@@ -1,11 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="ÿo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="Kairo">
   <defs>
-    <radialGradient id="g" cx="35%" cy="35%" r="65%">
-      <stop offset="0%" stop-color="#86efac"/>
-      <stop offset="55%" stop-color="#22c55e"/>
-      <stop offset="100%" stop-color="#15803d"/>
-    </radialGradient>
+    <linearGradient id="kairoGrad" x1="8" y1="10" x2="56" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="55%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
   </defs>
-  <circle cx="50" cy="50" r="46" fill="url(#g)"/>
-  <circle cx="50" cy="50" r="46" fill="none" stroke="#166534" stroke-opacity="0.25" stroke-width="2"/>
+  <circle cx="28" cy="28" r="18" stroke="url(#kairoGrad)" stroke-width="5.5" fill="none"/>
+  <path d="M41.5 41.5 L54 54" stroke="url(#kairoGrad)" stroke-width="6" stroke-linecap="round"/>
+  <rect x="18" y="30" width="5" height="10" rx="1.5" fill="url(#kairoGrad)"/>
+  <rect x="25.5" y="24" width="5" height="16" rx="1.5" fill="url(#kairoGrad)"/>
+  <rect x="33" y="18" width="5" height="22" rx="1.5" fill="url(#kairoGrad)"/>
+  <path d="M17 34 L35 20" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M29.5 19.5 L35.5 19.2 L35.2 25.2" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>

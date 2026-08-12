@@ -115,6 +115,24 @@ const pageCss = `
     pointer-events: none;
   }
 
+  @keyframes demand-glow {
+    0%, 100% { filter: drop-shadow(0 0 0 rgba(99,102,241,0)); transform: translateY(0); }
+    50% { filter: drop-shadow(0 6px 18px rgba(99,102,241,0.35)); transform: translateY(-1px); }
+  }
+  @keyframes demand-shine {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+  }
+  .demand-glow {
+    display: inline-block;
+    background-image: linear-gradient(90deg, #4f46e5, #8b5cf6, #6366f1, #4f46e5);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: demand-shine 3.2s linear infinite, demand-glow 2.4s ease-in-out infinite;
+  }
+
   /* Trend chart animations */
   @keyframes trend-draw {
     to { stroke-dashoffset: 0; }
@@ -165,7 +183,8 @@ const pageCss = `
     .amz-login-page .hero-float,
     .amz-login-page .drift-particle,
     .amz-login-page .cta-insight,
-    .amz-login-page .cta-insight::after { animation: none !important; }
+    .amz-login-page .cta-insight::after,
+    .amz-login-page .demand-glow { animation: none !important; }
   }
 `;
 
@@ -175,7 +194,7 @@ const pageCss = `
 const Nav: React.FC<{ a: string | null; on: (id: string) => void; onBrandClick: () => void }> = ({ a, on, onBrandClick }) => (
   <nav className="sticky top-0 z-50 flex items-center justify-between px-6 lg:px-10 h-14 border-b border-black/[0.06] bg-white/80 backdrop-blur-xl">
     <button type="button" onClick={onBrandClick} className="flex items-center gap-2.5 group">
-      <img src="/logo.svg" alt="" className="w-8 h-8" />
+      <img src="/logo.svg?v=20260812b" alt="" className="w-8 h-8" />
       <span className="text-[#1d1d1f] font-semibold text-[15px] tracking-tight group-hover:text-indigo-600 transition-colors">Kairo</span>
     </button>
     <div className="flex items-center gap-1">
@@ -739,6 +758,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       icon: Package,
       accent: '#6366f1',
       title: '产品方案',
+      image: '/brand/kairo-sol-product.jpg',
       desc: '规格、材质、功能组合、价格带与差异化卖点——对齐 JTBD 里尚未被满足的任务。',
       bullets: ['主规格与变体矩阵', '必改痛点 vs 可延后项', '首发验证假设清单'],
     },
@@ -746,6 +766,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       icon: Palette,
       accent: '#8b5cf6',
       title: '视觉方案',
+      image: '/brand/kairo-sol-visual.jpg',
       desc: '主图叙事、场景图、信息图与 A+ 结构——让买家在 3 秒内看懂「适不适合我」。',
       bullets: ['主图卖点优先级', '场景 × 人群露出', '误买风险点提前说清'],
     },
@@ -753,6 +774,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       icon: Megaphone,
       accent: '#6366f1',
       title: '推广方案',
+      image: '/brand/kairo-sol-promo.jpg',
       desc: '词库分层、广告切入点与 Listing 话术——跟着决策路径投放，而不是广撒网。',
       bullets: ['核心词 / 长尾 / 防御词', '广告与自然位协同', '标题五点话术素材'],
     },
@@ -835,9 +857,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             <h1 className="font-display text-[2.6rem] sm:text-[3rem] lg:text-[3.5rem] text-[#1d1d1f] tracking-tight leading-[1.08] mb-4">
               洞察数据背后的
               <br />
-              <span className="bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-500 bg-clip-text text-transparent">
-                真需求
-              </span>
+              <span className="demand-glow">真需求</span>
             </h1>
             <p className="text-[#424245] text-lg lg:text-xl leading-snug mb-3 max-w-md">
               AI 读懂搜索词与买家真话，把零散数据还原成用户洞察——谁要买、为何买、还缺什么。
@@ -872,7 +892,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               {/* 面板头部 */}
               <div className="text-center mb-6">
                 <div className="inline-flex items-center justify-center mb-3">
-                  <img src="/logo.svg" alt="Kairo" className="w-12 h-12" />
+                  <img src="/logo.svg?v=20260812b" alt="Kairo" className="w-12 h-12" />
                 </div>
                 <h3 className="font-semibold text-[#1d1d1f] text-[15px]">欢迎使用 Kairo</h3>
                 <p className="text-[12px] text-[#aeaeb2] mt-0.5">{mode === 'login' ? '登录您的账号以继续' : '创建新账号以开始使用'}</p>
@@ -1194,29 +1214,31 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <span className="text-[12px] font-semibold text-indigo-600 uppercase tracking-wider">落地输出</span>
             </div>
             <h3 className="text-xl lg:text-2xl font-semibold text-[#1d1d1f] mb-2">洞察之后：三套可评审方案</h3>
-            <p className="text-[14px] text-[#86868b] mb-6 max-w-2xl">
+            <p className="text-[14px] text-[#86868b] mb-8 max-w-2xl">
               画像与任务对齐后，AI 协助把结论拆成产品、视觉、推广三份动作清单——方便直接进评审，而不是停在「感觉有机会」。
             </p>
-            <div className="mb-8 rounded-2xl overflow-hidden border border-indigo-100/50">
-              <img src="/brand/kairo-solutions.jpg" alt="产品视觉推广三方案" className="w-full max-h-[180px] object-cover" />
-            </div>
             <div className="grid md:grid-cols-3 gap-5 lg:gap-6">
-              {solutionPillars.map(({ icon: Icon, accent, title, desc, bullets }) => (
-                <div key={title} className="glass-card p-7 lg:p-8 min-h-[260px] flex flex-col">
-                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-5"
-                    style={{ backgroundColor: `${accent}12`, border: `1px solid ${accent}22` }}>
-                    <Icon className="w-6 h-6" style={{ color: accent }} />
+              {solutionPillars.map(({ icon: Icon, accent, title, desc, bullets, image }) => (
+                <div key={title} className="glass-card overflow-hidden min-h-[320px] flex flex-col">
+                  <div className="aspect-[4/3] bg-[#f5f5f7] overflow-hidden border-b border-black/[0.04]">
+                    <img src={image} alt={title} className="w-full h-full object-cover object-center" />
                   </div>
-                  <h4 className="text-lg font-semibold text-[#1d1d1f] mb-2">{title}</h4>
-                  <p className="text-[13px] text-[#86868b] leading-relaxed mb-5">{desc}</p>
-                  <ul className="space-y-2.5 mt-auto">
-                    {bullets.map((b) => (
-                      <li key={b} className="flex items-center gap-2 text-[13px] text-[#424245]">
-                        <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: accent }} />
-                        {b}
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="p-6 lg:p-7 flex flex-col flex-1">
+                    <div className="w-11 h-11 rounded-2xl flex items-center justify-center mb-4"
+                      style={{ backgroundColor: `${accent}12`, border: `1px solid ${accent}22` }}>
+                      <Icon className="w-5 h-5" style={{ color: accent }} />
+                    </div>
+                    <h4 className="text-lg font-semibold text-[#1d1d1f] mb-2">{title}</h4>
+                    <p className="text-[13px] text-[#86868b] leading-relaxed mb-4">{desc}</p>
+                    <ul className="space-y-2.5 mt-auto">
+                      {bullets.map((b) => (
+                        <li key={b} className="flex items-center gap-2 text-[13px] text-[#424245]">
+                          <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: accent }} />
+                          {b}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               ))}
             </div>
