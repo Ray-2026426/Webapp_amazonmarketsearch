@@ -80,32 +80,42 @@ export const DEMO_MARKET_REPORT_MD = `# 美国站薄枕头（Bed Pillows）市�
 
 /** 关键词模块「AI 用户洞察报告」结构（演示样例） */
 export const DEMO_KEYWORD_AI_INSIGHT = {
-  summary:
-    '薄枕头搜索以「睡姿匹配 + 精确厚度」为主：认知期看 thin/flat，决策期落到 stomach sleeper / cervical 等可转化词。市场不缺流量词，缺的是把高度与睡姿讲清楚的 Listing 表达。',
   userPersona:
-    '25–45 岁北美用户，多为趴睡或希望更低枕头高度的仰睡者；常有颈椎不适或「酒店枕头太高」经历，愿意为明确英寸高度与可洗套支付溢价，但会仔细核对真实厚度与软硬度。',
-  decisionPath:
-    '先搜 thin/flat pillow → 对比主图厚度与评价里的真实体感 → 确认睡姿匹配（stomach/back）→ 看是否凉感、可洗、退货率相关评价 → 下单。广告承接应覆盖决策期词，详情页用高度对比缩短决策。',
-  whitespace:
-    '「偏软但仍支撑颈椎的薄枕」「侧睡友好但仍偏薄」表达不足；高度可视化与睡姿推荐路径仍是多数 Listing 的空白。',
-  listingAdvice:
-    '标题前置精确高度与睡姿；主图第 1–2 张做尺子/侧睡对比；五点按「高度→材质→凉感→可洗→矩阵规格」排序；A+ 放「选高度指南」。广告侧：决策词精确匹配，认知词用于拓量。',
-  topOpportunities: [
-    {
-      segment: '趴睡薄枕（stomach sleeper）',
-      reason: '决策意图清晰、转化高，适合作为核心流量池与主图故事主角。',
-    },
-    {
-      segment: '精确高度规格词（2.5" / 2.75"）',
-      reason: '用户用英寸筛选，标题与变体命名对齐可降低预期差评。',
-    },
-    {
-      segment: '凉感 + 可洗套组合诉求',
-      reason: '评论高频加分项，适合做成差异化卖点与 A+ 模块。',
-    },
+    '25–45 岁北美用户，多为趴睡或希望更低枕头高度的仰睡者；决策者多为本人。常有颈椎不适或「酒店枕头太高」经历，愿意为明确英寸高度与可洗套支付溢价，但会仔细核对真实厚度与软硬度。',
+  userScenes: ['日常卧室睡眠', '旅行替代酒店高枕', '夏季需要更凉的薄枕', '旧枕塌陷后更换'],
+  userNeeds: ['精确可控的高度', '不顶脖子的睡姿匹配', '凉感与可机洗', '开箱后易恢复膨松'],
+  userPainPoints: ['到手比想象厚/硬', '记忆棉闷热', '真空包装开箱难膨松', '标称多睡姿但侧睡支撑不够'],
+  decisionStages: [
+    { name: '认知', desc: '发现枕头太高或不适，搜 thin / flat / for neck pain 确认有没有更薄方案。', signals: 'thin pillow、flat pillow、neck pain' },
+    { name: '考虑', desc: '对比主图真实厚度、评测与差评里的体感，筛睡姿与材质。', signals: 'best thin pillow、memory foam vs down、reviews' },
+    { name: '决策', desc: '锁英寸高度与睡姿标签，看凉感、可洗、退货相关评价后下单。', signals: 'stomach sleeper pillow、2.5 inch、cooling' },
+    { name: '使用', desc: '开箱膨松与第一周睡眠决定留评或退货，厚度预期差是主因。', signals: 'too thick、too firm、doesn’t loft' },
   ],
-  userPainPoints:
-    '到手比想象厚/硬、记忆棉闷热、真空包装开箱难膨松、侧睡支撑不够却标称多睡姿通用。',
+  decisionSummary:
+    '用户从痛点词进入，在对比页用主图厚度与评价体感做筛选，决策期落到睡姿+英寸规格；开箱与首次使用决定是否退货。广告应承接决策期词，详情页用高度对比缩短路径。',
+  insightAnalysis:
+    '搜索结构显示：认知期看 thin/flat，决策期落到 stomach sleeper / 精确英寸。市场不缺流量词，缺的是把高度与睡姿讲清楚的 Listing 表达。痛点高度集中在「预期厚度差」——这既是退货源，也是差异化切口。产品侧应先做「趴睡薄枕」单点打透，再用高度变体铺矩阵，而不是一上来做全睡姿通用款。',
+  listingPlan: {
+    title: '前置精确高度 + 睡姿（如 2.5" Stomach Sleeper Thin Pillow）',
+    bullets: [
+      '高度可视化：英寸数字 + 尺子对照，降低「太厚」预期差',
+      '睡姿匹配：明确趴睡/薄仰睡，避免「全睡姿」空话',
+      '凉感与可洗套：对应评论高频加分项，写进第三、四点',
+    ],
+    keywords: '核心：stomach sleeper pillow / thin pillow；长尾：2.5 inch、cooling；防御：品牌词与替换词',
+    visual: '主图1 高度尺子；主图2 睡姿侧切；主图3 开箱膨松步骤。A+ 放「选高度指南」降低误买。',
+  },
+  productPlan: {
+    core: '2.5"–2.75" 薄枕为主推，记忆棉或可水洗填充，可拆洗套',
+    differentiation: '睡姿×高度可视化，而不是再堆「骨科/豪华」形容词',
+    priceRange: '锚定对标中位价，用高度变体做价格带而非盲目低价',
+    mustFix: ['标题与主图必须出现真实英寸', '开箱膨松步骤写进 Listing，避免真空压缩差评'],
+  },
+  productRoadmap: [
+    { phase: 'P1', name: '趴睡薄枕主推款', target: '趴睡与低枕仰睡用户', priority: '高' },
+    { phase: 'P2', name: '精确高度变体矩阵', target: '用英寸筛选的决策期用户', priority: '高' },
+    { phase: 'P3', name: '凉感可洗套升级款', target: '夏季与敏感睡眠用户', priority: '中' },
+  ],
 };
 
 /** 用户洞察：人群/场景/需求三段（演示样例） */

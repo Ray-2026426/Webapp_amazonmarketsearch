@@ -28,6 +28,7 @@ export interface IntentStat {
   stage: UserIntentStage;
   count: number;
   totalVolume: number;
+  avgCpc: number;
   avgCvr: number;
   share: number; // 0-1 按词数占比
   volumeShare: number;
@@ -63,13 +64,16 @@ export interface ScenarioInsights {
 }
 
 export interface AiInsight {
-  summary: string;
   userPersona: string;
-  decisionPath: string;
-  whitespace: string;
-  listingAdvice: string;
-  topOpportunities: { segment: string; reason: string }[];
-  userPainPoints: string;
+  userScenes: string[];
+  userNeeds: string[];
+  userPainPoints: string[];
+  decisionStages: { name: string; desc: string; signals: string }[];
+  decisionSummary: string;
+  insightAnalysis: string;
+  listingPlan: { title: string; bullets: string[]; keywords: string; visual: string };
+  productPlan: { core: string; differentiation: string; priceRange: string; mustFix: string[] };
+  productRoadmap: { phase: string; name: string; target: string; priority: string }[];
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -125,6 +129,7 @@ export function calcIntentStats(kws: Keyword[]): IntentStat[] {
       stage,
       count: list.length,
       totalVolume: tv,
+      avgCpc: list.length ? list.reduce((s, k) => s + k.cpcBid, 0) / list.length : 0,
       avgCvr: list.length ? list.reduce((s, k) => s + k.conversionRate, 0) / list.length : 0,
       share: list.length / total,
       volumeShare: tv / totalVol,
@@ -173,7 +178,7 @@ export function calcJTBDStats(kws: Keyword[]): JTBDStat[] {
     };
   })
   .filter(j => j.count >= 3)  // 过滤碎片任务（< 3 个关键词的合并）
-}
+  .sort((a, b) => b.opportunityScore - a.opportunityScore);
 
 /** 场景 / 人群 / 痛点 / 功能洞察 */
 export function calcScenarioInsights(kws: Keyword[]): ScenarioInsights {
@@ -593,28 +598,31 @@ ${batch.map((k, n) => `${n + 1}. ${k.keyword}（${k.translation}）`).join('\n')
 ## 本次关键词洞察数据（请严格基于以下统计）
 
 【购买意图分布】
-${intents.map(i => `- ${INTENT_META[i.stage].label}：词数${i.count}（${(i.share * 100).toFixed(0)}%），搜索量${i.totalVolume.toLocaleString()}，CVR ${(i.avgCvr * 100).toFixed(1)}%`).join('\n')}
+${intents.map(i => `- ${INTENT_META[i.stage].label}：词数${i.count}（${(i.share * 100).toFixed(0)}%），搜索量${i.totalVolume.toLocaleString()}，均CPC $${i.avgCpc.toFixed(2)}，CVR ${(i.avgCvr * 100).toFixed(1)}%`).join('\n')}
 
 【用户任务 JTBD Top】
-${jobs.slice(0, 8).map(j => `- ${j.job}（${JOB_TYPE_META[j.jobType].label}）：量${j.totalVolume.toLocaleString()}，词${j.count}，机会分${j.opportunityScore}`).join('\n')}
+${jobs.slice(0, 8).map(j => `- ${j.job}（${JOB_TYPE_META[j.jobType].label}）：量${j.totalVolume.toLocaleString()}，词${j.count}，机会分${j.opportunityScore}，CPC $${j.avgCpc.toFixed(2)}，CVR ${(j.avgCvr * 100).toFixed(1)}%`).join('\n')}
 
-【高频场景】${sc.scenarios.slice(0, 5).map(s => s.name).join('、') || '无'}
-【高频人群】${sc.users.slice(0, 5).map(s => s.name).join('、') || '无'}
-【高频痛点】${sc.painPoints.slice(0, 5).map(s => s.name).join('、') || '无'}
-【高频功能】${sc.features.slice(0, 5).map(s => s.name).join('、') || '无'}
+【高频场景】${sc.scenarios.slice(0, 5).map(s => `${s.name}(${s.totalVolume.toLocaleString()})`).join('、') || '无'}
+【高频人群】${sc.users.slice(0, 5).map(s => `${s.name}(${s.totalVolume.toLocaleString()})`).join('、') || '无'}
+【高频痛点】${sc.painPoints.slice(0, 5).map(s => `${s.name}(${s.totalVolume.toLocaleString()})`).join('、') || '无'}
+【高频功能】${sc.features.slice(0, 5).map(s => `${s.name}(${s.totalVolume.toLocaleString()})`).join('、') || '无'}
 
 【Top30 关键词】${top.map(k => `${k.keyword}(${k.translation},${k.weeklySearchVolume})`).join('，')}
 
-## 输出格式（必须严格遵守，框架不变）
-请只返回一个 JSON 对象（不要 Markdown 代码围栏），字段对应分析框架：
+## 输出格式（必须严格遵守）
+请只返回一个 JSON 对象（不要 Markdown 代码围栏），不要输出 summary 字段：
 {
-  "summary":"100字市场与用户总体判断",
-  "userPersona":"80字用户画像：谁在用、什么场景、核心诉求",
-  "decisionPath":"80字购买决策路径：从认知到下单的典型路径",
-  "whitespace":"白空间/未满足需求",
-  "listingAdvice":"80字产品或 Listing 行动建议",
-  "topOpportunities":[{"segment":"任务或场景名","reason":"理由50字"},{"segment":"名","reason":"理由50字"}],
-  "userPainPoints":"用户核心痛点总结"
+  "userPersona":"120字用户画像：谁在买、谁在用、购买触发",
+  "userScenes":["场景1","场景2","场景3"],
+  "userNeeds":["需求1","需求2","需求3"],
+  "userPainPoints":["痛点1","痛点2","痛点3"],
+  "decisionStages":[{"name":"认知","desc":"该阶段用户在做什么","signals":"对应搜索信号/关键词类型"}],
+  "decisionSummary":"80-120字决策路径总述",
+  "insightAnalysis":"200-300字综合洞察：把画像、任务、痛点、路径串成可拍板判断",
+  "listingPlan":{"title":"标题方向","bullets":["五点素材1","五点素材2","五点素材3"],"keywords":"核心词/长尾/防御词布局","visual":"主图与A+视觉策略"},
+  "productPlan":{"core":"核心规格与功能组合","differentiation":"差异化方向","priceRange":"建议价格带","mustFix":["必改项1","必改项2"]},
+  "productRoadmap":[{"phase":"P1","name":"产品线名称","target":"目标人群","priority":"高/中"}]
 }`;
       const r = await generateText(p, cfg, { jsonMode: true });
       const m = r.match(/\{.*\}/s);
