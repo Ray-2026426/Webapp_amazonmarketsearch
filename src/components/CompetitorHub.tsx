@@ -1,7 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Crosshair, Loader2, Image as ImageIcon, Activity, Grid3X3, Plus, X, Upload,
-  ChevronRight, ChevronLeft, Star, Package, ExternalLink, RefreshCw,
+  ChevronRight, ChevronLeft, Star, Package, ExternalLink, RefreshCw, Sparkles, HelpCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import {
@@ -10,16 +10,17 @@ import {
   parseAsinList,
   fetchAsinDetailFromMcp,
   fetchTrafficStatFromMcp,
-  fetchKeywordsFromMcp,
+  fetchTrafficKeywordsDetailedFromMcp,
   fetchParentMatrixFromMcp,
-  fetchBrandParentsFromMcp,
   type AsinDetailSnapshot,
   type TrafficStatSnapshot,
   type ParentMatrixSnapshot,
-  type BrandParentItem,
+  type TrafficKeywordDetail,
 } from '../utils/sellerspriteApi';
 import { parseSingleCompetitorZip } from '../utils/competitorArchiveParser';
-import type { Keyword, Product } from '../utils/parser';
+import type { Product } from '../utils/parser';
+import { loadAiSettings, generateText } from '../utils/aiConfig';
+import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
 
 type WizardStep = 1 | 2 | 3;
@@ -39,11 +40,23 @@ interface AsinPack {
   bulletPoints: string;
 }
 
+interface BrandSiblingRow {
+  brand: string;
+  items: Product[];
+  currentParentAsin: string;
+  anchorAsin: string;
+}
+
 const MAX_ASINS = 5;
 
 function fmtNum(n: number, digits = 0): string {
   if (!Number.isFinite(n) || n === 0) return '-';
   return n.toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
+function fmtPct(ratio: number, digits = 1): string {
+  if (!Number.isFinite(ratio) || ratio <= 0) return '-';
+  return `${(ratio * 100).toFixed(digits)}%`;
 }
 
 function badgeYes(v: string | undefined): boolean {
@@ -53,6 +66,84 @@ function badgeYes(v: string | undefined): boolean {
 function starsLabel(rating: number): string {
   if (!rating) return '暂无评分';
   return `${rating.toFixed(1)} ★`;
+}
+
+function Tip({ text }: { text: string }) {
+  return (
+    <span className="relative inline-flex group/tip align-middle ml-0.5">
+      <HelpCircle className="w-3.5 h-3.5 text-[#c7c7cc] cursor-help" />
+      <span className="pointer-events-none absolute z-20 left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-56 rounded-lg bg-[#1d1d1f] text-white text-[11px] leading-relaxed px-2.5 py-2 opacity-0 group-hover/tip:opacity-100 transition-opacity shadow-lg">
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function stripHtmlFence(raw: string): string {
+  let html = raw.replace(/^```html?\s*\n?/i, '').replace(/\n?```\s*$/, '').trim();
+  if (!html.startsWith('<')) {
+    const start = html.search(/<(div|section|article|table|h[1-6]|p|ul|ol)/i);
+    if (start >= 0) html = html.slice(start);
+  }
+  return html;
+}
+
+function fmtOrganic(k: TrafficKeywordDetail): string {
+  if (!k.organicPage && !k.organicPosition) return '-';
+  const page = k.organicPage ? `第${k.organicPage}页` : '';
+  const pos = k.organicPosition ? `总第${k.organicPosition}位` : '';
+  return [page, pos].filter(Boolean).join(' · ');
+}
+
+function fmtAd(k: TrafficKeywordDetail): string {
+  if (!k.adPage && !k.adPosition) return '-';
+  const page = k.adPage ? `第${k.adPage}页` : '';
+  const slot = k.adIndex ? `第${k.adIndex}位` : k.adPosition ? `总第${k.adPosition}位` : '';
+  return [page, slot].filter(Boolean).join(' · ');
+}
+
+/** 从大盘产品列表提取同品牌其他链接（排除当前父体下已知子体） */
+function extractBrandSiblingsFromProducts(
+  products: Product[],
+  details: AsinDetailSnapshot[],
+  matrices: ParentMatrixSnapshot[]
+): BrandSiblingRow[] {
+  const rows: BrandSiblingRow[] = [];
+  const seenBrand = new Set<string>();
+
+  for (const d of details) {
+    const brand = (d.brand || '').trim();
+    if (!brand) continue;
+    const key = brand.toLowerCase();
+    if (seenBrand.has(key)) continue;
+    seenBrand.add(key);
+
+    const matrix = matrices.find((m) => m.anchorAsin === d.asin);
+    const exclude = new Set<string>();
+    exclude.add(d.asin);
+    if (d.parentAsin) exclude.add(d.parentAsin);
+    (matrix?.children || d.variationList || []).forEach((c) => exclude.add(c.asin));
+
+    const siblings = products.filter(
+      (p) =>
+        p.brand.trim().toLowerCase() === key &&
+        !exclude.has(p.asin.toUpperCase())
+    );
+    // 按月销量去重（同 asin）
+    const map = new Map<string, Product>();
+    siblings.forEach((p) => {
+      const a = p.asin.toUpperCase();
+      if (!map.has(a)) map.set(a, p);
+    });
+    const items = [...map.values()].sort((a, b) => b.monthlySales - a.monthlySales);
+    rows.push({
+      brand,
+      items,
+      currentParentAsin: d.parentAsin || d.asin,
+      anchorAsin: d.asin,
+    });
+  }
+  return rows;
 }
 
 export const CompetitorHub: React.FC<CompetitorHubProps> = ({
@@ -77,9 +168,18 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
 
   const [details, setDetails] = useState<AsinDetailSnapshot[]>([]);
   const [trafficStats, setTrafficStats] = useState<TrafficStatSnapshot[]>([]);
-  const [topKeywords, setTopKeywords] = useState<Record<string, Keyword[]>>({});
+  const [topKeywords, setTopKeywords] = useState<Record<string, TrafficKeywordDetail[]>>({});
   const [matrices, setMatrices] = useState<ParentMatrixSnapshot[]>([]);
-  const [brandParents, setBrandParents] = useState<BrandParentItem[][]>([]);
+  const [brandSiblings, setBrandSiblings] = useState<BrandSiblingRow[]>([]);
+
+  const [aiLoading, setAiLoading] = useState<ResultTab | null>(null);
+  const [aiHtml, setAiHtml] = useState<Partial<Record<ResultTab, string>>>({});
+
+  // 大盘勾选变化时同步进对比池
+  useEffect(() => {
+    if (!preselectedAsins.length) return;
+    setSelected(preselectedAsins.slice(0, MAX_ASINS).map((a) => a.toUpperCase()));
+  }, [preselectedAsins.join('|')]);
 
   const productMap = useMemo(() => {
     const m = new Map<string, Product>();
@@ -150,9 +250,7 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
           },
         };
       });
-      toast.success(
-        `${asin} 图包已导入：主图 ${parsed.mainImages.length} · A+ ${parsed.aplusImages.length}`
-      );
+      toast.success(`${asin} 图包已导入：主图 ${parsed.mainImages.length} · A+ ${parsed.aplusImages.length}`);
       if (warnings[0]) toast.warning(warnings[0], { duration: 4000 });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : '图包解析失败');
@@ -181,12 +279,12 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     setLoading(true);
     setProgress('开始对比分析…');
     setHasResult(false);
+    setAiHtml({});
     try {
       const detailList: AsinDetailSnapshot[] = [];
       const trafficList: TrafficStatSnapshot[] = [];
-      const kwMap: Record<string, Keyword[]> = {};
+      const kwMap: Record<string, TrafficKeywordDetail[]> = {};
       const matrixList: ParentMatrixSnapshot[] = [];
-      const brandParentList: BrandParentItem[][] = [];
 
       for (let i = 0; i < selected.length; i++) {
         const asin = selected[i];
@@ -204,10 +302,15 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
           toast.warning(`${asin} 流量拉取失败：${e instanceof Error ? e.message : ''}`);
         }
 
-        setProgress(`(${i + 1}/${selected.length}) 抓取 ${asin} 核心流量词…`);
+        setProgress(`(${i + 1}/${selected.length}) 抓取 ${asin} 流量词明细…`);
         try {
-          const kws = await fetchKeywordsFromMcp({ asin, marketplace, maxPages: 1, pageSize: 20 });
-          kwMap[asin] = kws.slice(0, 15);
+          const kws = await fetchTrafficKeywordsDetailedFromMcp({
+            asin,
+            marketplace,
+            maxPages: 2,
+            pageSize: 50,
+          });
+          kwMap[asin] = kws.slice(0, 30);
         } catch {
           kwMap[asin] = [];
         }
@@ -224,36 +327,14 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
         }
       }
 
-      // 品牌下其他父体（按品牌去重后搜一次）
-      const doneBrands = new Set<string>();
-      for (let i = 0; i < detailList.length; i++) {
-        const d = detailList[i];
-        const b = (d.brand || '').trim();
-        if (!b || doneBrands.has(b.toLowerCase())) {
-          brandParentList.push([]);
-          continue;
-        }
-        doneBrands.add(b.toLowerCase());
-        const excludeParents = new Set<string>();
-        detailList.forEach((x) => {
-          if (x.parentAsin) excludeParents.add(x.parentAsin);
-          excludeParents.add(x.asin);
-        });
-        setProgress(`搜索品牌「${b}」下其他父体链接…`);
-        try {
-          brandParentList.push(
-            await fetchBrandParentsFromMcp(b, marketplace, [...excludeParents], (msg) => setProgress(msg))
-          );
-        } catch {
-          brandParentList.push([]);
-        }
-      }
+      setProgress('从大盘数据提取同品牌其他链接…');
+      const siblings = extractBrandSiblingsFromProducts(products, detailList, matrixList);
 
       setDetails(detailList);
       setTrafficStats(trafficList);
       setTopKeywords(kwMap);
       setMatrices(matrixList);
-      setBrandParents(brandParentList);
+      setBrandSiblings(siblings);
       setHasResult(true);
       setStep(3);
       setResultTab('listing');
@@ -261,6 +342,73 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     } finally {
       setLoading(false);
       setProgress('');
+    }
+  };
+
+  const runAiForTab = async (tab: ResultTab) => {
+    const cfg = loadAiSettings();
+    if (!cfg?.apiKey) {
+      toast.error('请先在「设置」配置 AI API Key');
+      return;
+    }
+    if (!hasResult) {
+      toast.error('请先完成对比分析');
+      return;
+    }
+    setAiLoading(tab);
+    try {
+      const promptId =
+        tab === 'listing' ? 'competitor_listing' :
+        tab === 'traffic' ? 'competitor_traffic' :
+        'competitor_matrix';
+      const base = getPrompt(promptId);
+
+      let dataBlock = '';
+      if (tab === 'listing') {
+        dataBlock = details.map((d) => `### ${d.asin} | ${d.brand}
+标题: ${d.title}
+价格: ${d.price} | 评分: ${d.rating}(${d.ratings}) | LQS: ${d.lqs}
+规格: ${d.skuList.join(' / ') || '-'}
+五点: ${d.features.slice(0, 5).join(' | ')}
+徽章: AC=${d.badge.amazonChoice} BS=${d.badge.bestSeller} A+=${d.badge.ebc} 视频=${d.badge.video}
+配送: ${d.fulfillment} ${d.sellerName}`).join('\n\n');
+      } else if (tab === 'traffic') {
+        dataBlock =
+          trafficStats.map((t) => {
+            const dep = t.keywords > 0 ? ((t.ads / t.keywords) * 100).toFixed(1) : '0';
+            return `${t.asin}: 流量词${t.keywords} 有排名${t.ranks} 广告词${t.ads} 广告依赖度${dep}%`;
+          }).join('\n') +
+          '\n\n' +
+          selected.map((asin) => {
+            const kws = (topKeywords[asin] || []).slice(0, 12);
+            return `## ${asin}\n` + kws.map((k) =>
+              `- ${k.keyword} | 流量占比${fmtPct(k.trafficPercentage)} | ABA#${k.abaRank || '-'} | 自然${fmtOrganic(k)} | 广告${fmtAd(k)} | 自然流量比${fmtPct(k.naturalRatio)}`
+            ).join('\n');
+          }).join('\n\n');
+      } else {
+        dataBlock =
+          matrices.map((m) => {
+            const kids = m.children.map((c) => {
+              const p = productMap.get(c.asin);
+              return `${c.asin}${c.isAnchor ? '(锚点)' : ''} ${c.attribute} $${c.price || '-'} 大盘月销${p?.monthlySales ?? '-'}`;
+            }).join('\n');
+            return `## ${m.brand} 父体 ${m.parentAsin}\n${kids}`;
+          }).join('\n\n') +
+          '\n\n## 同品牌其他链接（大盘）\n' +
+          brandSiblings.map((b) =>
+            `### ${b.brand}\n` + b.items.slice(0, 15).map((p) =>
+              `${p.asin} $${p.price} 月销${p.monthlySales} 评${p.reviewCount} BSR#${p.subBsr || '-'} ${p.title.slice(0, 60)}`
+            ).join('\n')
+          ).join('\n\n');
+      }
+
+      const text = await generateText(`${base}\n\n## 对比数据\n${dataBlock}`, cfg);
+      setAiHtml((prev) => ({ ...prev, [tab]: stripHtmlFence(text) }));
+      toast.success('AI 解析已生成');
+    } catch (e) {
+      toast.error(`AI 解析失败：${e instanceof Error ? e.message : ''}`);
+    } finally {
+      setAiLoading(null);
     }
   };
 
@@ -278,11 +426,10 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
           竞品分析
         </h2>
         <p className="text-[#86868b] text-sm mt-1">
-          先选 ASIN → 可选手传图包 → 一键对比。Listing 按买家进详情页的浏览顺序展示；产品矩阵看各品牌父体下的子体链接。
+          可从市场大盘 ASIN 列表勾选带入，或手动添加。完成后可分别对 Listing / 流量 / 产品矩阵做 AI 解析。
         </p>
       </div>
 
-      {/* 步骤条 */}
       <div className="flex items-center gap-2 flex-wrap">
         {stepItems.map((s, i) => (
           <React.Fragment key={s.n}>
@@ -301,21 +448,20 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                     : 'bg-[#f5f5f7] text-[#86868b] hover:text-[#1d1d1f]'
               }`}
             >
-              <span className="w-5 h-5 rounded-full bg-black/10 flex items-center justify-center text-xs">
-                {s.n}
-              </span>
+              <span className="w-5 h-5 rounded-full bg-black/10 flex items-center justify-center text-xs">{s.n}</span>
               {s.label}
             </button>
           </React.Fragment>
         ))}
       </div>
 
-      {/* Step 1 */}
       {step === 1 && (
         <Card className="border-none shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">① 选择要对比的竞品 ASIN</CardTitle>
-            <CardDescription>建议 2–{MAX_ASINS} 个。可从大盘勾选带入，或手动粘贴。</CardDescription>
+            <CardDescription>
+              建议 2–{MAX_ASINS} 个。市场大盘左侧勾选后会自动带到这里。
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2 items-center">
@@ -335,24 +481,15 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                 placeholder="输入 ASIN，回车添加"
                 className="flex-1 min-w-[180px] border border-black/10 rounded-xl px-3 py-2 text-sm"
               />
-              <button
-                type="button"
-                onClick={() => addAsins(asinInput)}
-                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold"
-              >
+              <button type="button" onClick={() => addAsins(asinInput)} className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold">
                 <Plus className="w-4 h-4" /> 添加
               </button>
               {suggestAsins.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => addAsins(suggestAsins.slice(0, 3))}
-                  className="px-3 py-2 rounded-xl border border-black/10 text-sm text-[#86868b] hover:text-indigo-600"
-                >
+                <button type="button" onClick={() => addAsins(suggestAsins.slice(0, 3))} className="px-3 py-2 rounded-xl border border-black/10 text-sm text-[#86868b] hover:text-indigo-600">
                   填入销量 Top3
                 </button>
               )}
             </div>
-
             <div className="flex flex-wrap gap-2 min-h-[40px]">
               {selected.length === 0 ? (
                 <span className="text-xs text-[#86868b]">尚未选择 ASIN</span>
@@ -360,31 +497,18 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                 selected.map((a) => {
                   const p = productMap.get(a);
                   return (
-                    <span
-                      key={a}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-indigo-50 text-indigo-800 text-xs font-medium border border-indigo-100"
-                    >
-                      {p?.image ? (
-                        <img src={p.image} alt="" className="w-5 h-5 rounded object-cover" />
-                      ) : null}
+                    <span key={a} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-indigo-50 text-indigo-800 text-xs font-medium border border-indigo-100">
+                      {p?.image ? <img src={p.image} alt="" className="w-5 h-5 rounded object-cover" /> : null}
                       {a}
                       {p?.brand ? <span className="text-indigo-500/80">· {p.brand}</span> : null}
-                      <button type="button" onClick={() => removeAsin(a)} className="hover:text-rose-600">
-                        <X className="w-3 h-3" />
-                      </button>
+                      <button type="button" onClick={() => removeAsin(a)} className="hover:text-rose-600"><X className="w-3 h-3" /></button>
                     </span>
                   );
                 })
               )}
             </div>
-
             <div className="flex justify-end">
-              <button
-                type="button"
-                disabled={selected.length === 0}
-                onClick={() => setStep(2)}
-                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-40"
-              >
+              <button type="button" disabled={selected.length === 0} onClick={() => setStep(2)} className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-40">
                 下一步：上传图包 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -392,14 +516,11 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
         </Card>
       )}
 
-      {/* Step 2 */}
       {step === 2 && (
         <Card className="border-none shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">② 上传 Listing 图包（可选）</CardTitle>
-            <CardDescription>
-              有图包的 ASIN 会在 Listing 对比里展示你上传的主图；没有也可以直接点「对比分析」，数据一律从 MCP 抓。
-            </CardDescription>
+            <CardDescription>有图包则 Listing 对比展示你的主图；没有也可直接点「对比分析」。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -410,32 +531,24 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                   <div key={asin} className="rounded-2xl border border-black/10 bg-white p-4 space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <div className="font-mono text-sm font-semibold text-[#1d1d1f]">{asin}</div>
-                        <div className="text-xs text-[#86868b] mt-0.5 truncate max-w-[180px]">
-                          {p?.brand || '等待 MCP 补品牌'}
-                        </div>
+                        <div className="font-mono text-sm font-semibold">{asin}</div>
+                        <div className="text-xs text-[#86868b] mt-0.5 truncate max-w-[180px]">{p?.brand || '等待 MCP 补品牌'}</div>
                       </div>
                       {pack && (
-                        <button type="button" onClick={() => clearPack(asin)} className="text-xs text-rose-600">
-                          清除
-                        </button>
+                        <button type="button" onClick={() => clearPack(asin)} className="text-xs text-rose-600">清除</button>
                       )}
                     </div>
-
                     {pack ? (
                       <div className="space-y-2">
                         <div className="flex gap-1.5 overflow-x-auto">
-                          {pack.mainPreviewUrls.slice(0, 4).map((url, i) => (
+                          {pack.mainPreviewUrls.slice(0, 4).map((url) => (
                             <img key={url} src={url} alt="" className="w-14 h-14 rounded-lg object-cover border border-black/5 shrink-0" />
                           ))}
                         </div>
-                        <p className="text-[11px] text-emerald-700">
-                          已导入 {pack.zipName} · 主图预览 {pack.mainPreviewUrls.length}
-                          {pack.aplusCount ? ` · A+ ${pack.aplusCount}` : ''}
-                        </p>
+                        <p className="text-[11px] text-emerald-700">已导入 {pack.zipName}</p>
                       </div>
                     ) : (
-                      <label className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-black/15 bg-[#fafafa] py-6 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors">
+                      <label className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-black/15 bg-[#fafafa] py-6 cursor-pointer hover:border-indigo-300">
                         <input
                           ref={(el) => { fileRefs.current[asin] = el; }}
                           type="file"
@@ -443,47 +556,28 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                           className="hidden"
                           onChange={(e) => handleZipUpload(asin, e.target.files?.[0] || null)}
                         />
-                        {parsingAsin === asin ? (
-                          <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
-                        ) : (
-                          <Upload className="w-5 h-5 text-[#86868b]" />
-                        )}
-                        <span className="text-xs text-[#86868b]">
-                          {parsingAsin === asin ? '解析中…' : '点击上传 ZIP（可跳过）'}
-                        </span>
+                        {parsingAsin === asin ? <Loader2 className="w-5 h-5 animate-spin text-indigo-600" /> : <Upload className="w-5 h-5 text-[#86868b]" />}
+                        <span className="text-xs text-[#86868b]">{parsingAsin === asin ? '解析中…' : '点击上传 ZIP（可跳过）'}</span>
                       </label>
                     )}
                   </div>
                 );
               })}
             </div>
-
             <div className="flex justify-between gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="inline-flex items-center gap-1 px-4 py-2 rounded-xl border border-black/10 text-sm text-[#86868b]"
-              >
+              <button type="button" onClick={() => setStep(1)} className="inline-flex items-center gap-1 px-4 py-2 rounded-xl border border-black/10 text-sm text-[#86868b]">
                 <ChevronLeft className="w-4 h-4" /> 上一步
               </button>
-              <button
-                type="button"
-                onClick={runCompare}
-                disabled={loading || selected.length === 0}
-                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold disabled:opacity-50"
-              >
+              <button type="button" onClick={runCompare} disabled={loading || selected.length === 0} className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold disabled:opacity-50">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                 对比分析
               </button>
             </div>
-            {progress && (
-              <div className="text-xs text-violet-700 bg-violet-50 rounded-lg px-3 py-2">{progress}</div>
-            )}
+            {progress && <div className="text-xs text-violet-700 bg-violet-50 rounded-lg px-3 py-2">{progress}</div>}
           </CardContent>
         </Card>
       )}
 
-      {/* Step 3 Results */}
       {step === 3 && (
         <div className="space-y-4">
           {!hasResult ? (
@@ -495,7 +589,7 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                   {([
                     { id: 'listing' as const, label: 'Listing 详情页', icon: <ImageIcon className="w-4 h-4" /> },
                     { id: 'traffic' as const, label: '流量', icon: <Activity className="w-4 h-4" /> },
-                    { id: 'matrix' as const, label: '产品矩阵（父体）', icon: <Grid3X3 className="w-4 h-4" /> },
+                    { id: 'matrix' as const, label: '产品矩阵', icon: <Grid3X3 className="w-4 h-4" /> },
                   ]).map((t) => (
                     <button
                       key={t.id}
@@ -510,27 +604,42 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                     </button>
                   ))}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <button
                     type="button"
-                    onClick={() => setStep(2)}
-                    className="px-3 py-2 rounded-xl border border-black/10 text-sm text-[#86868b]"
+                    onClick={() => runAiForTab(resultTab)}
+                    disabled={aiLoading !== null}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
                   >
+                    {aiLoading === resultTab ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    {aiLoading === resultTab ? 'AI 解析中…' : 'AI 解析本页'}
+                  </button>
+                  <button type="button" onClick={() => setStep(2)} className="px-3 py-2 rounded-xl border border-black/10 text-sm text-[#86868b]">
                     返回改图包
                   </button>
-                  <button
-                    type="button"
-                    onClick={runCompare}
-                    disabled={loading}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 text-white text-sm font-semibold disabled:opacity-50"
-                  >
+                  <button type="button" onClick={runCompare} disabled={loading} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 text-white text-sm font-semibold disabled:opacity-50">
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                     重新对比
                   </button>
                 </div>
               </div>
-              {progress && (
-                <div className="text-xs text-violet-700 bg-violet-50 rounded-lg px-3 py-2">{progress}</div>
+              {progress && <div className="text-xs text-violet-700 bg-violet-50 rounded-lg px-3 py-2">{progress}</div>}
+
+              {aiHtml[resultTab] && (
+                <Card className="border-indigo-100">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
+                      AI 解析结果
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div
+                      className="max-h-[420px] overflow-y-auto rounded-xl border border-indigo-50 bg-indigo-50/20 p-4"
+                      dangerouslySetInnerHTML={{ __html: aiHtml[resultTab]! }}
+                    />
+                  </CardContent>
+                </Card>
               )}
 
               {resultTab === 'listing' && (
@@ -539,7 +648,13 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
               {resultTab === 'traffic' && (
                 <TrafficView selected={selected} trafficStats={trafficStats} topKeywords={topKeywords} />
               )}
-              {resultTab === 'matrix' && <ParentMatrixView matrices={matrices} brandParents={brandParents} />}
+              {resultTab === 'matrix' && (
+                <ParentMatrixView
+                  matrices={matrices}
+                  brandSiblings={brandSiblings}
+                  productMap={productMap}
+                />
+              )}
             </>
           )}
         </div>
@@ -548,7 +663,6 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   );
 };
 
-/** Listing：按买家进详情页的浏览顺序并排展示 */
 function ListingBuyerView({
   details,
   packs,
@@ -558,14 +672,12 @@ function ListingBuyerView({
   packs: Record<string, AsinPack>;
   marketplace: string;
 }) {
-  if (!details.length) {
-    return <EmptyHint text="暂无 Listing 数据。请检查 MCP 密钥后重新对比。" />;
-  }
+  if (!details.length) return <EmptyHint text="暂无 Listing 数据。请检查 MCP 密钥后重新对比。" />;
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-[#86868b]">
-        下面按亚马逊买家打开详情页时的大致视线顺序排列：主图 → 标题 → 品牌/评分 → 价格与徽章 → 规格选择 → 五点 → 配送卖家。左右并排方便对照「第一眼差在哪」。
+        按买家打开详情页的视线顺序：主图 → 标题 → 品牌/评分 → 价格与徽章 → 规格 → 五点 → 配送/类目。
       </p>
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {details.map((d) => {
@@ -582,66 +694,28 @@ function ListingBuyerView({
               : d.features;
 
           return (
-            <article
-              key={d.asin}
-              className="rounded-2xl border border-black/10 bg-white overflow-hidden shadow-sm flex flex-col"
-            >
-              {/* ① 主图区 */}
+            <article key={d.asin} className="rounded-2xl border border-black/10 bg-white overflow-hidden shadow-sm flex flex-col">
               <div className="bg-[#fafafa] border-b border-black/5 p-3">
                 <div className="text-[10px] uppercase tracking-wider text-[#86868b] mb-2">① 买家先看主图</div>
                 {gallery.length > 0 ? (
-                  <div className="space-y-2">
-                    <img
-                      src={gallery[0]}
-                      alt={d.title}
-                      className="w-full aspect-square max-h-56 object-contain bg-white rounded-xl border border-black/5"
-                    />
-                    {gallery.length > 1 && (
-                      <div className="flex gap-1.5 overflow-x-auto">
-                        {gallery.slice(0, 6).map((url, i) => (
-                          <img
-                            key={`${d.asin}-g-${i}`}
-                            src={url}
-                            alt=""
-                            className={`w-12 h-12 rounded-lg object-cover border shrink-0 ${i === 0 ? 'border-indigo-400' : 'border-black/10'}`}
-                          />
-                        ))}
-                      </div>
-                    )}
-                    {!pack && (
-                      <p className="text-[10px] text-[#86868b]">未上传图包，仅显示 MCP 主图；上传 ZIP 可看更多主图位</p>
-                    )}
-                  </div>
+                  <img src={gallery[0]} alt={d.title} className="w-full aspect-square max-h-56 object-contain bg-white rounded-xl border border-black/5" />
                 ) : (
-                  <div className="aspect-square max-h-40 flex items-center justify-center text-xs text-[#86868b] bg-white rounded-xl border border-dashed border-black/10">
-                    暂无图片
-                  </div>
+                  <div className="aspect-square max-h-40 flex items-center justify-center text-xs text-[#86868b] bg-white rounded-xl border border-dashed">暂无图片</div>
                 )}
               </div>
-
               <div className="p-4 space-y-3 flex-1">
-                {/* ② 标题 */}
                 <div>
                   <div className="text-[10px] uppercase tracking-wider text-[#86868b] mb-1">② 标题</div>
-                  <h3 className="text-sm font-medium text-[#1d1d1f] leading-snug line-clamp-4">
-                    {d.title || '（无标题）'}
-                  </h3>
+                  <h3 className="text-sm font-medium leading-snug line-clamp-4">{d.title || '（无标题）'}</h3>
                   <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-[11px] text-[#86868b]">{d.asin}</span>
                     {d.asinUrl && (
-                      <a
-                        href={d.asinUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-0.5 text-[11px] text-indigo-600 hover:underline"
-                      >
+                      <a href={d.asinUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-[11px] text-indigo-600 hover:underline">
                         打开亚马逊页 <ExternalLink className="w-3 h-3" />
                       </a>
                     )}
                   </div>
                 </div>
-
-                {/* ③ 品牌 + 评分 */}
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-[#86868b]">③ 品牌</div>
@@ -656,114 +730,49 @@ function ListingBuyerView({
                     </div>
                   </div>
                 </div>
-
-                {/* ④ 价格 + 徽章 */}
                 <div className="rounded-xl bg-[#f5f5f7] px-3 py-2.5 space-y-2">
                   <div className="text-[10px] uppercase tracking-wider text-[#86868b]">④ 价格与运营徽章</div>
-                  <div className="text-2xl font-bold text-[#1d1d1f]">
-                    {d.price ? `$${d.price.toFixed(2)}` : '价格未知'}
-                  </div>
+                  <div className="text-2xl font-bold">{d.price ? `$${d.price.toFixed(2)}` : '价格未知'}</div>
                   <div className="flex flex-wrap gap-1.5">
-                    {badgeYes(d.badge.amazonChoice) && (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-[#232f3e] text-white">Amazon&apos;s Choice</span>
-                    )}
-                    {badgeYes(d.badge.bestSeller) && (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-[#e67a00] text-white">Best Seller</span>
-                    )}
-                    {badgeYes(d.badge.newRelease) && (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-[#067d62] text-white">New Release</span>
-                    )}
-                    {badgeYes(d.badge.ebc) && (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">有 A+ / EBC</span>
-                    )}
-                    {badgeYes(d.badge.video) && (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-rose-100 text-rose-800">有视频</span>
-                    )}
-                    {!badgeYes(d.badge.amazonChoice) &&
-                      !badgeYes(d.badge.bestSeller) &&
-                      !badgeYes(d.badge.ebc) &&
-                      !badgeYes(d.badge.video) && (
-                        <span className="text-[10px] text-[#86868b]">无明显徽章</span>
-                      )}
+                    {badgeYes(d.badge.amazonChoice) && <span className="text-[10px] px-2 py-0.5 rounded bg-[#232f3e] text-white">Amazon&apos;s Choice</span>}
+                    {badgeYes(d.badge.bestSeller) && <span className="text-[10px] px-2 py-0.5 rounded bg-[#e67a00] text-white">Best Seller</span>}
+                    {badgeYes(d.badge.ebc) && <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">有 A+</span>}
+                    {badgeYes(d.badge.video) && <span className="text-[10px] px-2 py-0.5 rounded bg-rose-100 text-rose-800">有视频</span>}
                   </div>
-                  {d.lqs > 0 && (
-                    <div className="text-[11px] text-[#86868b]">Listing 质量分 LQS：{d.lqs}</div>
-                  )}
                 </div>
-
-                {/* ⑤ 规格选择 */}
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider text-[#86868b] mb-1.5">
-                    ⑤ 规格选择（买家会点的变体）
+                  <div className="text-[10px] uppercase tracking-wider text-[#86868b] mb-1.5">⑤ 规格选择</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(d.skuList.length ? d.skuList : d.variationList.map((v) => v.attribute).filter(Boolean)).slice(0, 8).map((sku) => (
+                      <span key={sku} className="text-[11px] px-2 py-1 rounded-lg border border-[#ff9900]/60 bg-[#fff8f0]">{sku}</span>
+                    ))}
                   </div>
-                  {d.skuList.length || d.variationList.length ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {(d.skuList.length ? d.skuList : d.variationList.map((v) => v.attribute).filter(Boolean))
-                        .slice(0, 8)
-                        .map((sku) => (
-                          <span
-                            key={sku}
-                            className="text-[11px] px-2 py-1 rounded-lg border border-[#ff9900]/60 bg-[#fff8f0] text-[#1d1d1f]"
-                          >
-                            {sku}
-                          </span>
-                        ))}
-                      {d.variationCount > 1 && (
-                        <span className="text-[11px] text-[#86868b] self-center">
-                          共 {d.variationCount} 个子体
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-[#86868b]">未见变体信息（可能是单规格链接）</p>
-                  )}
                 </div>
-
-                {/* ⑥ 五点 */}
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider text-[#86868b] mb-1.5">
-                    ⑥ About this item（五点）
-                  </div>
+                  <div className="text-[10px] uppercase tracking-wider text-[#86868b] mb-1.5">⑥ About this item（五点）</div>
                   {bullets.length ? (
                     <ul className="space-y-1.5">
                       {bullets.slice(0, 5).map((b, i) => (
-                        <li key={i} className="text-xs text-[#1d1d1f] leading-relaxed flex gap-1.5">
-                          <span className="text-[#86868b] shrink-0">•</span>
+                        <li key={i} className="text-xs leading-relaxed flex gap-1.5">
+                          <span className="text-[#86868b]">•</span>
                           <span className="line-clamp-3">{b}</span>
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-xs text-[#86868b]">暂无五点文案</p>
+                    <p className="text-xs text-[#86868b]">暂无五点</p>
                   )}
                 </div>
-
-                {/* ⑦ 配送 / 类目 */}
                 <div className="pt-2 border-t border-black/5 grid grid-cols-2 gap-2 text-[11px]">
                   <div>
                     <div className="text-[#86868b]">⑦ 配送</div>
-                    <div className="font-medium text-[#1d1d1f]">{d.fulfillment || '-'}</div>
-                    <div className="text-[#86868b] truncate">{d.sellerName || `${d.sellers || 0} 卖家`}</div>
+                    <div className="font-medium">{d.fulfillment || '-'}</div>
                   </div>
                   <div>
                     <div className="text-[#86868b]">类目 / BSR</div>
-                    <div className="font-medium text-[#1d1d1f] truncate" title={d.categoryPath}>
-                      {d.bsrRank ? `#${fmtNum(d.bsrRank)}` : '-'}
-                      {d.bsrLabel ? ` · ${d.bsrLabel}` : ''}
-                    </div>
-                    <div className="text-[#86868b] line-clamp-2" title={d.categoryPath}>
-                      {d.categoryPath || '-'}
-                    </div>
+                    <div className="font-medium">{d.bsrRank ? `#${fmtNum(d.bsrRank)}` : '-'}</div>
                   </div>
                 </div>
-
-                {(d.dimensions || d.weight) && (
-                  <div className="text-[11px] text-[#86868b] flex items-center gap-1">
-                    <Package className="w-3 h-3" />
-                    {[d.dimensions, d.weight].filter(Boolean).join(' · ')}
-                  </div>
-                )}
-
                 <div className="text-[10px] text-[#c7c7cc]">站点 {marketplace}</div>
               </div>
             </article>
@@ -781,27 +790,38 @@ function TrafficView({
 }: {
   selected: string[];
   trafficStats: TrafficStatSnapshot[];
-  topKeywords: Record<string, Keyword[]>;
+  topKeywords: Record<string, TrafficKeywordDetail[]>;
 }) {
-  if (!trafficStats.length) {
-    return <EmptyHint text="暂无流量数据。请检查 MCP 后重新对比。" />;
-  }
+  if (!trafficStats.length) return <EmptyHint text="暂无流量数据。请检查 MCP 后重新对比。" />;
+
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">流量结构对比</CardTitle>
-          <CardDescription>流量词总量 · 有排名词 · 广告词（广告依赖度 = 广告词 / 流量词）</CardDescription>
+          <CardDescription>名词旁的「?」可悬停查看白话解释</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[560px]">
+          <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="text-left text-xs text-[#86868b] border-b border-black/5">
                 <th className="py-2 pr-3">ASIN</th>
-                <th className="py-2 pr-3">流量词</th>
-                <th className="py-2 pr-3">有排名词</th>
-                <th className="py-2 pr-3">广告词</th>
-                <th className="py-2">广告依赖度</th>
+                <th className="py-2 pr-3">
+                  流量词
+                  <Tip text="能给这个 ASIN 带来搜索曝光的关键词总数（卖家精灵统计）。" />
+                </th>
+                <th className="py-2 pr-3">
+                  有排名词
+                  <Tip text="在自然搜索结果里有排名位置的词数量。" />
+                </th>
+                <th className="py-2 pr-3">
+                  广告词
+                  <Tip text="出现在 SP 等广告里的词数量。" />
+                </th>
+                <th className="py-2">
+                  广告依赖度
+                  <Tip text="广告词 ÷ 流量词。越高说明越依赖打广告获客，自然流量越弱。一般超过 40% 要警惕。" />
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -826,52 +846,142 @@ function TrafficView({
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {selected.map((asin) => (
+      {selected.map((asin) => {
+        const kws = topKeywords[asin] || [];
+        return (
           <Card key={asin}>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">{asin} · Top 流量词</CardTitle>
+              <CardTitle className="text-sm font-semibold">{asin} · 核心流量词明细（按流量占比）</CardTitle>
+              <CardDescription className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+                <span>流量占比<Tip text="这个词给该 ASIN 贡献了多少搜索流量，百分比越高越重要。" /></span>
+                <span>ABA排名<Tip text="亚马逊品牌分析里的搜索热度排名，数字越小说明词越热门。" /></span>
+                <span>自然排名<Tip text="不打广告时，在搜索结果第几页、大致第几位。" /></span>
+                <span>广告排名<Tip text="SP 广告出现在第几页第几位。" /></span>
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              {(topKeywords[asin] || []).length === 0 ? (
-                <p className="text-xs text-[#86868b]">暂无词数据</p>
+            <CardContent className="overflow-x-auto">
+              {kws.length === 0 ? (
+                <p className="text-xs text-[#86868b]">暂无词明细</p>
               ) : (
-                <ul className="space-y-1.5">
-                  {(topKeywords[asin] || []).slice(0, 10).map((k) => (
-                    <li key={k.id} className="flex justify-between gap-2 text-xs">
-                      <span className="text-[#1d1d1f] truncate">{k.keyword}</span>
-                      <span className="text-[#86868b] shrink-0">
-                        周搜 {fmtNum(k.weeklySearchVolume)} · CPC {k.cpcBid.toFixed(2)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <table className="w-full text-xs min-w-[880px]">
+                  <thead>
+                    <tr className="text-left text-[#86868b] border-b border-black/5">
+                      <th className="py-2 pr-2">关键词</th>
+                      <th className="py-2 pr-2">流量占比</th>
+                      <th className="py-2 pr-2">ABA排名</th>
+                      <th className="py-2 pr-2">月搜</th>
+                      <th className="py-2 pr-2">自然排名</th>
+                      <th className="py-2 pr-2">广告排名</th>
+                      <th className="py-2 pr-2">自然/广告流量比</th>
+                      <th className="py-2">CPC</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {kws.slice(0, 20).map((k) => (
+                      <tr key={k.keyword} className="border-b border-black/5 align-top">
+                        <td className="py-2 pr-2">
+                          <div className="font-medium text-[#1d1d1f]">{k.keyword}</div>
+                          {k.translation ? <div className="text-[10px] text-[#86868b]">{k.translation}</div> : null}
+                        </td>
+                        <td className="py-2 pr-2 font-semibold text-indigo-700">{fmtPct(k.trafficPercentage)}</td>
+                        <td className="py-2 pr-2">{k.abaRank ? `#${fmtNum(k.abaRank)}` : '-'}</td>
+                        <td className="py-2 pr-2">{fmtNum(k.monthlySearches)}</td>
+                        <td className="py-2 pr-2 whitespace-nowrap">{fmtOrganic(k)}</td>
+                        <td className="py-2 pr-2 whitespace-nowrap">{fmtAd(k)}</td>
+                        <td className="py-2 pr-2">
+                          {fmtPct(k.naturalRatio)} / {fmtPct(k.adRatio)}
+                        </td>
+                        <td className="py-2">{k.cpcBid ? k.cpcBid.toFixed(2) : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </CardContent>
           </Card>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
 
 function ParentMatrixView({
   matrices,
-  brandParents,
+  brandSiblings,
+  productMap,
 }: {
   matrices: ParentMatrixSnapshot[];
-  brandParents: BrandParentItem[][];
+  brandSiblings: BrandSiblingRow[];
+  productMap: Map<string, Product>;
 }) {
   return (
     <div className="space-y-6">
-      {/* 板块一：父体结构 */}
+      {/* 板块一（靠前）：品牌下其他父体/链接 — 来自大盘 */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[#1d1d1f] flex items-center gap-2">
+          <Package className="w-4 h-4 text-violet-600" />
+          品牌下其他链接（来自大盘数据）
+          <Tip text="不额外调 MCP。直接从你已导入的市场大盘里，找出同品牌、且不在当前父体变体里的其他 ASIN。" />
+        </h3>
+        {!brandSiblings.length || brandSiblings.every((b) => !b.items.length) ? (
+          <EmptyHint text="大盘里没找到同品牌其他 ASIN。可能是品牌名不一致，或大盘只有当前这几条。" />
+        ) : (
+          brandSiblings.map((b) => (
+            <Card key={b.brand}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">品牌：{b.brand}</CardTitle>
+                <CardDescription>
+                  当前锚点 {b.anchorAsin} · 父体 {b.currentParentAsin} · 大盘另有 {b.items.length} 条同品牌链接
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[800px]">
+                  <thead>
+                    <tr className="text-left text-xs text-[#86868b] border-b border-black/5">
+                      <th className="py-2 pr-2">ASIN</th>
+                      <th className="py-2 pr-2">标题</th>
+                      <th className="py-2 pr-2">价格</th>
+                      <th className="py-2 pr-2">月销量</th>
+                      <th className="py-2 pr-2">月销售额</th>
+                      <th className="py-2 pr-2">评分</th>
+                      <th className="py-2 pr-2">评论</th>
+                      <th className="py-2">小类BSR</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {b.items.map((p) => (
+                      <tr key={p.asin} className="border-b border-black/5">
+                        <td className="py-2 pr-2 font-mono text-xs">
+                          <div className="flex items-center gap-2">
+                            {p.image ? <img src={p.image} alt="" className="w-8 h-8 rounded object-cover border" /> : null}
+                            {p.asin}
+                          </div>
+                        </td>
+                        <td className="py-2 pr-2 text-xs max-w-[220px] truncate" title={p.title}>{p.title}</td>
+                        <td className="py-2 pr-2">${p.price.toFixed(2)}</td>
+                        <td className="py-2 pr-2 font-semibold">{fmtNum(p.monthlySales)}</td>
+                        <td className="py-2 pr-2">${fmtNum(Math.round(p.monthlyRevenue))}</td>
+                        <td className="py-2 pr-2">{p.rating || '-'}</td>
+                        <td className="py-2 pr-2">{fmtNum(p.reviewCount)}</td>
+                        <td className="py-2">{p.subBsr ? `#${fmtNum(p.subBsr)}` : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* 板块二：父体结构 */}
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-[#1d1d1f] flex items-center gap-2">
           <Grid3X3 className="w-4 h-4 text-indigo-600" />
-          父体结构（你选的 ASIN 所属链接下有哪些子体）
+          父体结构（当前 ASIN 所属链接下的子体）
         </h3>
         {!matrices.length ? (
-          <EmptyHint text="暂无父体数据。请检查 MCP 后重新对比。" />
+          <EmptyHint text="暂无父体数据。" />
         ) : (
           matrices.map((m) => {
             const prices = m.children.map((c) => c.price).filter((p) => p > 0);
@@ -893,111 +1003,52 @@ function ParentMatrixView({
                         {priceMax !== priceMin ? ` – $${priceMax.toFixed(2)}` : ''}
                       </>
                     )}
-                    {m.anchorSku ? ` · 当前规格「${m.anchorSku}」` : ''}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[640px]">
+                  <table className="w-full text-sm min-w-[880px]">
                     <thead>
                       <tr className="text-left text-xs text-[#86868b] border-b border-black/5">
                         <th className="py-2 pr-2">子体 ASIN</th>
-                        <th className="py-2 pr-2">规格 / 属性</th>
+                        <th className="py-2 pr-2">规格</th>
                         <th className="py-2 pr-2">价格</th>
+                        <th className="py-2 pr-2">月销量</th>
+                        <th className="py-2 pr-2">月销售额</th>
                         <th className="py-2 pr-2">评分</th>
-                        <th className="py-2 pr-2">评论数</th>
+                        <th className="py-2 pr-2">评论</th>
+                        <th className="py-2 pr-2">小类BSR</th>
                         <th className="py-2">角色</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {m.children.map((c) => (
-                        <tr
-                          key={c.asin}
-                          className={`border-b border-black/5 ${c.isAnchor ? 'bg-indigo-50/60 font-semibold' : ''}`}
-                        >
-                          <td className="py-2 pr-2 font-mono text-xs">
-                            <div className="flex items-center gap-2">
-                              {c.imageUrl ? (
-                                <img src={c.imageUrl} alt="" className="w-8 h-8 rounded object-cover border border-black/5" />
-                              ) : null}
-                              {c.asin}
-                            </div>
-                          </td>
-                          <td className="py-2 pr-2 text-xs">{c.attribute || '-'}</td>
-                          <td className="py-2 pr-2">{c.price ? `$${c.price.toFixed(2)}` : '-'}</td>
-                          <td className="py-2 pr-2">{c.rating || '-'}</td>
-                          <td className="py-2 pr-2">{fmtNum(c.ratings)}</td>
-                          <td className="py-2 text-xs">
-                            {c.isAnchor ? (
-                              <span className="text-indigo-700">当前对比子体</span>
-                            ) : (
-                              <span className="text-[#86868b]">同父体变体</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                      {m.children.map((c) => {
+                        const p = productMap.get(c.asin);
+                        return (
+                          <tr key={c.asin} className={`border-b border-black/5 ${c.isAnchor ? 'bg-indigo-50/60 font-semibold' : ''}`}>
+                            <td className="py-2 pr-2 font-mono text-xs">
+                              <div className="flex items-center gap-2">
+                                {(c.imageUrl || p?.image) ? (
+                                  <img src={c.imageUrl || p?.image} alt="" className="w-8 h-8 rounded object-cover border" />
+                                ) : null}
+                                {c.asin}
+                              </div>
+                            </td>
+                            <td className="py-2 pr-2 text-xs">{c.attribute || '-'}</td>
+                            <td className="py-2 pr-2">{c.price ? `$${c.price.toFixed(2)}` : p ? `$${p.price.toFixed(2)}` : '-'}</td>
+                            <td className="py-2 pr-2 font-semibold">{p ? fmtNum(p.monthlySales) : '-'}</td>
+                            <td className="py-2 pr-2">{p ? `$${fmtNum(Math.round(p.monthlyRevenue))}` : '-'}</td>
+                            <td className="py-2 pr-2">{c.rating || p?.rating || '-'}</td>
+                            <td className="py-2 pr-2">{fmtNum(c.ratings || p?.reviewCount || 0)}</td>
+                            <td className="py-2 pr-2">{p?.subBsr ? `#${fmtNum(p.subBsr)}` : '-'}</td>
+                            <td className="py-2 text-xs">
+                              {c.isAnchor ? <span className="text-indigo-700">当前对比子体</span> : <span className="text-[#86868b]">同父体变体</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                </CardContent>
-              </Card>
-            );
-          })
-        )}
-      </div>
-
-      {/* 板块二：品牌下其他父体 */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-bold text-[#1d1d1f] flex items-center gap-2">
-          <Package className="w-4 h-4 text-violet-600" />
-          品牌下其他父体链接（同品牌还在卖哪些产品线）
-        </h3>
-        {!brandParents.length || brandParents.every((arr) => !arr.length) ? (
-          <EmptyHint text="暂无品牌其他父体数据。可能是该品牌只有当前对比的产品，或者 MCP 搜索没返回结果。" />
-        ) : (
-          brandParents.map((items, idx) => {
-            if (!items.length) return null;
-            const brand = items[0]?.title ? matrices[idx]?.brand || '未知品牌' : '未知品牌';
-            return (
-              <Card key={idx}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">品牌：{brand}</CardTitle>
-                  <CardDescription>
-                    除当前对比 ASIN 的父体之外，该品牌还有 {items.length} 个父体链接在售
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[640px]">
-                    <thead>
-                      <tr className="text-left text-xs text-[#86868b] border-b border-black/5">
-                        <th className="py-2 pr-2">父体 ASIN</th>
-                        <th className="py-2 pr-2">标题</th>
-                        <th className="py-2 pr-2">价格</th>
-                        <th className="py-2 pr-2">评分</th>
-                        <th className="py-2 pr-2">评论</th>
-                        <th className="py-2">月销量</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((item) => (
-                        <tr key={item.asin} className="border-b border-black/5">
-                          <td className="py-2 pr-2 font-mono text-xs">
-                            <div className="flex items-center gap-2">
-                              {item.imageUrl ? (
-                                <img src={item.imageUrl} alt="" className="w-8 h-8 rounded object-cover border border-black/5" />
-                              ) : null}
-                              {item.asin}
-                            </div>
-                          </td>
-                          <td className="py-2 pr-2 text-xs max-w-[240px] truncate" title={item.title}>
-                            {item.title || '-'}
-                          </td>
-                          <td className="py-2 pr-2">{item.price ? `$${item.price.toFixed(2)}` : '-'}</td>
-                          <td className="py-2 pr-2">{item.rating || '-'}</td>
-                          <td className="py-2 pr-2">{fmtNum(item.ratings)}</td>
-                          <td className="py-2 font-semibold">{fmtNum(item.monthlySales)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <p className="text-[11px] text-[#86868b] mt-2">月销量/销售额/BSR：优先用大盘已导入数据；大盘没有的显示「-」。</p>
                 </CardContent>
               </Card>
             );

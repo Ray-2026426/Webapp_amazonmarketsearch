@@ -49,11 +49,14 @@ interface TopProductsTableProps {
   asinToLevel3Segment?: Record<string, string>;
   selectedAsins?: string[];
   onToggleSelectAsin?: (asin: string) => void;
+  /** 已勾选后跳转竞品对比 */
+  onGoToCompetitorCompare?: () => void;
+  maxSelect?: number;
 }
 
 export const TopProductsTable = React.memo(function TopProductsTable({
   products, history = [], months = [], domain = 'amazon.com', asinToSegment = {}, asinToSubSegment = {}, asinToLevel3Segment = {},
-  selectedAsins = [], onToggleSelectAsin,
+  selectedAsins = [], onToggleSelectAsin, onGoToCompetitorCompare, maxSelect = 5,
 }: TopProductsTableProps) {
   const cur = getCurrencySymbol(domain);
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
@@ -239,7 +242,7 @@ export const TopProductsTable = React.memo(function TopProductsTable({
           <div>
             <CardTitle>ASIN 列表</CardTitle>
             <CardDescription>
-              展示市场中所有 ASIN 的详细指标
+              左侧勾选可加入竞品对比（最多 {maxSelect} 个）。展示市场中所有 ASIN 的详细指标
               {months.length === 0 && ' · 上传「历史表现」文件后可按时间段筛选销量/销售额'}
               {usePeriodStats && months.length > 0 && ` · 数据时段：${selectedMonths.length === 1 ? selectedMonths[0] : `${selectedMonths[0]} ~ ${selectedMonths[selectedMonths.length - 1]}`}`}
             </CardDescription>
@@ -275,11 +278,30 @@ export const TopProductsTable = React.memo(function TopProductsTable({
           </div>
         </CardHeader>
         <CardContent>
+          {onToggleSelectAsin && selectedAsins.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2">
+              <div className="text-xs text-indigo-800">
+                已选 <strong>{selectedAsins.length}</strong> / {maxSelect} 个用于竞品对比：
+                <span className="ml-1 font-mono">{selectedAsins.join('、')}</span>
+              </div>
+              <div className="flex gap-2">
+                {onGoToCompetitorCompare && (
+                  <button
+                    type="button"
+                    onClick={onGoToCompetitorCompare}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700"
+                  >
+                    去竞品对比
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left text-[#86868b]">
               <thead className="text-xs text-[#1d1d1f] uppercase bg-[#f5f5f7] border-b border-black/5">
                 <tr>
-                  {onToggleSelectAsin && <th className="px-2 py-3 w-8"></th>}
+                  {onToggleSelectAsin && <th className="px-2 py-3 w-10 text-center text-[10px] normal-case tracking-normal text-indigo-700">对比</th>}
                   <th className="px-4 py-3 font-medium min-w-[320px]">产品</th>
                   <th className="px-4 py-3 font-medium whitespace-nowrap">细分市场</th>
                   <th className="px-4 py-3 font-medium text-right whitespace-nowrap">价格<SortBtn col="price" current={sortKey} dir={sortDir} onClick={handleSort}/></th>

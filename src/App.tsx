@@ -240,9 +240,14 @@ export default function App() {
   const isRegisteredUser = Boolean(currentUser && currentUser.id !== 'guest');
 
   const toggleCompareAsin = useCallback((asin: string) => {
-    setSelectedCompareAsins(prev =>
-      prev.includes(asin) ? prev.filter(a => a !== asin) : prev.length < 5 ? [...prev, asin] : prev
-    );
+    setSelectedCompareAsins((prev) => {
+      if (prev.includes(asin)) return prev.filter((a) => a !== asin);
+      if (prev.length >= 5) {
+        toast.warning('竞品对比最多选 5 个 ASIN，请先取消一个再选');
+        return prev;
+      }
+      return [...prev, asin];
+    });
   }, []);
 
   const applyMarketSnapshotFromHistory = useCallback(async (snap: MarketHistorySnapshot) => {
@@ -1458,7 +1463,26 @@ export default function App() {
                     <SellerLocationChart products={filteredProducts} domain={marketplace.domain} history={filteredHistory} months={months} selectedMonths={selectedKpiMonths} asinToSegment={asinToSegment} />
                   </div>
                   <div id="asin-list" data-annotate-anchor="market-asin-list">
-                    <TopProductsTable products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} asinToSubSegment={asinToSubSegment} asinToLevel3Segment={asinToLevel3Segment} selectedAsins={selectedCompareAsins} onToggleSelectAsin={toggleCompareAsin} />
+                    <TopProductsTable
+                      products={filteredProducts}
+                      history={filteredHistory}
+                      months={months}
+                      domain={marketplace.domain}
+                      asinToSegment={asinToSegment}
+                      asinToSubSegment={asinToSubSegment}
+                      asinToLevel3Segment={asinToLevel3Segment}
+                      selectedAsins={selectedCompareAsins}
+                      onToggleSelectAsin={toggleCompareAsin}
+                      onGoToCompetitorCompare={() => {
+                        if (selectedCompareAsins.length === 0) {
+                          toast.error('请先勾选至少 1 个 ASIN');
+                          return;
+                        }
+                        setActiveView('competitors');
+                        toast.success(`已带入 ${selectedCompareAsins.length} 个 ASIN 到竞品对比`);
+                      }}
+                      maxSelect={5}
+                    />
                   </div>
                 </div>
               </div>
