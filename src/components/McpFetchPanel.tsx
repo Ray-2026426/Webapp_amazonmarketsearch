@@ -22,6 +22,23 @@ interface McpFetchPanelProps {
   }) => Promise<void>;
 }
 
+/** 评论：每页约 20 条；关键词：每页约 50 条 */
+const REVIEW_PAGE_SIZE = 20;
+const KEYWORD_PAGE_SIZE = 50;
+
+const REVIEW_TARGET_OPTIONS = [
+  { label: '约 40 条', pages: 2 },
+  { label: '约 100 条', pages: 5 },
+  { label: '约 200 条', pages: 10 },
+  { label: '约 400 条', pages: 20 },
+];
+
+const KEYWORD_TARGET_OPTIONS = [
+  { label: '约 50 个', pages: 1 },
+  { label: '约 100 个', pages: 2 },
+  { label: '约 150 个', pages: 3 },
+];
+
 /** 用全屏居中弹层，避免被父级 overflow 裁切导致底部按钮点不到 */
 export function McpFetchPanel({
   mode,
@@ -32,7 +49,7 @@ export function McpFetchPanel({
   const [open, setOpen] = useState(false);
   const [asinText, setAsinText] = useState('');
   const [marketplace, setMarketplace] = useState(normalizeMarketplaceCode(defaultMarketplace));
-  const [maxPages, setMaxPages] = useState(mode === 'reviews' ? 5 : 3);
+  const [maxPages, setMaxPages] = useState(mode === 'reviews' ? 5 : 2);
   const [replace, setReplace] = useState(true);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
@@ -96,6 +113,12 @@ export function McpFetchPanel({
     }
   };
 
+  const targetOptions = mode === 'reviews' ? REVIEW_TARGET_OPTIONS : KEYWORD_TARGET_OPTIONS;
+  const perPageHint =
+    mode === 'reviews'
+      ? `卖家精灵评论接口每页约 ${REVIEW_PAGE_SIZE} 条；选「约 100 条」= 翻 5 页`
+      : `流量词每页约 ${KEYWORD_PAGE_SIZE} 个；按目标数量自动翻页，无需关心页码`;
+
   return (
     <>
       <button
@@ -118,45 +141,40 @@ export function McpFetchPanel({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="p-1.5 rounded-full hover:bg-black/5 text-[#86868b]"
+                className="p-1.5 rounded-lg hover:bg-[#f5f5f7] text-[#86868b]"
                 disabled={loading}
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="px-5 py-4 space-y-3 overflow-y-auto flex-1 min-h-0">
+            <div className="px-5 py-4 space-y-4 overflow-y-auto flex-1">
               <div
-                className={`flex items-start gap-2 rounded-xl px-3 py-2 text-xs ${
+                className={`text-xs rounded-xl px-3 py-2 flex items-start gap-2 ${
                   configured ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'
                 }`}
               >
-                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                <span>
-                  {statusMsg}
-                  {!configured && <> 打开「设置 → MCP 数据」填写密钥即可（地址栏请留空）。</>}
-                </span>
+                {!configured && <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
+                <span>{statusMsg}</span>
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs text-[#86868b] font-medium">竞品 ASIN（可多个）</label>
-                  {suggestAsins.length > 0 && (
-                    <button type="button" onClick={fillSuggest} className="text-[11px] text-indigo-600 hover:underline">
-                      填入大盘 Top ASIN
-                    </button>
-                  )}
-                </div>
+                <label className="text-xs text-[#86868b] font-medium block mb-1">ASIN（可多个，逗号分隔）</label>
                 <textarea
                   value={asinText}
                   onChange={(e) => setAsinText(e.target.value)}
-                  placeholder="例如：B0D1XD1ZV3 或用逗号分隔多个"
-                  rows={2}
-                  className="w-full border border-black/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 resize-none"
+                  rows={3}
+                  placeholder="例如：B0XXXXXXXX, B0YYYYYYYY"
+                  className="w-full border border-black/10 rounded-xl px-3 py-2 text-sm font-mono resize-y"
                 />
+                {suggestAsins.length > 0 && (
+                  <button type="button" onClick={fillSuggest} className="mt-1.5 text-xs text-violet-600 hover:underline">
+                    填入建议 ASIN（前 5 个）
+                  </button>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-[#86868b] font-medium block mb-1">站点</label>
                   <select
@@ -172,19 +190,21 @@ export function McpFetchPanel({
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-[#86868b] font-medium block mb-1">最多抓取页数</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={mode === 'reviews' ? 20 : 10}
+                  <label className="text-xs text-[#86868b] font-medium block mb-1">
+                    {mode === 'reviews' ? '目标评论条数' : '目标关键词数量'}
+                  </label>
+                  <select
                     value={maxPages}
-                    onChange={(e) => {
-                      const n = parseInt(e.target.value, 10);
-                      setMaxPages(Number.isFinite(n) ? n : 1);
-                    }}
-                    className="w-full border border-black/10 rounded-xl px-2 py-2 text-sm"
-                  />
-                  <div className="text-[10px] text-[#86868b] mt-1">每页约 50 条</div>
+                    onChange={(e) => setMaxPages(parseInt(e.target.value, 10) || 1)}
+                    className="w-full border border-black/10 rounded-xl px-2 py-2 text-sm bg-white"
+                  >
+                    {targetOptions.map((opt) => (
+                      <option key={opt.pages} value={opt.pages}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="text-[10px] text-[#86868b] mt-1 leading-relaxed">{perPageHint}</div>
                 </div>
               </div>
 

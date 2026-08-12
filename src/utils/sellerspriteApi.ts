@@ -58,15 +58,26 @@ function pickItems(payload: unknown): unknown[] {
   return [];
 }
 
-function pickMeta(payload: unknown): { total?: number; pages?: number; page?: number; hasNext?: boolean } {
+function pickMeta(payload: unknown): {
+  total?: number;
+  pages?: number;
+  page?: number;
+  /** 仅当接口明确给出 true/false 时有值；null/缺失则为 undefined，切勿当成 false */
+  hasNext?: boolean;
+} {
   if (!payload || typeof payload !== 'object') return {};
   const o = payload as Record<string, unknown>;
   const d = (o.data && typeof o.data === 'object' ? o.data : o) as Record<string, unknown>;
+  const rawNext = d.hasNextPage;
+  let hasNext: boolean | undefined;
+  if (rawNext === true || rawNext === 'true' || rawNext === 1) hasNext = true;
+  else if (rawNext === false || rawNext === 'false' || rawNext === 0) hasNext = false;
+  else hasNext = undefined;
   return {
     total: Number(d.total) || undefined,
     pages: Number(d.pages) || undefined,
     page: Number(d.page) || undefined,
-    hasNext: Boolean(d.hasNextPage),
+    hasNext,
   };
 }
 
@@ -319,7 +330,7 @@ export interface FetchReviewsOptions {
 export async function fetchReviewsFromMcp(opts: FetchReviewsOptions): Promise<Review[]> {
   const asin = opts.asin.trim().toUpperCase();
   const marketplace = normalizeMarketplaceCode(opts.marketplace);
-  // 卖家精灵 review API 每页最多返回 20 条（实测），所以 pageSize 默认设成 20
+  // 卖家精灵 review API 每页固定约 20 条
   const pageSize = Math.min(Math.max(opts.pageSize ?? 20, 1), 20);
   const maxPages = Math.min(Math.max(opts.maxPages ?? 10, 1), 50);
   const out: Review[] = [];
@@ -339,14 +350,127 @@ export async function fetchReviewsFromMcp(opts: FetchReviewsOptions): Promise<Re
       }
     }
     const meta = pickMeta(payload);
-    // 仅当彻底没返回才终止；API 返回条数固定 ≈ pageSize，不要用 < pageSize 提前断掉
-    const noMore =
-      items.length === 0 ||
-      (meta.pages != null && page >= meta.pages) ||
-      meta.hasNext === false;
-    if (noMore) break;
+    // 本页空 → 结束
+    if (items.length === 0) break;
+    // 已达接口声明的总数 → 结束
+    if (meta.total != null && out.length >= meta.total) break;
+    // 明确没有下一页 → 结束（注意：hasNextPage 常为 null，不能当成 false）
+    if (meta.hasNext === false) break;
+    // 有明确总页数且已到最后一页 → 结束
+    if (meta.pages != null && page >= meta.pages) break;
   }
   return out;
+}
+
+function parseRankPos(raw: unknown): { page: number | null; position: number | null; index: number | null } {
+  if (!raw || typeof raw !== 'object') return { page: null, position: null, index: null };
+  const o = raw as Record<string, unknown>;
+  return {
+    page: Number(o.page) || null,
+    position: Number(o.position) || null,
+    index: Number(o.index) || null,
+  };
+}
+
+/** 竞品流量词明细（含 ABA / 自然位 / 广告位 / 流量占比） */
+export interface TrafficKeywordDetail {
+  keyword: string;
+  translation: string;
+  monthlySearches: number;
+  weeklySearches: number;
+  /** ABA 周搜索量排名（searchesRank），越小越热 */
+  abaRank: number;
+  /** 流量占比 0–1 */
+  trafficPercentage: number;
+  organicPage: number | null;
+  /** 自然总名次（跨页累计位次） */
+  organicPosition: number | null;
+  adPage: number | null;
+  adPosition: number | null;
+  /** 广告页内序号 */
+  adIndex: number | null;
+  naturalRatio: number;
+  adRatio: number;
+  cpcBid: number;
+  badges: string[];
+  trafficKeywordType: string;
+}
+
+function mapTrafficKeywordDetail(item: Record<string, unknown>): TrafficKeywordDetail | null {
+  const keyword = String(item.keyword || '').trim();
+  if (!keyword) return null;
+  const organic = parseRankPos(item.rankPosition);
+  const ad = parseRankPos(item.adPosition);
+  const searches = Number(item.searches) || 0;
+  const weekly =
+    Number(item.calculatedWeeklySearches) ||
+    (searches > 0 ? Math.round(searches / 4.3) : 0);
+  const badges = Array.isArray(item.badges) ? item.badges.map(String) : [];
+  return {
+    keyword,
+    translation: String(item.keywordCn || ''),
+    monthlySearches: searches,
+    weeklySearches: Math.round(weekly),
+    abaRank: Number(item.searchesRank) || 0,
+    trafficPercentage: Number(item.trafficPercentage) || 0,
+    organicPage: organic.page,
+    organicPosition: organic.position,
+    adPage: ad.page,
+    adPosition: ad.position,
+    adIndex: ad.index,
+    naturalRatio: Number(item.naturalRatio) || 0,
+    adRatio: Number(item.adRatio) || 0,
+    cpcBid: Number(item.bid) || 0,
+    badges,
+    trafficKeywordType: String(item.trafficKeywordType || ''),
+  };
+}
+
+export interface FetchTrafficKeywordsOptions {
+  asin: string;
+  marketplace: string;
+  pageSize?: number;
+  maxPages?: number;
+  onProgress?: (msg: string) => void;
+}
+
+/** 按流量占比排序拉取流量词明细 */
+export async function fetchTrafficKeywordsDetailedFromMcp(
+  opts: FetchTrafficKeywordsOptions
+): Promise<TrafficKeywordDetail[]> {
+  const asin = opts.asin.trim().toUpperCase();
+  const marketplace = normalizeMarketplaceCode(opts.marketplace);
+  const pageSize = Math.min(Math.max(opts.pageSize ?? 50, 1), 100);
+  const maxPages = Math.min(Math.max(opts.maxPages ?? 2, 1), 5);
+  const map = new Map<string, TrafficKeywordDetail>();
+
+  for (let page = 1; page <= maxPages; page++) {
+    opts.onProgress?.(`正在抓取 ${asin} 流量词明细 第 ${page}/${maxPages} 页…`);
+    const payload = await callTool('traffic_keyword', {
+      request: {
+        asin,
+        marketplace,
+        page,
+        size: pageSize,
+        order: { field: 'trafficPercentage', desc: true },
+      },
+    });
+    const items = pickItems(payload);
+    for (const it of items) {
+      if (!it || typeof it !== 'object') continue;
+      const row = mapTrafficKeywordDetail(it as Record<string, unknown>);
+      if (!row) continue;
+      if (!map.has(row.keyword.toLowerCase())) {
+        map.set(row.keyword.toLowerCase(), row);
+      }
+    }
+    if (items.length === 0) break;
+    const meta = pickMeta(payload);
+    if (meta.total != null && map.size >= meta.total) break;
+    if (meta.hasNext === false) break;
+    if (meta.pages != null && page >= meta.pages) break;
+  }
+  return [...map.values()].sort((a, b) => b.trafficPercentage - a.trafficPercentage);
 }
 
 function mapKeywordItem(item: Record<string, unknown>, rank: number): Keyword {
@@ -399,21 +523,35 @@ export interface FetchKeywordsOptions {
 export async function fetchKeywordsFromMcp(opts: FetchKeywordsOptions): Promise<Keyword[]> {
   const asin = opts.asin.trim().toUpperCase();
   const marketplace = normalizeMarketplaceCode(opts.marketplace);
-  const pageSize = Math.min(Math.max(opts.pageSize ?? 50, 1), 100);
+  // 流量词接口单页常见 20～50；过大 size 可能异常，统一用 50
+  const pageSize = Math.min(Math.max(opts.pageSize ?? 50, 1), 50);
   const maxPages = Math.min(Math.max(opts.maxPages ?? 3, 1), 10);
   const map = new Map<string, Keyword>();
 
   for (let page = 1; page <= maxPages; page++) {
-    opts.onProgress?.(`正在抓取 ${asin} 流量词 第 ${page}/${maxPages} 页…`);
-    const payload = await callTool('traffic_keyword', {
-      request: {
-        asin,
-        marketplace,
-        page,
-        size: pageSize,
-        order: { field: 'searches', desc: true },
-      },
-    });
+    opts.onProgress?.(`正在抓取 ${asin} 流量词 第 ${page}/${maxPages} 页（已获 ${map.size} 个）…`);
+    let payload: unknown;
+    try {
+      payload = await callTool('traffic_keyword', {
+        request: {
+          asin,
+          marketplace,
+          page,
+          size: pageSize,
+          order: { field: 'searches', desc: true },
+        },
+      });
+    } catch (e) {
+      // 兼容部分账号对 order 校验更严：去掉排序再试一次
+      if (page === 1) {
+        opts.onProgress?.(`${asin} 带排序抓取失败，改用不带排序重试…`);
+        payload = await callTool('traffic_keyword', {
+          request: { asin, marketplace, page, size: pageSize },
+        });
+      } else {
+        throw e;
+      }
+    }
     const items = pickItems(payload);
     for (const it of items) {
       if (!it || typeof it !== 'object') continue;
@@ -424,9 +562,12 @@ export async function fetchKeywordsFromMcp(opts: FetchKeywordsOptions): Promise<
         map.set(kw.toLowerCase(), mapKeywordItem(row, map.size + 1));
       }
     }
-    if (items.length === 0 || items.length < pageSize) break;
+    if (items.length === 0) break;
     const meta = pickMeta(payload);
+    if (meta.total != null && map.size >= meta.total) break;
+    if (meta.hasNext === false) break;
     if (meta.pages != null && page >= meta.pages) break;
+    // 不要用 items.length < pageSize 提前停：接口经常少返回几条但仍有下一页
   }
   return [...map.values()];
 }

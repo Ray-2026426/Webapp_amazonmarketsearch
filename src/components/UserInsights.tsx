@@ -347,6 +347,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
   const [tagLib, setTagLib] = useState<TagLibrary | null>(null);
   const [deepReport, setDeepReport] = useState<string | null>(null);
   const [isReportLoading, setIsReportLoading] = useState(false);
+  const [deepReportOpen, setDeepReportOpen] = useState(false);
   const [journeyReportRaw, setJourneyReportRaw] = useState<string | null>(null);
   const [journeyRows, setJourneyRows] = useState<JourneyRow[]>([]);
   const [isJourneyLoading, setIsJourneyLoading] = useState(false);
@@ -663,6 +664,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
   const resetInsightDerivedState = () => {
     setTagLib(null);
     setDeepReport(null);
+    setDeepReportOpen(false);
     setJourneyReportRaw(null);
     setJourneyRows([]);
     setFilterRating('all');
@@ -840,6 +842,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
       const prompt = `${basePrompt}\n\n## 评论数据（共${filteredReviews.length}条）${tagSummary}\n\n${reviewText}`;
       const res = await generateText(prompt, aiSettings);
       setDeepReport(res);
+      setDeepReportOpen(true);
     } catch(e: any) { toast.error('生成报告失败: ' + e.message); }
     setIsReportLoading(false);
   };
@@ -1664,36 +1667,83 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-indigo-100 rounded-xl"><Sparkles className="w-4 h-4 text-indigo-600"/></div>
-                    <div><CardTitle className="text-sm font-bold">AI 深度洞察报告</CardTitle><p className="text-xs text-[#86868b] mt-0.5">产品策略与卖点优先级；章节自动分层，支持表格与列表</p></div>
+                    <div>
+                      <CardTitle className="text-sm font-bold">AI 深度洞察报告</CardTitle>
+                      <p className="text-xs text-[#86868b] mt-0.5">生成后在独立页面查看，不挤占当前分析区</p>
+                    </div>
                   </div>
-                  <button onClick={runDeepReport} disabled={isReportLoading} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60">
-                    {isReportLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <FileText className="w-4 h-4"/>}
-                    {isReportLoading ? '生成中...' : '生成报告'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {deepReport && (
+                      <button
+                        type="button"
+                        onClick={() => setDeepReportOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-xl text-sm font-semibold hover:bg-indigo-50"
+                      >
+                        <FileText className="w-4 h-4"/>
+                        查看报告
+                      </button>
+                    )}
+                    <button onClick={runDeepReport} disabled={isReportLoading} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60">
+                      {isReportLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <FileText className="w-4 h-4"/>}
+                      {isReportLoading ? '生成中...' : deepReport ? '重新生成' : '生成报告'}
+                    </button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="p-6">
-                {deepReport ? (
-                  deepReportHtml ? (
-                    <div
-                      className="max-h-[min(560px,70vh)] overflow-x-auto overflow-y-auto rounded-2xl border border-indigo-100/90 bg-gradient-to-b from-white via-white to-indigo-50/40 px-5 py-6 shadow-inner"
-                      dangerouslySetInnerHTML={{ __html: deepReportHtml }}
-                    />
-                  ) : (
-                  <div className="max-h-[min(560px,70vh)] overflow-x-auto overflow-y-auto rounded-2xl border border-indigo-100/90 bg-gradient-to-b from-white via-white to-indigo-50/40 px-5 py-6 shadow-inner">
-                    <div className="prose prose-base max-w-none min-w-[280px] text-[#3f3f46] leading-relaxed prose-headings:scroll-mt-4 prose-headings:font-semibold prose-headings:text-indigo-950 prose-h2:text-[1.05rem] prose-h2:mt-8 prose-h2:mb-3 prose-h2:border-b prose-h2:border-indigo-100 prose-h2:pb-2 prose-h2:first:mt-0 prose-p:my-2.5 prose-p:text-[15px] prose-ul:my-2 prose-ul:pl-1 prose-li:my-1 prose-li:marker:text-indigo-400 prose-strong:text-[#1e1b4b] [&_table]:w-full [&_table]:text-[14px] prose-th:border prose-th:border-black/10 prose-th:bg-stone-50 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-td:border prose-td:border-black/10 prose-td:px-3 prose-td:py-2">
-                      <Markdown remarkPlugins={[remarkGfm]}>{deepReportMarkdown}</Markdown>
-                    </div>
-                  </div>
-                  )
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-12 text-[#86868b]">
-                    <FileText className="w-12 h-12 mb-3 text-zinc-200"/>
-                    <p className="text-sm">点击「生成报告」，AI 将基于当前筛选评论生成深度洞察</p>
-                  </div>
-                )}
+                <div className="flex flex-col items-center justify-center py-8 text-[#86868b]">
+                  <FileText className="w-12 h-12 mb-3 text-zinc-200"/>
+                  <p className="text-sm text-center">
+                    {deepReport
+                      ? '报告已生成。点击右上角「查看报告」打开独立阅读页。'
+                      : '点击「生成报告」，AI 将基于当前筛选评论生成深度洞察，并在独立页面打开。'}
+                  </p>
+                </div>
               </CardContent>
             </Card>
+
+            {deepReportOpen && deepReport && (
+              <div className="fixed inset-0 z-[80] bg-[#f5f5f7] flex flex-col animate-in fade-in">
+                <div className="shrink-0 bg-white/90 backdrop-blur border-b border-black/5 px-6 py-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="p-2 bg-indigo-100 rounded-xl shrink-0"><Sparkles className="w-4 h-4 text-indigo-600"/></div>
+                    <div className="min-w-0">
+                      <h2 className="text-lg font-bold text-[#1d1d1f] truncate">AI 深度洞察报告</h2>
+                      <p className="text-xs text-[#86868b]">基于当前筛选评论 · 独立阅读页</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={runDeepReport}
+                      disabled={isReportLoading}
+                      className="px-3 py-2 rounded-xl border border-black/10 text-sm font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] disabled:opacity-50"
+                    >
+                      {isReportLoading ? '生成中…' : '重新生成'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeepReportOpen(false)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold"
+                    >
+                      <X className="w-4 h-4" />
+                      关闭
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 md:p-10">
+                  <div className="max-w-3xl mx-auto bg-white rounded-3xl border border-black/5 shadow-sm p-6 md:p-10">
+                    {deepReportHtml ? (
+                      <div dangerouslySetInnerHTML={{ __html: deepReportHtml }} />
+                    ) : (
+                      <div className="prose prose-base max-w-none text-[#3f3f46] leading-relaxed prose-headings:font-semibold prose-headings:text-indigo-950">
+                        <Markdown remarkPlugins={[remarkGfm]}>{deepReportMarkdown}</Markdown>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <Card className="rounded-3xl border-black/5 shadow-sm overflow-hidden w-full">
               <CardHeader className="bg-gradient-to-r from-amber-50 to-orange-50 border-b border-black/5">
