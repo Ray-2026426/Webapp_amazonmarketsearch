@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Crosshair, Loader2, Image as ImageIcon, Activity, Grid3X3, Plus, X, Upload,
-  ChevronRight, ChevronLeft, Star, Package, ExternalLink, RefreshCw, Sparkles, HelpCircle,
+  ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Star, Package, ExternalLink, RefreshCw, Sparkles, HelpCircle, Trash2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { SecondaryReportPage } from './SecondaryReportPage';
@@ -40,9 +40,26 @@ interface CompetitorHubProps {
 
 interface AsinPack {
   zipName: string;
-  mainPreviewUrls: string[];
-  aplusCount: number;
+  /** 附图/副图预览；主图对比永远用 MCP，不受图包影响 */
+  secondaryPreviewUrls: string[];
+  /** A+ 模块图预览 */
+  aplusPreviewUrls: string[];
   bulletPoints: string;
+}
+
+function revokePackUrls(pack?: AsinPack | null) {
+  if (!pack) return;
+  [...pack.secondaryPreviewUrls, ...pack.aplusPreviewUrls].forEach((u) => {
+    if (u.startsWith('blob:')) URL.revokeObjectURL(u);
+  });
+}
+
+async function blobsToPreviewUrls(images: { blob: Blob }[], limit = 24): Promise<string[]> {
+  const urls: string[] = [];
+  for (const img of images.slice(0, limit)) {
+    urls.push(URL.createObjectURL(img.blob));
+  }
+  return urls;
 }
 
 interface BrandSiblingRow {
@@ -210,8 +227,8 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     for (const [asin, pack] of Object.entries(demoSnapshot.packs)) {
       next[asin.toUpperCase()] = {
         zipName: pack.zipName,
-        mainPreviewUrls: [...pack.mainPreviewUrls],
-        aplusCount: pack.aplusCount,
+        secondaryPreviewUrls: [...(pack.secondaryPreviewUrls || [])],
+        aplusPreviewUrls: [...(pack.aplusPreviewUrls || [])],
         bulletPoints: pack.bulletPoints,
       };
     }
@@ -244,8 +261,8 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     for (const [asin, pack] of Object.entries(demoSnapshot.packs || {})) {
       nextPacks[asin.toUpperCase()] = {
         zipName: pack.zipName,
-        mainPreviewUrls: [...pack.mainPreviewUrls],
-        aplusCount: pack.aplusCount,
+        secondaryPreviewUrls: [...(pack.secondaryPreviewUrls || [])],
+        aplusPreviewUrls: [...(pack.aplusPreviewUrls || [])],
         bulletPoints: pack.bulletPoints,
       };
     }
@@ -307,12 +324,7 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     setSelected((prev) => prev.filter((a) => a !== asin));
     setPacks((prev) => {
       const next = { ...prev };
-      const pack = next[asin];
-      if (pack) {
-        pack.mainPreviewUrls.forEach((u) => {
-          if (u.startsWith('blob:')) URL.revokeObjectURL(u);
-        });
-      }
+      revokePackUrls(next[asin]);
       delete next[asin];
       return next;
     });
@@ -323,28 +335,25 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     setParsingAsin(asin);
     try {
       const { competitor: parsed, warnings } = await parseSingleCompetitorZip(file, asin);
-      const previews: string[] = [];
-      for (const img of parsed.mainImages.slice(0, 8)) {
-        previews.push(URL.createObjectURL(img.blob));
-      }
+      // 图包「主图」文件夹内容：不进主图对比（主图用 MCP），一并并入附图池，便于展开对比
+      const secondarySource = [...parsed.secondaryImages, ...parsed.mainImages];
+      const secondaryPreviewUrls = await blobsToPreviewUrls(secondarySource, 24);
+      const aplusPreviewUrls = await blobsToPreviewUrls(parsed.aplusImages, 24);
       setPacks((prev) => {
-        const old = prev[asin];
-        if (old) {
-          old.mainPreviewUrls.forEach((u) => {
-            if (u.startsWith('blob:')) URL.revokeObjectURL(u);
-          });
-        }
+        revokePackUrls(prev[asin]);
         return {
           ...prev,
           [asin]: {
             zipName: file.name,
-            mainPreviewUrls: previews,
-            aplusCount: parsed.aplusImages.length,
+            secondaryPreviewUrls,
+            aplusPreviewUrls,
             bulletPoints: parsed.bulletPoints,
           },
         };
       });
-      toast.success(`${asin} 图包已导入：主图 ${parsed.mainImages.length} · A+ ${parsed.aplusImages.length}`);
+      toast.success(
+        `${asin} 图包已导入：附图 ${secondarySource.length} · A+ ${parsed.aplusImages.length}（主图对比仍用卖家精灵）`
+      );
       if (warnings[0]) toast.warning(warnings[0], { duration: 4000 });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : '图包解析失败');
@@ -358,14 +367,21 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   const clearPack = (asin: string) => {
     setPacks((prev) => {
       const next = { ...prev };
-      const pack = next[asin];
-      if (pack) {
-        pack.mainPreviewUrls.forEach((u) => {
-          if (u.startsWith('blob:')) URL.revokeObjectURL(u);
-        });
-      }
+      revokePackUrls(next[asin]);
       delete next[asin];
       return next;
+    });
+  };
+
+  const updatePackImages = (
+    asin: string,
+    field: 'secondaryPreviewUrls' | 'aplusPreviewUrls',
+    nextUrls: string[]
+  ) => {
+    setPacks((prev) => {
+      const pack = prev[asin];
+      if (!pack) return prev;
+      return { ...prev, [asin]: { ...pack, [field]: nextUrls } };
     });
   };
 
@@ -615,7 +631,9 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
         <Card className="border-none shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">② 上传 Listing 图包（可选）</CardTitle>
-            <CardDescription>有图包则 Listing 对比展示你的主图；没有也可直接点「对比分析」。</CardDescription>
+            <CardDescription>
+              主图对比一律用卖家精灵抓取；图包只用于附图 / A+。建议 zip 内分文件夹：附图（或副图）、A+。
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -635,12 +653,27 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                     </div>
                     {pack ? (
                       <div className="space-y-2">
+                        <div className="text-[10px] text-[#86868b]">附图预览</div>
                         <div className="flex gap-1.5 overflow-x-auto">
-                          {pack.mainPreviewUrls.slice(0, 4).map((url) => (
+                          {pack.secondaryPreviewUrls.slice(0, 4).map((url) => (
                             <img key={url} src={url} alt="" className="w-14 h-14 rounded-lg object-cover border border-black/5 shrink-0" />
                           ))}
+                          {!pack.secondaryPreviewUrls.length && (
+                            <span className="text-[11px] text-[#aeaeb2] py-4">无附图</span>
+                          )}
                         </div>
-                        <p className="text-[11px] text-emerald-700">已导入 {pack.zipName}</p>
+                        <div className="text-[10px] text-[#86868b]">A+ 预览</div>
+                        <div className="flex gap-1.5 overflow-x-auto">
+                          {pack.aplusPreviewUrls.slice(0, 4).map((url) => (
+                            <img key={`a-${url}`} src={url} alt="" className="w-14 h-14 rounded-lg object-cover border border-black/5 shrink-0" />
+                          ))}
+                          {!pack.aplusPreviewUrls.length && (
+                            <span className="text-[11px] text-[#aeaeb2] py-4">无 A+</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-emerald-700">
+                          已导入 {pack.zipName} · 附图 {pack.secondaryPreviewUrls.length} · A+ {pack.aplusPreviewUrls.length}
+                        </p>
                       </div>
                     ) : (
                       <label className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-black/15 bg-[#fafafa] py-6 cursor-pointer hover:border-indigo-300">
@@ -730,7 +763,12 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
               {progress && <div className="text-xs text-violet-700 bg-violet-50 rounded-lg px-3 py-2">{progress}</div>}
 
               {resultTab === 'listing' && (
-                <ListingBuyerView details={details} packs={packs} marketplace={marketplace} />
+                <ListingBuyerView
+                  details={details}
+                  packs={packs}
+                  marketplace={marketplace}
+                  onUpdatePackImages={updatePackImages}
+                />
               )}
               {resultTab === 'traffic' && (
                 <TrafficView selected={selected} trafficStats={trafficStats} topKeywords={topKeywords} />
@@ -766,31 +804,155 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   );
 }
 
+function moveUrl(list: string[], index: number, dir: -1 | 1): string[] {
+  const j = index + dir;
+  if (j < 0 || j >= list.length) return list;
+  const next = [...list];
+  [next[index], next[j]] = [next[j], next[index]];
+  return next;
+}
+
+function PackImageEditor({
+  asin,
+  urls,
+  label,
+  onChange,
+}: {
+  asin: string;
+  urls: string[];
+  label: string;
+  onChange: (next: string[]) => void;
+}) {
+  if (!urls.length) {
+    return <p className="text-[11px] text-[#aeaeb2] py-2">{asin} 暂无{label}</p>;
+  }
+  return (
+    <div className="space-y-2">
+      <div className="text-[11px] font-semibold text-[#86868b]">{asin} · 调整{label}顺序 / 删除</div>
+      <div className="flex flex-wrap gap-2">
+        {urls.map((url, i) => (
+          <div key={`${url}-${i}`} className="relative w-[88px] rounded-xl border border-black/10 bg-white overflow-hidden shadow-sm">
+            <img src={url} alt="" className="w-full aspect-square object-contain bg-[#fafafa]" />
+            <div className="absolute top-1 left-1 text-[9px] font-bold bg-black/60 text-white px-1.5 py-0.5 rounded">
+              #{i + 1}
+            </div>
+            <div className="flex border-t border-black/5">
+              <button
+                type="button"
+                title="上移"
+                disabled={i === 0}
+                onClick={() => onChange(moveUrl(urls, i, -1))}
+                className="flex-1 py-1 hover:bg-[#f5f5f7] disabled:opacity-30"
+              >
+                <ChevronUp className="w-3.5 h-3.5 mx-auto" />
+              </button>
+              <button
+                type="button"
+                title="下移"
+                disabled={i === urls.length - 1}
+                onClick={() => onChange(moveUrl(urls, i, 1))}
+                className="flex-1 py-1 hover:bg-[#f5f5f7] disabled:opacity-30 border-l border-black/5"
+              >
+                <ChevronDown className="w-3.5 h-3.5 mx-auto" />
+              </button>
+              <button
+                type="button"
+                title="删除"
+                onClick={() => {
+                  const removed = urls[i];
+                  if (removed.startsWith('blob:')) URL.revokeObjectURL(removed);
+                  onChange(urls.filter((_, idx) => idx !== i));
+                }}
+                className="flex-1 py-1 hover:bg-rose-50 text-rose-600 border-l border-black/5"
+              >
+                <Trash2 className="w-3.5 h-3.5 mx-auto" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ImageCompareRows({
+  details,
+  packs,
+  field,
+  emptyHint,
+}: {
+  details: AsinDetailSnapshot[];
+  packs: Record<string, AsinPack>;
+  field: 'secondaryPreviewUrls' | 'aplusPreviewUrls';
+  emptyHint: string;
+}) {
+  const maxLen = Math.max(0, ...details.map((d) => packs[d.asin]?.[field]?.length || 0));
+  if (maxLen === 0) {
+    return <EmptyHint text={emptyHint} />;
+  }
+  return (
+    <div className="space-y-4">
+      {Array.from({ length: maxLen }, (_, row) => (
+        <div key={row} className="rounded-2xl border border-black/10 bg-white overflow-hidden">
+          <div className="px-4 py-2 bg-[#f5f5f7] border-b border-black/5 text-xs font-semibold text-[#1d1d1f]">
+            第 {row + 1} 张 · 同位置横向对比
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 p-3">
+            {details.map((d) => {
+              const url = packs[d.asin]?.[field]?.[row];
+              return (
+                <div key={d.asin} className="rounded-xl border border-black/5 bg-[#fafafa] p-2">
+                  <div className="text-[10px] font-mono text-[#86868b] mb-1.5">{d.asin}</div>
+                  {url ? (
+                    <img src={url} alt="" className="w-full aspect-[4/3] object-contain bg-white rounded-lg border border-black/5" />
+                  ) : (
+                    <div className="aspect-[4/3] flex items-center justify-center text-[11px] text-[#aeaeb2] border border-dashed rounded-lg">
+                      该位置无图
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ListingBuyerView({
   details,
   packs,
   marketplace,
+  onUpdatePackImages,
 }: {
   details: AsinDetailSnapshot[];
   packs: Record<string, AsinPack>;
   marketplace: string;
+  onUpdatePackImages: (
+    asin: string,
+    field: 'secondaryPreviewUrls' | 'aplusPreviewUrls',
+    nextUrls: string[]
+  ) => void;
 }) {
+  const [showSecondary, setShowSecondary] = useState(false);
+  const [showAplus, setShowAplus] = useState(false);
+
   if (!details.length) return <EmptyHint text="暂无 Listing 数据。请检查 MCP 密钥后重新对比。" />;
 
+  const secondaryTotal = details.reduce((n, d) => n + (packs[d.asin]?.secondaryPreviewUrls?.length || 0), 0);
+  const aplusTotal = details.reduce((n, d) => n + (packs[d.asin]?.aplusPreviewUrls?.length || 0), 0);
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <p className="text-xs text-[#86868b]">
-        按买家打开详情页的视线顺序：主图 → 标题 → 品牌/评分 → 价格与徽章 → 规格 → 五点 → 配送/类目。
+        默认只看主图（卖家精灵抓取，不受图包影响）。需要时再展开附图 / A+，按「第 N 张对第 N 张」横向对比；可在下方调整顺序或删除。
       </p>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {details.map((d) => {
+          const mainUrl = d.zoomImageUrl || d.imageUrl;
           const pack = packs[d.asin];
-          const gallery =
-            pack?.mainPreviewUrls?.length
-              ? pack.mainPreviewUrls
-              : d.zoomImageUrl || d.imageUrl
-                ? [d.zoomImageUrl || d.imageUrl]
-                : [];
           const bullets =
             pack?.bulletPoints?.trim()
               ? pack.bulletPoints.split(/\n+/).map((s) => s.replace(/^[\d.\-•\s]+/, '').trim()).filter(Boolean)
@@ -799,12 +961,16 @@ function ListingBuyerView({
           return (
             <article key={d.asin} className="rounded-2xl border border-black/10 bg-white overflow-hidden shadow-sm flex flex-col">
               <div className="bg-[#fafafa] border-b border-black/5 p-3">
-                <div className="text-[10px] uppercase tracking-wider text-[#86868b] mb-2">① 买家先看主图</div>
-                {gallery.length > 0 ? (
-                  <img src={gallery[0]} alt={d.title} className="w-full aspect-square max-h-56 object-contain bg-white rounded-xl border border-black/5" />
+                <div className="text-[10px] uppercase tracking-wider text-[#86868b] mb-2">① 买家先看主图（MCP）</div>
+                {mainUrl ? (
+                  <img src={mainUrl} alt={d.title} className="w-full aspect-square max-h-56 object-contain bg-white rounded-xl border border-black/5" />
                 ) : (
                   <div className="aspect-square max-h-40 flex items-center justify-center text-xs text-[#86868b] bg-white rounded-xl border border-dashed">暂无图片</div>
                 )}
+                <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[#86868b]">
+                  <span className="px-2 py-0.5 rounded-full bg-white border border-black/5">附图 {(pack?.secondaryPreviewUrls.length || 0)} 张</span>
+                  <span className="px-2 py-0.5 rounded-full bg-white border border-black/5">A+ {(pack?.aplusPreviewUrls.length || 0)} 张</span>
+                </div>
               </div>
               <div className="p-4 space-y-3 flex-1">
                 <div>
@@ -882,6 +1048,85 @@ function ListingBuyerView({
           );
         })}
       </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setShowSecondary((v) => !v)}
+          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+            showSecondary ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-[#1d1d1f] border-black/10 hover:border-indigo-300'
+          }`}
+        >
+          <ImageIcon className="w-4 h-4" />
+          {showSecondary ? '收起附图对比' : `展开附图对比（${secondaryTotal}）`}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowAplus((v) => !v)}
+          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+            showAplus ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-[#1d1d1f] border-black/10 hover:border-violet-300'
+          }`}
+        >
+          <ImageIcon className="w-4 h-4" />
+          {showAplus ? '收起 A+ 对比' : `展开 A+ 对比（${aplusTotal}）`}
+        </button>
+      </div>
+
+      {showSecondary && (
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">附图对比</CardTitle>
+            <CardDescription>同一行 = 同一位置（第 1 张对第 1 张）。顺序不对时，用下方箭头调整或删除。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <ImageCompareRows
+              details={details}
+              packs={packs}
+              field="secondaryPreviewUrls"
+              emptyHint="还没有附图。请在上一步上传含「附图/副图」文件夹的 zip。"
+            />
+            <div className="space-y-4 pt-2 border-t border-black/5">
+              {details.map((d) => (
+                <PackImageEditor
+                  key={`sec-edit-${d.asin}`}
+                  asin={d.asin}
+                  urls={packs[d.asin]?.secondaryPreviewUrls || []}
+                  label="附图"
+                  onChange={(next) => onUpdatePackImages(d.asin, 'secondaryPreviewUrls', next)}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {showAplus && (
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">A+ 对比</CardTitle>
+            <CardDescription>同一行 = 同一模块位置。可调序、可删除，方便对齐竞品模块。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <ImageCompareRows
+              details={details}
+              packs={packs}
+              field="aplusPreviewUrls"
+              emptyHint="还没有 A+ 图。请在上一步上传含「A+」文件夹的 zip。"
+            />
+            <div className="space-y-4 pt-2 border-t border-black/5">
+              {details.map((d) => (
+                <PackImageEditor
+                  key={`aplus-edit-${d.asin}`}
+                  asin={d.asin}
+                  urls={packs[d.asin]?.aplusPreviewUrls || []}
+                  label="A+"
+                  onChange={(next) => onUpdatePackImages(d.asin, 'aplusPreviewUrls', next)}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

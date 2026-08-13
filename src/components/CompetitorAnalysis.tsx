@@ -168,7 +168,8 @@ export const CompetitorAnalysis: React.FC = () => {
       const { competitor: parsed, warnings } = await parseSingleCompetitorZip(file, SLOT_LABELS[slotIndex]);
       const mainImages: ImageFile[] = [];
       const aplusImages: ImageFile[] = [];
-      for (const img of parsed.mainImages) {
+      // 旧版视觉对比无独立「附图」槽：主图 + 附图一并进入主图组，A+ 单独保留
+      for (const img of [...parsed.mainImages, ...parsed.secondaryImages]) {
         try { mainImages.push(await blobToImageFile(img.blob, img.fileName)); } catch { /* skip */ }
       }
       for (const img of parsed.aplusImages) {

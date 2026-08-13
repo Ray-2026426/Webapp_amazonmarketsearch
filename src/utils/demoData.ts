@@ -25,9 +25,10 @@ export interface CompetitorDemoSnapshot {
     string,
     {
       zipName: string;
-      /** Amazon CDN https 图，不要 blob */
-      mainPreviewUrls: string[];
-      aplusCount: number;
+      /** 附图/副图（Amazon CDN https，不要 blob）；主图对比一律用 MCP 详情图 */
+      secondaryPreviewUrls: string[];
+      /** A+ 模块图 */
+      aplusPreviewUrls: string[];
       bulletPoints: string;
     }
   >;
@@ -1862,33 +1863,37 @@ const COMPETITOR_DEMO: CompetitorDemoSnapshot = {
   packs: {
     B0FH4SBYH4: {
       zipName: 'B0FH4SBYH4_demo_pack.zip',
-      mainPreviewUrls: [
-        'https://m.media-amazon.com/images/I/31aS3LWEqUL._AC_US600_.jpg',
+      secondaryPreviewUrls: [
         'https://m.media-amazon.com/images/I/71ziamphHyL._SY200.jpg',
         'https://m.media-amazon.com/images/I/71MDDefmBuL._SY200.jpg',
         'https://m.media-amazon.com/images/I/71rKgUDIopL._SY200.jpg',
       ],
-      aplusCount: 5,
+      aplusPreviewUrls: [
+        'https://m.media-amazon.com/images/I/71ziamphHyL._SY200.jpg',
+        'https://m.media-amazon.com/images/I/71MDDefmBuL._SY200.jpg',
+      ],
       bulletPoints: bulletsFromFeatures(COMPETITOR_DETAILS[0].features),
     },
     B06XPMNP76: {
       zipName: 'B06XPMNP76_demo_pack.zip',
-      mainPreviewUrls: [
-        'https://m.media-amazon.com/images/I/31lQHUUgWnL._AC_US600_.jpg',
+      secondaryPreviewUrls: [
         'https://m.media-amazon.com/images/I/31lQHUUgWnL._AC_US400_.jpg',
         'https://m.media-amazon.com/images/I/31lQHUUgWnL._AC_US200_.jpg',
       ],
-      aplusCount: 6,
+      aplusPreviewUrls: [
+        'https://m.media-amazon.com/images/I/31lQHUUgWnL._AC_US600_.jpg',
+      ],
       bulletPoints: bulletsFromFeatures(COMPETITOR_DETAILS[1].features),
     },
     B0C2KPM8N5: {
       zipName: 'B0C2KPM8N5_demo_pack.zip',
-      mainPreviewUrls: [
-        'https://m.media-amazon.com/images/I/51GMVwPxFuL._AC_US600_.jpg',
+      secondaryPreviewUrls: [
         'https://m.media-amazon.com/images/I/51GMVwPxFuL._AC_US400_.jpg',
         'https://m.media-amazon.com/images/I/51GMVwPxFuL._AC_US200_.jpg',
       ],
-      aplusCount: 5,
+      aplusPreviewUrls: [
+        'https://m.media-amazon.com/images/I/51GMVwPxFuL._AC_US600_.jpg',
+      ],
       bulletPoints: bulletsFromFeatures(COMPETITOR_DETAILS[3].features),
     },
   },
