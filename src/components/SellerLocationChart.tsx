@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
 import { buildAsinPeriodStatsMap, getAsinPeriodStats } from '../utils/chartHistory';
 import { ProductModal } from './ProductModal';
+import { Select } from './ui/Select';
 
 interface SellerLocationChartProps {
   products: Product[];
@@ -112,11 +113,16 @@ export const SellerLocationChart = React.memo(function SellerLocationChart({ pro
           </div>
           <div className="flex items-center gap-2">
             <label className="text-xs text-[#86868b] font-medium">指标:</label>
-            <select value={metric} onChange={e => setMetric(e.target.value as 'sales' | 'revenue')}
-              className="text-sm border border-black/5 rounded-lg px-2 py-1 bg-[#f5f5f7] text-[#1d1d1f] focus:outline-none">
-              <option value="sales">销量</option>
-              <option value="revenue">销售额</option>
-            </select>
+            <Select
+              value={metric}
+              onChange={(v) => setMetric(v as 'sales' | 'revenue')}
+              options={[
+                { value: 'sales', label: '销量' },
+                { value: 'revenue', label: '销售额' },
+              ]}
+              size="sm"
+              aria-label="指标"
+            />
           </div>
         </CardHeader>
         <CardContent>

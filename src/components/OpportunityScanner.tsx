@@ -4,6 +4,7 @@ import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
 import { ProductModal } from './ProductModal';
 import { Crosshair, Info, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Star, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Select } from './ui/Select';
 
 interface Props {
   products: Product[];
@@ -137,15 +138,35 @@ export const OpportunityScanner = React.memo(function OpportunityScanner({produc
             <div className="flex items-center gap-3 flex-wrap justify-end">
               <div className="flex items-center gap-1.5">
                 <label className="text-xs text-[#86868b] font-medium">评论上限:</label>
-                <select value={maxReviews} onChange={e=>setMaxReviews(Number(e.target.value))} className="text-xs border border-black/10 rounded-lg px-2 py-1.5 bg-[#f5f5f7] focus:outline-none">
-                  <option value={100}>≤100</option><option value={200}>≤200</option><option value={500}>≤500</option><option value={1000}>≤1000</option><option value={99999}>全部</option>
-                </select>
+                <Select
+                  value={String(maxReviews)}
+                  onChange={(v) => setMaxReviews(Number(v))}
+                  options={[
+                    { value: '100', label: '≤100' },
+                    { value: '200', label: '≤200' },
+                    { value: '500', label: '≤500' },
+                    { value: '1000', label: '≤1000' },
+                    { value: '99999', label: '全部' },
+                  ]}
+                  size="sm"
+                  aria-label="评论上限"
+                />
               </div>
               <div className="flex items-center gap-1.5">
                 <label className="text-xs text-[#86868b] font-medium">销量下限:</label>
-                <select value={minSales} onChange={e=>setMinSales(Number(e.target.value))} className="text-xs border border-black/10 rounded-lg px-2 py-1.5 bg-[#f5f5f7] focus:outline-none">
-                  <option value={0}>不限</option><option value={50}>≥50</option><option value={100}>≥100</option><option value={300}>≥300</option><option value={500}>≥500</option>
-                </select>
+                <Select
+                  value={String(minSales)}
+                  onChange={(v) => setMinSales(Number(v))}
+                  options={[
+                    { value: '0', label: '不限' },
+                    { value: '50', label: '≥50' },
+                    { value: '100', label: '≥100' },
+                    { value: '300', label: '≥300' },
+                    { value: '500', label: '≥500' },
+                  ]}
+                  size="sm"
+                  aria-label="销量下限"
+                />
               </div>
               <button onClick={()=>setHighlightOnly(v=>!v)} className={`text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors ${highlightOnly?'bg-emerald-50 text-emerald-600 border-emerald-200':'bg-[#f5f5f7] text-[#86868b] border-black/10 hover:text-[#1d1d1f]'}`}>{highlightOnly?'仅显示机会':'显示全部'}</button>
             </div>

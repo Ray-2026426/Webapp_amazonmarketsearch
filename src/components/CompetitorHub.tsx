@@ -25,6 +25,7 @@ import type { CompetitorDemoSnapshot } from '../utils/demoData';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
+import { Select } from './ui/Select';
 
 type WizardStep = 1 | 2 | 3;
 type ResultTab = 'listing' | 'traffic' | 'matrix';
@@ -576,15 +577,13 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2 items-center">
-              <select
+              <Select
                 value={marketplace}
-                onChange={(e) => setMarketplace(normalizeMarketplaceCode(e.target.value))}
-                className="border border-black/10 rounded-xl px-3 py-2 text-sm bg-white"
-              >
-                {SELLERSPRITE_MARKETPLACES.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+                onChange={(v) => setMarketplace(normalizeMarketplaceCode(v))}
+                options={SELLERSPRITE_MARKETPLACES.map((m) => ({ value: m, label: m }))}
+                size="sm"
+                aria-label="站点"
+              />
               <input
                 value={asinInput}
                 onChange={(e) => setAsinInput(e.target.value)}

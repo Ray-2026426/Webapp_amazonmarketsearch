@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar } from 'lucide-react';
+import { Select } from './ui/Select';
 
 interface DateRangeSelectorProps {
   availableMonths: string[];
@@ -104,41 +105,51 @@ export const DateRangeSelector = React.memo(function DateRangeSelector({ availab
     <div className="flex items-center space-x-3 bg-white px-3 py-1.5 rounded-xl shadow-sm border border-black/5">
       <Calendar className="w-4 h-4 text-[#86868b]" />
       <div className="flex items-center space-x-2">
-        <select
+        <Select
           value={selectedRange}
-          onChange={(e) => setSelectedRange(e.target.value)}
-          className="text-[13px] border-none bg-transparent font-medium text-[#1d1d1f] focus:outline-none cursor-pointer"
-        >
-          <optgroup label="快捷键">
-            <option value="今年">今年</option>
-            <option value="去年">去年</option>
-            <option value="前年">前年</option>
-          </optgroup>
-          <optgroup label="单月">
-            {sortedMonths.map(m => (
-              <option key={m} value={m}>{m === sortedMonths[sortedMonths.length - 1] ? `${m} (本月)` : m}</option>
-            ))}
-          </optgroup>
-          <option value="custom">自定义范围...</option>
-        </select>
+          onChange={setSelectedRange}
+          groups={[
+            {
+              label: '快捷键',
+              options: [
+                { value: '今年', label: '今年' },
+                { value: '去年', label: '去年' },
+                { value: '前年', label: '前年' },
+              ],
+            },
+            {
+              label: '单月',
+              options: sortedMonths.map((m) => ({
+                value: m,
+                label: m === sortedMonths[sortedMonths.length - 1] ? `${m} (本月)` : m,
+              })),
+            },
+          ]}
+          options={[{ value: 'custom', label: '自定义范围...' }]}
+          size="sm"
+          variant="ghost"
+          aria-label="日期范围"
+        />
 
         {selectedRange === 'custom' && (
           <div className="flex items-center space-x-1 text-[13px]">
-            <select
+            <Select
               value={customStart}
-              onChange={(e) => setCustomStart(e.target.value)}
-              className="border border-black/10 rounded px-1 py-0.5 bg-[#f5f5f7]"
-            >
-              {sortedMonths.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
+              onChange={setCustomStart}
+              options={sortedMonths.map((m) => ({ value: m, label: m }))}
+              size="sm"
+              className="min-w-[100px]"
+              aria-label="开始月份"
+            />
             <span className="text-[#86868b]">-</span>
-            <select
+            <Select
               value={customEnd}
-              onChange={(e) => setCustomEnd(e.target.value)}
-              className="border border-black/10 rounded px-1 py-0.5 bg-[#f5f5f7]"
-            >
-              {sortedMonths.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
+              onChange={setCustomEnd}
+              options={sortedMonths.map((m) => ({ value: m, label: m }))}
+              size="sm"
+              className="min-w-[100px]"
+              aria-label="结束月份"
+            />
           </div>
         )}
       </div>

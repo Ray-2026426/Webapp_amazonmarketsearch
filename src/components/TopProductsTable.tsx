@@ -10,6 +10,7 @@ import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
 import { DateRangeSelector } from './DateRangeSelector';
+import { Select } from './ui/Select';
 
 type SortKey = 'price' | 'monthlySales' | 'monthlyRevenue' | 'launchDate' | 'fbaFee' | 'subBsr' | 'reviewGrowth' | 'salesGrowth3m' | 'salesGrowth1y';
 
@@ -422,10 +423,17 @@ export const TopProductsTable = React.memo(function TopProductsTable({
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <label className="text-xs text-[#86868b] font-medium">聚合:</label>
-                <select value={aggregation} onChange={e => setAggregation(e.target.value as 'month' | 'quarter' | 'year')}
-                  className="text-sm border border-black/5 rounded-lg px-2 py-1 bg-[#f5f5f7] focus:outline-none">
-                  <option value="month">月</option><option value="quarter">季度</option><option value="year">年</option>
-                </select>
+                <Select
+                  value={aggregation}
+                  onChange={(v) => setAggregation(v as 'month' | 'quarter' | 'year')}
+                  options={[
+                    { value: 'month', label: '月' },
+                    { value: 'quarter', label: '季度' },
+                    { value: 'year', label: '年' },
+                  ]}
+                  size="sm"
+                  aria-label="聚合"
+                />
                 <button onClick={() => setSelectedAsin(null)} className="p-2 text-[#86868b] hover:text-[#1d1d1f] hover:bg-black/5 rounded-full"><X className="w-5 h-5" /></button>
               </div>
             </div>

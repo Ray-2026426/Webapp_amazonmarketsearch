@@ -18,6 +18,7 @@ import { SecondaryReportPage } from './SecondaryReportPage';
 import { InsightReportPanels, tryParseAiInsight } from './InsightReportPanels';
 import type { AiInsight } from './KeywordAnalysis';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend, PieChart, Pie } from 'recharts';
+import { Select } from './ui/Select';
 
 interface TagLibrary {
   positive: string[];
@@ -1160,138 +1161,150 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
               <div className="grid grid-cols-1 gap-3 border-t border-black/5 bg-white p-4 sm:grid-cols-2 lg:grid-cols-3">
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold text-[#6e6e73]">星级</span>
-                  <select
+                  <Select
                     value={filterRating}
-                    onChange={(e) => {
-                      setFilterRating(e.target.value as 'all' | '1' | '2' | '3' | '4' | '5' | 'bad');
+                    onChange={(v) => {
+                      setFilterRating(v as 'all' | '1' | '2' | '3' | '4' | '5' | 'bad');
                       setPage(1);
                     }}
-                    className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="all">全部星级</option>
-                    <option value="bad">仅差评 (1–3 星)</option>
-                    <option value="1">1 星</option>
-                    <option value="2">2 星</option>
-                    <option value="3">3 星</option>
-                    <option value="4">4 星</option>
-                    <option value="5">5 星</option>
-                  </select>
+                    options={[
+                      { value: 'all', label: '全部星级' },
+                      { value: 'bad', label: '仅差评 (1–3 星)' },
+                      { value: '1', label: '1 星' },
+                      { value: '2', label: '2 星' },
+                      { value: '3', label: '3 星' },
+                      { value: '4', label: '4 星' },
+                      { value: '5', label: '5 星' },
+                    ]}
+                    size="sm"
+                    className="w-full"
+                    aria-label="星级"
+                  />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold text-[#6e6e73]">ASIN</span>
-                  <select
+                  <Select
                     value={filterAsin}
-                    onChange={(e) => {
-                      setFilterAsin(e.target.value);
+                    onChange={(v) => {
+                      setFilterAsin(v);
                       setPage(1);
                     }}
-                    className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="all">全部 ASIN</option>
-                    {allAsins.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: 'all', label: '全部 ASIN' },
+                      ...allAsins.map((v) => ({ value: v, label: v })),
+                    ]}
+                    size="sm"
+                    className="w-full"
+                    aria-label="ASIN"
+                  />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold text-[#6e6e73]">子体 / 型号</span>
-                  <select
+                  <Select
                     value={filterModel}
-                    onChange={(e) => {
-                      setFilterModel(e.target.value);
+                    onChange={(v) => {
+                      setFilterModel(v);
                       setPage(1);
                     }}
-                    className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="all">全部型号</option>
-                    {allModels.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: 'all', label: '全部型号' },
+                      ...allModels.map((v) => ({ value: v, label: v })),
+                    ]}
+                    size="sm"
+                    className="w-full"
+                    aria-label="子体型号"
+                  />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold text-[#6e6e73]">图片 / 视频</span>
-                  <select
+                  <Select
                     value={filterMedia}
-                    onChange={(e) => {
-                      setFilterMedia(e.target.value as 'all' | 'media' | 'no_media');
+                    onChange={(v) => {
+                      setFilterMedia(v as 'all' | 'media' | 'no_media');
                       setPage(1);
                     }}
-                    className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="all">不限</option>
-                    <option value="media">仅带图或视频</option>
-                    <option value="no_media">无图无视频</option>
-                  </select>
+                    options={[
+                      { value: 'all', label: '不限' },
+                      { value: 'media', label: '仅带图或视频' },
+                      { value: 'no_media', label: '无图无视频' },
+                    ]}
+                    size="sm"
+                    className="w-full"
+                    aria-label="图片视频"
+                  />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold text-[#6e6e73]">Verified Purchase</span>
-                  <select
+                  <Select
                     value={filterVp}
-                    onChange={(e) => {
-                      setFilterVp(e.target.value as 'all' | 'vp' | 'non_vp');
+                    onChange={(v) => {
+                      setFilterVp(v as 'all' | 'vp' | 'non_vp');
                       setPage(1);
                     }}
-                    className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="all">不限</option>
-                    <option value="vp">仅 VP</option>
-                    <option value="non_vp">非 VP</option>
-                  </select>
+                    options={[
+                      { value: 'all', label: '不限' },
+                      { value: 'vp', label: '仅 VP' },
+                      { value: 'non_vp', label: '非 VP' },
+                    ]}
+                    size="sm"
+                    className="w-full"
+                    aria-label="Verified Purchase"
+                  />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold text-[#6e6e73]">国家 / 地区</span>
-                  <select
+                  <Select
                     value={filterCountry}
-                    onChange={(e) => {
-                      setFilterCountry(e.target.value);
+                    onChange={(v) => {
+                      setFilterCountry(v);
                       setPage(1);
                     }}
-                    className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="all">全部国家</option>
-                    {allCountries.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: 'all', label: '全部国家' },
+                      ...allCountries.map((c) => ({ value: c, label: c })),
+                    ]}
+                    size="sm"
+                    className="w-full"
+                    aria-label="国家地区"
+                  />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold text-[#6e6e73]">评论时间</span>
-                  <select
+                  <Select
                     value={filterDatePreset}
-                    onChange={(e) => {
-                      setFilterDatePreset(e.target.value as 'all' | '90' | '180' | '365');
+                    onChange={(v) => {
+                      setFilterDatePreset(v as 'all' | '90' | '180' | '365');
                       setPage(1);
                     }}
-                    className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="all">不限</option>
-                    <option value="90">近 90 天</option>
-                    <option value="180">近 180 天</option>
-                    <option value="365">近 365 天</option>
-                  </select>
+                    options={[
+                      { value: 'all', label: '不限' },
+                      { value: '90', label: '近 90 天' },
+                      { value: '180', label: '近 180 天' },
+                      { value: '365', label: '近 365 天' },
+                    ]}
+                    size="sm"
+                    className="w-full"
+                    aria-label="评论时间"
+                  />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold text-[#6e6e73]">有用投票（点赞）</span>
-                  <select
+                  <Select
                     value={filterHelpfulMin}
-                    onChange={(e) => {
-                      setFilterHelpfulMin(e.target.value as 'all' | '1' | '5' | '10');
+                    onChange={(v) => {
+                      setFilterHelpfulMin(v as 'all' | '1' | '5' | '10');
                       setPage(1);
                     }}
-                    className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  >
-                    <option value="all">不限</option>
-                    <option value="1">至少 1</option>
-                    <option value="5">至少 5</option>
-                    <option value="10">至少 10</option>
-                  </select>
+                    options={[
+                      { value: 'all', label: '不限' },
+                      { value: '1', label: '至少 1' },
+                      { value: '5', label: '至少 5' },
+                      { value: '10', label: '至少 10' },
+                    ]}
+                    size="sm"
+                    className="w-full"
+                    aria-label="有用投票"
+                  />
                 </label>
                 <div className="sm:col-span-2 lg:col-span-3 space-y-2">
                   <p className="text-[11px] font-semibold text-[#6e6e73]">VOC 标签（好评 / 差评 / 场景 / 人群）</p>
@@ -1299,79 +1312,75 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="flex flex-col gap-1">
                       <span className="text-[11px] font-semibold text-emerald-800">好评点</span>
-                      <select
+                      <Select
                         value={filterTagPositive ?? ''}
                         disabled={!hasTagged}
-                        onChange={(e) => {
-                          setFilterTagPositive(e.target.value || null);
+                        onChange={(v) => {
+                          setFilterTagPositive(v || null);
                           setPage(1);
                         }}
-                        className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
-                      >
-                        <option value="">不限</option>
-                        {tagOptionsAll.positive.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          { value: '', label: '不限' },
+                          ...tagOptionsAll.positive.map((t) => ({ value: t, label: t })),
+                        ]}
+                        size="sm"
+                        className="w-full"
+                        aria-label="好评点"
+                      />
                     </label>
                     <label className="flex flex-col gap-1">
                       <span className="text-[11px] font-semibold text-rose-800">差评点</span>
-                      <select
+                      <Select
                         value={filterTagNegative ?? ''}
                         disabled={!hasTagged}
-                        onChange={(e) => {
-                          setFilterTagNegative(e.target.value || null);
+                        onChange={(v) => {
+                          setFilterTagNegative(v || null);
                           setPage(1);
                         }}
-                        className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
-                      >
-                        <option value="">不限</option>
-                        {tagOptionsAll.negative.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          { value: '', label: '不限' },
+                          ...tagOptionsAll.negative.map((t) => ({ value: t, label: t })),
+                        ]}
+                        size="sm"
+                        className="w-full"
+                        aria-label="差评点"
+                      />
                     </label>
                     <label className="flex flex-col gap-1">
                       <span className="text-[11px] font-semibold text-indigo-800">使用场景</span>
-                      <select
+                      <Select
                         value={filterTagScenarios ?? ''}
                         disabled={!hasTagged}
-                        onChange={(e) => {
-                          setFilterTagScenarios(e.target.value || null);
+                        onChange={(v) => {
+                          setFilterTagScenarios(v || null);
                           setPage(1);
                         }}
-                        className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
-                      >
-                        <option value="">不限</option>
-                        {tagOptionsAll.scenarios.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          { value: '', label: '不限' },
+                          ...tagOptionsAll.scenarios.map((t) => ({ value: t, label: t })),
+                        ]}
+                        size="sm"
+                        className="w-full"
+                        aria-label="使用场景"
+                      />
                     </label>
                     <label className="flex flex-col gap-1">
                       <span className="text-[11px] font-semibold text-amber-900">目标人群</span>
-                      <select
+                      <Select
                         value={filterTagAudience ?? ''}
                         disabled={!hasTagged}
-                        onChange={(e) => {
-                          setFilterTagAudience(e.target.value || null);
+                        onChange={(v) => {
+                          setFilterTagAudience(v || null);
                           setPage(1);
                         }}
-                        className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
-                      >
-                        <option value="">不限</option>
-                        {tagOptionsAll.audience.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          { value: '', label: '不限' },
+                          ...tagOptionsAll.audience.map((t) => ({ value: t, label: t })),
+                        ]}
+                        size="sm"
+                        className="w-full"
+                        aria-label="目标人群"
+                      />
                     </label>
                   </div>
                 </div>
@@ -1562,20 +1571,33 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                       <CardTitle className="text-sm font-bold">单标签 · 按月趋势</CardTitle>
                       <p className="text-[11px] text-[#86868b] mt-0.5">与上方筛选联动，看某一标签随月份的变化</p>
                     </div>
-                    <select value={trendDim} onChange={(e) => { setTrendDim(e.target.value as 'positive' | 'negative' | 'scenarios' | 'audience'); setTrendTag(null); }} className="text-xs border border-black/5 rounded-lg px-2 py-1 bg-white focus:outline-none ml-auto shrink-0">
-                      <option value="positive">好评点</option>
-                      <option value="negative">差评点</option>
-                      <option value="scenarios">使用场景</option>
-                      <option value="audience">目标人群</option>
-                    </select>
-                    <select value={trendTag ?? ''} onChange={(e) => setTrendTag(e.target.value || null)} className="text-xs border border-black/5 rounded-lg px-2 py-1 bg-white focus:outline-none shrink-0 max-w-[200px]">
-                      <option value="">选择标签</option>
-                      {tagStats[trendDim].map((t) => (
-                        <option key={t.name} value={t.name}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </select>
+                    <Select
+                      value={trendDim}
+                      onChange={(v) => {
+                        setTrendDim(v as 'positive' | 'negative' | 'scenarios' | 'audience');
+                        setTrendTag(null);
+                      }}
+                      options={[
+                        { value: 'positive', label: '好评点' },
+                        { value: 'negative', label: '差评点' },
+                        { value: 'scenarios', label: '使用场景' },
+                        { value: 'audience', label: '目标人群' },
+                      ]}
+                      size="sm"
+                      className="ml-auto shrink-0"
+                      aria-label="趋势维度"
+                    />
+                    <Select
+                      value={trendTag ?? ''}
+                      onChange={(v) => setTrendTag(v || null)}
+                      options={[
+                        { value: '', label: '选择标签' },
+                        ...tagStats[trendDim].map((t) => ({ value: t.name, label: t.name })),
+                      ]}
+                      size="sm"
+                      className="shrink-0 max-w-[200px]"
+                      aria-label="趋势标签"
+                    />
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 h-[280px]">
@@ -1605,12 +1627,22 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                       <CardTitle className="text-sm font-bold">TOP 标签 · 月度对比</CardTitle>
                       <p className="text-[11px] text-[#86868b] mt-0.5">当前维度下出现最多的前 8 个标签，按月对比（无需再选标签）</p>
                     </div>
-                    <select value={trendDim} onChange={(e) => { setTrendDim(e.target.value as 'positive' | 'negative' | 'scenarios' | 'audience'); setTrendTag(null); }} className="text-xs border border-black/5 rounded-lg px-2 py-1 bg-white focus:outline-none ml-auto shrink-0">
-                      <option value="positive">好评点</option>
-                      <option value="negative">差评点</option>
-                      <option value="scenarios">使用场景</option>
-                      <option value="audience">目标人群</option>
-                    </select>
+                    <Select
+                      value={trendDim}
+                      onChange={(v) => {
+                        setTrendDim(v as 'positive' | 'negative' | 'scenarios' | 'audience');
+                        setTrendTag(null);
+                      }}
+                      options={[
+                        { value: 'positive', label: '好评点' },
+                        { value: 'negative', label: '差评点' },
+                        { value: 'scenarios', label: '使用场景' },
+                        { value: 'audience', label: '目标人群' },
+                      ]}
+                      size="sm"
+                      className="ml-auto shrink-0"
+                      aria-label="对比维度"
+                    />
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 h-[280px]">
@@ -2064,22 +2096,26 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                       清除列表条件
                     </button>
                   ) : null}
-                  <select
+                  <Select
                     value={sortBy}
-                    onChange={(e) => { setSortBy(e.target.value as 'helpful' | 'date'); setPage(1); }}
-                    className="text-xs border border-black/5 rounded-lg px-2 py-1.5 bg-white focus:outline-none"
-                  >
-                    <option value="helpful">按点赞数</option>
-                    <option value="date">按评论时间</option>
-                  </select>
-                  <select
+                    onChange={(v) => { setSortBy(v as 'helpful' | 'date'); setPage(1); }}
+                    options={[
+                      { value: 'helpful', label: '按点赞数' },
+                      { value: 'date', label: '按评论时间' },
+                    ]}
+                    size="sm"
+                    aria-label="排序字段"
+                  />
+                  <Select
                     value={sortOrder}
-                    onChange={(e) => { setSortOrder(e.target.value as 'asc' | 'desc'); setPage(1); }}
-                    className="text-xs border border-black/5 rounded-lg px-2 py-1.5 bg-white focus:outline-none"
-                  >
-                    <option value="desc">降序</option>
-                    <option value="asc">升序</option>
-                  </select>
+                    onChange={(v) => { setSortOrder(v as 'asc' | 'desc'); setPage(1); }}
+                    options={[
+                      { value: 'desc', label: '降序' },
+                      { value: 'asc', label: '升序' },
+                    ]}
+                    size="sm"
+                    aria-label="排序方向"
+                  />
                   <span className="text-xs text-[#86868b] whitespace-nowrap">第 {page}/{totalPages} 页 · 本列表 {reviewsForList.length} 条</span>
                   <div className="flex bg-[#f5f5f7] rounded-lg p-1 border border-black/5">
                     <button onClick={() => setPage(p => Math.max(1,p-1))} disabled={page===1} className="p-1 hover:bg-white rounded disabled:opacity-30"><ChevronLeft className="w-4 h-4"/></button>

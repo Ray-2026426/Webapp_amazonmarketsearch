@@ -8,6 +8,7 @@ import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, 
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
+import { Select } from './ui/Select';
 
 type SortKey = 'monthlySales' | 'monthlyRevenue' | 'launchDate' | 'fbaFee' | 'subBsr';
 type SortDir = 'asc' | 'desc';
@@ -230,9 +231,17 @@ ${historyLines}
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-xs text-[#86868b]">聚合:</label>
-                <select value={aggregation} onChange={e => setAggregation(e.target.value as any)} className="text-sm border border-black/5 rounded-lg px-2 py-1 bg-[#f5f5f7] focus:outline-none">
-                  <option value="month">月</option><option value="quarter">季度</option><option value="year">年</option>
-                </select>
+                <Select
+                  value={aggregation}
+                  onChange={(v) => setAggregation(v as 'month' | 'quarter' | 'year')}
+                  options={[
+                    { value: 'month', label: '月' },
+                    { value: 'quarter', label: '季度' },
+                    { value: 'year', label: '年' },
+                  ]}
+                  size="sm"
+                  aria-label="聚合"
+                />
                 <button onClick={() => { setSelectedAsin(null); setAiAnalysis(null); }} className="p-2 hover:bg-black/5 rounded-full"><X className="w-5 h-5 text-[#86868b]"/></button>
               </div>
             </div>

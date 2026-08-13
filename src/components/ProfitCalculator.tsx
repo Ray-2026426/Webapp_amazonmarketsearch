@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { Plus, Trash2, Calculator, Globe, Save, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
+import { Select } from './ui/Select';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, ReferenceLine, Cell, PieChart, Pie } from 'recharts';
 
 interface Variant {
@@ -506,10 +507,21 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
             />
             <span className="text-xs text-[#86868b]">%</span>
           </div>
-          <select value={country.code} onChange={e => { const c=COUNTRIES.find(x=>x.code===e.target.value)!; setCountry(c); setRmbRate(c.rmbRate); setVatRate(c.vatRate); }}
-            className="border border-black/10 rounded-lg px-3 py-2 bg-white text-sm focus:outline-none">
-            {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.currency}){c.vatRate>0?` · VAT ${c.vatRate}%`:''}</option>)}
-          </select>
+          <Select
+            value={country.code}
+            onChange={(v) => {
+              const c = COUNTRIES.find((x) => x.code === v)!;
+              setCountry(c);
+              setRmbRate(c.rmbRate);
+              setVatRate(c.vatRate);
+            }}
+            options={COUNTRIES.map((c) => ({
+              value: c.code,
+              label: `${c.name} (${c.currency})${c.vatRate > 0 ? ` · VAT ${c.vatRate}%` : ''}`,
+            }))}
+            size="sm"
+            aria-label="国家站点"
+          />
           <button onClick={()=>setShowSavePanel(v=>!v)} className="flex items-center gap-1.5 border border-black/10 rounded-xl px-3 py-2 text-sm hover:bg-[#f5f5f7]">
             <Save className="w-4 h-4"/><span>存档</span>
           </button>

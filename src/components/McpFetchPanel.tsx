@@ -6,6 +6,7 @@ import {
   normalizeMarketplaceCode,
   parseAsinList,
 } from '../utils/sellerspriteApi';
+import { Select } from './ui/Select';
 
 export type McpFetchMode = 'reviews' | 'keywords';
 
@@ -285,17 +286,14 @@ export function McpFetchPanel({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-[#86868b] font-medium block mb-1">站点</label>
-                  <select
+                  <Select
                     value={marketplace}
-                    onChange={(e) => setMarketplace(normalizeMarketplaceCode(e.target.value))}
-                    className="w-full border border-black/10 rounded-xl px-2 py-2 text-sm bg-white"
-                  >
-                    {SELLERSPRITE_MARKETPLACES.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setMarketplace(normalizeMarketplaceCode(v))}
+                    options={SELLERSPRITE_MARKETPLACES.map((m) => ({ value: m, label: m }))}
+                    size="sm"
+                    className="w-full"
+                    aria-label="站点"
+                  />
                 </div>
                 <div>
                   <label className="text-xs text-[#86868b] font-medium block mb-1">
@@ -312,17 +310,17 @@ export function McpFetchPanel({
                       </span>
                     )}
                   </label>
-                  <select
-                    value={maxPages}
-                    onChange={(e) => setMaxPages(parseInt(e.target.value, 10) || 1)}
-                    className="w-full border border-black/10 rounded-xl px-2 py-2 text-sm bg-white"
-                  >
-                    {targetOptions.map((opt) => (
-                      <option key={opt.pages} value={opt.pages}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    value={String(maxPages)}
+                    onChange={(v) => setMaxPages(parseInt(v, 10) || 1)}
+                    options={targetOptions.map((opt) => ({
+                      value: String(opt.pages),
+                      label: opt.label,
+                    }))}
+                    size="sm"
+                    className="w-full"
+                    aria-label={mode === 'reviews' ? '目标评论条数' : '目标关键词数量'}
+                  />
                   <div className="text-[10px] text-[#86868b] mt-1 leading-relaxed">{perPageHint}</div>
                 </div>
               </div>

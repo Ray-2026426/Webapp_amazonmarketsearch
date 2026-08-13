@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend, Cell } from 'recharts';
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
 import { ProductModal } from './ProductModal';
+import { Select } from './ui/Select';
 
 interface NewVsOldChartProps {
   products: Product[];
@@ -107,10 +108,13 @@ export const NewVsOldChart = React.memo(function NewVsOldChart({ products, domai
             </div>
             <div className="flex items-center gap-2">
               <label className="text-xs text-[#86868b] font-medium">新品阈值:</label>
-              <select value={thresholdDays} onChange={e => setThresholdDays(Number(e.target.value))}
-                className="text-xs border border-black/10 rounded-lg px-2 py-1.5 bg-[#f5f5f7] focus:outline-none">
-                {THRESHOLD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              <Select
+                value={String(thresholdDays)}
+                onChange={(v) => setThresholdDays(Number(v))}
+                options={THRESHOLD_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
+                size="sm"
+                aria-label="新品阈值"
+              />
             </div>
           </div>
         </CardHeader>

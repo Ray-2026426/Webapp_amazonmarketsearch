@@ -38,6 +38,7 @@ import { BsrDistributionChart } from './components/BsrDistributionChart';
 import { PriceRatingChart } from './components/PriceRatingChart';
 import { MarketConcentrationChart } from './components/MarketConcentrationChart';
 import { AvatarSettingsModal } from './components/AvatarSettingsModal';
+import { Select } from './components/ui/Select';
 import { AnchorAnnotationsLayer } from './components/AnchorAnnotationsLayer';
 import type { AnchorAnnotation } from './utils/anchorAnnotations';
 import { normalizeAnchorAnnotations } from './utils/anchorAnnotations';
@@ -1309,18 +1310,17 @@ export default function App() {
 
               {/* Segment Filter */}
               <div className="relative">
-                <div className="flex items-center gap-2 bg-white/60 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-black/[0.06] shadow-sm hover:border-indigo-200 transition-colors group cursor-pointer">
+                <div className="flex items-center gap-2 bg-white/60 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-black/[0.06] shadow-sm hover:border-indigo-200 transition-colors group">
                   <Filter className="w-3.5 h-3.5 text-indigo-400 group-hover:text-indigo-600 transition-colors" />
-                  <select 
+                  <Select
                     value={selectedSegment}
-                    onChange={(e) => setSelectedSegment(e.target.value)}
-                    className="appearance-none bg-transparent text-sm font-medium text-[#1d1d1f] focus:outline-none cursor-pointer pr-4 min-w-[120px]"
-                  >
-                    {segmentFilterOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                  <div className="w-0 h-0 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-[#86868b] group-hover:border-t-indigo-600 transition-colors" />
+                    onChange={setSelectedSegment}
+                    options={segmentFilterOptions}
+                    size="sm"
+                    variant="ghost"
+                    className="min-w-[120px]"
+                    aria-label="市场细分筛选"
+                  />
                 </div>
               </div>
               <div className="text-[13px] font-medium text-[#86868b] bg-[#f5f5f7] px-3 py-1.5 rounded-full border border-black/5">

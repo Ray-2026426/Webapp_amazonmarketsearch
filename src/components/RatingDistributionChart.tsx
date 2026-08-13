@@ -4,6 +4,7 @@ import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, 
 import { Product, HistoryRecord, formatRevenue } from '../utils/parser';
 import { buildAsinPeriodStatsMap, getAsinPeriodStats } from '../utils/chartHistory';
 import { ProductModal } from './ProductModal';
+import { Select } from './ui/Select';
 
 interface RatingDistributionChartProps {
   products: Product[];
@@ -95,30 +96,34 @@ export const RatingDistributionChart = React.memo(function RatingDistributionCha
           <CardTitle>评分分布</CardTitle>
           <CardDescription>各评分区间的ASIN数量和{metric === 'sales' ? '销量' : '销售额'}。</CardDescription>
         </div>
-        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
             <label className="text-xs text-[#86868b] font-medium">指标:</label>
-            <select 
-              value={metric} 
-              onChange={(e) => setMetric(e.target.value as 'sales' | 'revenue')}
-              className="text-sm border border-black/5 rounded-lg px-2 py-1 bg-[#f5f5f7] text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-            >
-              <option value="sales">销量</option>
-              <option value="revenue">销售额</option>
-            </select>
+            <Select
+              value={metric}
+              onChange={(v) => setMetric(v as 'sales' | 'revenue')}
+              options={[
+                { value: 'sales', label: '销量' },
+                { value: 'revenue', label: '销售额' },
+              ]}
+              size="sm"
+              aria-label="指标"
+            />
           </div>
           <div className="flex items-center space-x-2">
             <label className="text-xs text-[#86868b] font-medium">梯度:</label>
-            <select 
-              value={step} 
-              onChange={(e) => setStep(Number(e.target.value))}
-              className="text-sm border border-black/5 rounded-lg px-2 py-1 bg-[#f5f5f7] text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-            >
-              <option value={0.1}>0.1</option>
-              <option value={0.2}>0.2</option>
-              <option value={0.5}>0.5</option>
-              <option value={1.0}>1.0</option>
-            </select>
+            <Select
+              value={String(step)}
+              onChange={(v) => setStep(Number(v))}
+              options={[
+                { value: '0.1', label: '0.1' },
+                { value: '0.2', label: '0.2' },
+                { value: '0.5', label: '0.5' },
+                { value: '1', label: '1.0' },
+              ]}
+              size="sm"
+              aria-label="梯度"
+            />
           </div>
         </div>
       </CardHeader>

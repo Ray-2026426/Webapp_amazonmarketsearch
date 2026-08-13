@@ -37,6 +37,7 @@ import {
 import { testMcpProvider } from '../utils/sellerspriteApi';
 import { toast } from 'sonner';
 import { AiPromptManager } from './AiPromptManager';
+import { Select } from './ui/Select';
 
 type SettingsTab = 'api' | 'profile' | 'mcp' | 'features' | 'prompts';
 
@@ -324,27 +325,26 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-bold text-[#1d1d1f]" htmlFor="ai-model-select">
+                <label className="text-sm font-bold text-[#1d1d1f]">
                   模型
                 </label>
                 <p className="text-xs text-[#86868b]">不同模型在速度、成本与能力上不同，请按供应商文档选择。</p>
-                <select
-                  id="ai-model-select"
+                <Select
                   value={model}
-                  onChange={(e) => { setModel(e.target.value); setTestResult(null); }}
-                  className="w-full px-4 py-2.5 bg-[#f5f5f7] border border-black/5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-                >
-                  {cfg.models.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                  {currentCustomModels.length > 0 && (
-                    <optgroup label="── 自定义模型 ──">
-                      {currentCustomModels.map((m) => (
-                        <option key={`custom-${m}`} value={m}>{m}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
+                  onChange={(v) => { setModel(v); setTestResult(null); }}
+                  options={cfg.models.map((m) => ({ value: m, label: m }))}
+                  groups={
+                    currentCustomModels.length > 0
+                      ? [{
+                          label: '自定义模型',
+                          options: currentCustomModels.map((m) => ({ value: m, label: m })),
+                        }]
+                      : undefined
+                  }
+                  size="md"
+                  className="w-full"
+                  aria-label="模型"
+                />
 
                 <div className="mt-2 p-3 bg-[#f5f5f7] rounded-xl border border-black/5">
                   <div className="flex items-center gap-2">

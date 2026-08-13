@@ -147,6 +147,43 @@ body {
   }
 }
 
+/* ── 原生 select 兜底美化（若有残留原生控件也统一观感） ── */
+select:not([multiple]) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #fff;
+  background-image:
+    linear-gradient(180deg, #ffffff 0%, #f8f9fb 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2386868b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat;
+  background-position: 0 0, right 0.65rem center;
+  background-size: auto, 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 0.75rem;
+  padding: 0.4rem 2rem 0.4rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #1d1d1f;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+select:not([multiple]):hover {
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+select:not([multiple]):focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.55);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+select:not([multiple]):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 拖放批注时让命中测试穿过气泡，落到下层锚点区域 */
 body.annotation-pin-pass-through [data-annotation-pin] {
   pointer-events: none !important;

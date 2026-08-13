@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 import { HistoryRecord, Product, getCurrencySymbol, formatRevenue } from '../utils/parser';
 import { ProductModal } from './ProductModal';
+import { Select } from './ui/Select';
 
 interface MarketTrendChartProps {
   history: HistoryRecord[];
@@ -122,15 +123,17 @@ export const MarketTrendChart = React.memo(function MarketTrendChart({ history, 
         </div>
         <div className="flex items-center space-x-2">
           <label className="text-xs text-[#86868b] font-medium">聚合方式:</label>
-          <select 
-            value={aggregation} 
-            onChange={(e) => setAggregation(e.target.value as AggregationType)}
-            className="text-sm border border-black/5 rounded-lg px-2 py-1 bg-[#f5f5f7] text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-          >
-            <option value="month">月</option>
-            <option value="quarter">季度</option>
-            <option value="year">年</option>
-          </select>
+          <Select
+            value={aggregation}
+            onChange={(v) => setAggregation(v as AggregationType)}
+            options={[
+              { value: 'month', label: '月' },
+              { value: 'quarter', label: '季度' },
+              { value: 'year', label: '年' },
+            ]}
+            size="sm"
+            aria-label="聚合方式"
+          />
         </div>
       </CardHeader>
       <CardContent>

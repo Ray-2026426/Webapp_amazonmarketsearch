@@ -4,6 +4,7 @@ import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, 
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
 import { ProductModal } from './ProductModal';
 import { ChevronDown } from 'lucide-react';
+import { Select } from './ui/Select';
 
 interface PriceDistributionChartProps {
   products: Product[];
@@ -268,28 +269,32 @@ export const PriceDistributionChart = React.memo(function PriceDistributionChart
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 <div className="flex items-center gap-1.5">
                   <label className="text-xs text-[#86868b] font-medium">指标:</label>
-                  <select
+                  <Select
                     value={metric}
-                    onChange={e => setMetric(e.target.value as Metric)}
-                    className="text-xs border border-black/10 rounded-lg px-2 py-1.5 bg-[#f5f5f7] text-[#1d1d1f] focus:outline-none"
-                  >
-                    <option value="sales">销量</option>
-                    <option value="revenue">销售额</option>
-                  </select>
+                    onChange={(v) => setMetric(v as Metric)}
+                    options={[
+                      { value: 'sales', label: '销量' },
+                      { value: 'revenue', label: '销售额' },
+                    ]}
+                    size="sm"
+                    aria-label="指标"
+                  />
                 </div>
                 <div className="flex items-center gap-1.5">
                   <label className="text-xs text-[#86868b] font-medium">跨度:</label>
-                  <select
-                    value={step}
-                    onChange={e => setStep(Number(e.target.value))}
-                    className="text-xs border border-black/10 rounded-lg px-2 py-1.5 bg-[#f5f5f7] text-[#1d1d1f] focus:outline-none"
-                  >
-                    <option value={5}>{currency}5</option>
-                    <option value={10}>{currency}10</option>
-                    <option value={20}>{currency}20</option>
-                    <option value={50}>{currency}50</option>
-                    <option value={100}>{currency}100</option>
-                  </select>
+                  <Select
+                    value={String(step)}
+                    onChange={(v) => setStep(Number(v))}
+                    options={[
+                      { value: '5', label: `${currency}5` },
+                      { value: '10', label: `${currency}10` },
+                      { value: '20', label: `${currency}20` },
+                      { value: '50', label: `${currency}50` },
+                      { value: '100', label: `${currency}100` },
+                    ]}
+                    size="sm"
+                    aria-label="跨度"
+                  />
                 </div>
               </div>
             </div>

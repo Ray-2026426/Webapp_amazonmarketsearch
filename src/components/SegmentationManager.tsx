@@ -7,6 +7,7 @@ import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { TitleWordCloudModal } from './TitleWordCloudModal';
+import { Select } from './ui/Select';
 import {
   parseFilterTerms,
   productSearchHaystack,
@@ -1267,7 +1268,7 @@ ${batchInfo}`;
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                   <span className="text-xs font-semibold text-[#1d1d1f] shrink-0">筛选分类</span>
-                  <select
+                  <Select
                     value={
                       selectedManagerSegment === null
                         ? 'all'
@@ -1275,8 +1276,7 @@ ${batchInfo}`;
                           ? UNCATEGORIZED_FILTER_KEY
                           : selectedManagerSegment
                     }
-                    onChange={(e) => {
-                      const v = e.target.value;
+                    onChange={(v) => {
                       if (v === 'all') {
                         setSelectedManagerSegment(null);
                         setSubTaggingParent('');
@@ -1290,20 +1290,17 @@ ${batchInfo}`;
                       }
                       setCurrentPage(1);
                     }}
-                    className="w-full sm:max-w-xs px-3 py-2 bg-[#f5f5f7] border border-black/10 rounded-xl text-sm font-medium text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    <option value="all">全部</option>
-                    <option value={UNCATEGORIZED_FILTER_KEY}>未分类</option>
-                    {segments.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                    {segmentDepth >= 2 && subSegmentOptions.map((opt) => (
-                      <option key={opt.key} value={opt.key}>{opt.label}</option>
-                    ))}
-                    {segmentDepth >= 3 && level3SegmentOptions.map((opt) => (
-                      <option key={opt.key} value={opt.key}>{opt.label}</option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: 'all', label: '全部' },
+                      { value: UNCATEGORIZED_FILTER_KEY, label: '未分类' },
+                      ...segments.map((s) => ({ value: s, label: s })),
+                      ...(segmentDepth >= 2 ? subSegmentOptions.map((opt) => ({ value: opt.key, label: opt.label })) : []),
+                      ...(segmentDepth >= 3 ? level3SegmentOptions.map((opt) => ({ value: opt.key, label: opt.label })) : []),
+                    ]}
+                    size="sm"
+                    className="w-full sm:max-w-xs"
+                    aria-label="筛选分类"
+                  />
                 </div>
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5 min-w-0">
@@ -1416,44 +1413,49 @@ ${batchInfo}`;
                     <span className="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
                       已选 {selectedAsins.size}
                     </span>
-                    <select 
-                      onChange={(e) => handleBulkTag(e.target.value)}
-                      className="px-3 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-sm"
-                      value=""
-                    >
-                      <option value="" disabled>批量打标为...</option>
-                      <option value="">未分类</option>
-                      {segments.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <Select
+                      value="__bulk_ph__"
+                      onChange={(v) => handleBulkTag(v)}
+                      options={[
+                        { value: '', label: '未分类' },
+                        ...segments.map((s) => ({ value: s, label: s })),
+                      ]}
+                      placeholder="批量打标为..."
+                      size="sm"
+                      triggerClassName="bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700 shadow-sm"
+                      aria-label="批量打标"
+                    />
                     {segmentDepth >= 2 && bulkSubChildren.length > 0 && (
-                      <select
-                        onChange={(e) => {
-                          if (e.target.value) handleBulkSubTag(bulkSubParent, e.target.value);
-                          e.target.value = '';
+                      <Select
+                        value="__bulk_ph__"
+                        onChange={(v) => {
+                          if (v) handleBulkSubTag(bulkSubParent, v);
                         }}
-                        className="px-3 py-2 bg-violet-600 text-white rounded-xl text-sm font-medium focus:outline-none cursor-pointer shadow-sm"
-                        value=""
-                      >
-                        <option value="" disabled>批量打层级 2...</option>
-                        {bulkSubChildren.map((c) => (
-                          <option key={c} value={c}>{bulkSubParent} / {c}</option>
-                        ))}
-                      </select>
+                        options={bulkSubChildren.map((c) => ({
+                          value: c,
+                          label: `${bulkSubParent} / ${c}`,
+                        }))}
+                        placeholder="批量打层级 2..."
+                        size="sm"
+                        triggerClassName="bg-violet-600 text-white border-violet-600 hover:bg-violet-700 shadow-sm"
+                        aria-label="批量打层级2"
+                      />
                     )}
                     {bulkLevel3List.length > 0 && bulkL3L1 && bulkL3L2 && (
-                      <select
-                        onChange={(e) => {
-                          if (e.target.value) handleBulkLevel3Tag(bulkL3L1, bulkL3L2, e.target.value);
-                          e.target.value = '';
+                      <Select
+                        value="__bulk_ph__"
+                        onChange={(v) => {
+                          if (v) handleBulkLevel3Tag(bulkL3L1, bulkL3L2, v);
                         }}
-                        className="px-3 py-2 bg-sky-600 text-white rounded-xl text-sm font-medium focus:outline-none cursor-pointer shadow-sm"
-                        value=""
-                      >
-                        <option value="" disabled>批量打层级 3...</option>
-                        {bulkLevel3List.map((l3) => (
-                          <option key={l3} value={l3}>{formatSegmentLabel(bulkL3L1, bulkL3L2, l3)}</option>
-                        ))}
-                      </select>
+                        options={bulkLevel3List.map((l3) => ({
+                          value: l3,
+                          label: formatSegmentLabel(bulkL3L1, bulkL3L2, l3),
+                        }))}
+                        placeholder="批量打层级 3..."
+                        size="sm"
+                        triggerClassName="bg-sky-600 text-white border-sky-600 hover:bg-sky-700 shadow-sm"
+                        aria-label="批量打层级3"
+                      />
                     )}
                     <button 
                       onClick={() => setSelectedAsins(new Set())}
@@ -1547,43 +1549,48 @@ ${batchInfo}`;
                         </div>
                       </td>
                       <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                        <select 
+                        <Select
                           value={asinToSegment[p.asin] || ''}
-                          onChange={(e) => handleTagProduct(p.asin, e.target.value)}
-                          className="w-full max-w-[140px] px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none cursor-pointer"
-                        >
-                          <option value="">未分类</option>
-                          {segments.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
+                          onChange={(v) => handleTagProduct(p.asin, v)}
+                          options={[
+                            { value: '', label: '未分类' },
+                            ...segments.map((s) => ({ value: s, label: s })),
+                          ]}
+                          size="sm"
+                          className="w-full max-w-[140px]"
+                          aria-label="层级1分类"
+                        />
                       </td>
                       {segmentDepth >= 2 && (
                       <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                        <select
+                        <Select
                           value={asinToSubSegment[p.asin] || ''}
                           disabled={!asinToSegment[p.asin]}
-                          onChange={(e) => handleSubTagProduct(p.asin, asinToSegment[p.asin], e.target.value)}
-                          className="w-full max-w-[140px] px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 appearance-none cursor-pointer disabled:opacity-40"
-                        >
-                          <option value="">无</option>
-                          {(segmentChildren[asinToSegment[p.asin]] || []).map((c) => (
-                            <option key={c} value={c}>{c}</option>
-                          ))}
-                        </select>
+                          onChange={(v) => handleSubTagProduct(p.asin, asinToSegment[p.asin], v)}
+                          options={[
+                            { value: '', label: '无' },
+                            ...(segmentChildren[asinToSegment[p.asin]] || []).map((c) => ({ value: c, label: c })),
+                          ]}
+                          size="sm"
+                          className="w-full max-w-[140px]"
+                          aria-label="层级2分类"
+                        />
                       </td>
                       )}
                       {segmentDepth >= 3 && (
                       <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                        <select
+                        <Select
                           value={asinToLevel3Segment[p.asin] || ''}
                           disabled={!asinToSegment[p.asin] || !asinToSubSegment[p.asin]}
-                          onChange={(e) => handleLevel3TagProduct(p.asin, asinToSegment[p.asin], asinToSubSegment[p.asin], e.target.value)}
-                          className="w-full max-w-[140px] px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none cursor-pointer disabled:opacity-40"
-                        >
-                          <option value="">无</option>
-                          {(segmentLevel3Children[makeLevel2ParentKey(asinToSegment[p.asin], asinToSubSegment[p.asin])] || []).map((l3) => (
-                            <option key={l3} value={l3}>{l3}</option>
-                          ))}
-                        </select>
+                          onChange={(v) => handleLevel3TagProduct(p.asin, asinToSegment[p.asin], asinToSubSegment[p.asin], v)}
+                          options={[
+                            { value: '', label: '无' },
+                            ...(segmentLevel3Children[makeLevel2ParentKey(asinToSegment[p.asin], asinToSubSegment[p.asin])] || []).map((l3) => ({ value: l3, label: l3 })),
+                          ]}
+                          size="sm"
+                          className="w-full max-w-[140px]"
+                          aria-label="层级3分类"
+                        />
                       </td>
                       )}
                     </tr>

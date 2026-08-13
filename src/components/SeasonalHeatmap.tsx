@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { HistoryRecord, getCurrencySymbol } from '../utils/parser';
 import { Flame } from 'lucide-react';
+import { Select } from './ui/Select';
 
 interface Props {
   history: HistoryRecord[];
@@ -161,11 +162,17 @@ export const SeasonalHeatmap = React.memo(function SeasonalHeatmap({ history, mo
           </div>
           <div className="flex items-center gap-1.5">
             <label className="text-xs text-[#86868b] font-medium">指标:</label>
-            <select value={metric} onChange={e => setMetric(e.target.value as MetricType)} className="text-xs border border-black/10 rounded-lg px-2 py-1.5 bg-[#f5f5f7] focus:outline-none">
-              <option value="sales">销量</option>
-              <option value="revenue">销售额</option>
-              <option value="avgPrice">平均价格</option>
-            </select>
+            <Select
+              value={metric}
+              onChange={(v) => setMetric(v as MetricType)}
+              options={[
+                { value: 'sales', label: '销量' },
+                { value: 'revenue', label: '销售额' },
+                { value: 'avgPrice', label: '平均价格' },
+              ]}
+              size="sm"
+              aria-label="指标"
+            />
           </div>
         </div>
       </CardHeader>

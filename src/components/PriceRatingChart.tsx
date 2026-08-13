@@ -5,6 +5,7 @@ import { Product, getCurrencySymbol } from '../utils/parser';
 import { ProductModal } from './ProductModal';
 import { HistoryRecord } from '../utils/parser';
 import { Gem, ChevronDown, ChevronUp, ExternalLink, Star, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Select } from './ui/Select';
 
 interface Props {
   products: Product[];
@@ -193,22 +194,34 @@ export const PriceRatingChart = React.memo(function PriceRatingChart({
             <div className="flex items-center gap-3 flex-wrap justify-end">
               <div className="flex items-center gap-1.5">
                 <label className="text-xs text-[#86868b] font-medium">价格上限:</label>
-                <select value={maxPrice} onChange={e => setMaxPrice(Number(e.target.value))} className="text-xs border border-black/10 rounded-lg px-2 py-1.5 bg-[#f5f5f7] focus:outline-none">
-                  <option value={30}>{currency}30</option>
-                  <option value={50}>{currency}50</option>
-                  <option value={100}>{currency}100</option>
-                  <option value={200}>{currency}200</option>
-                  <option value={99999}>不限</option>
-                </select>
+                <Select
+                  value={String(maxPrice)}
+                  onChange={(v) => setMaxPrice(Number(v))}
+                  options={[
+                    { value: '30', label: `${currency}30` },
+                    { value: '50', label: `${currency}50` },
+                    { value: '100', label: `${currency}100` },
+                    { value: '200', label: `${currency}200` },
+                    { value: '99999', label: '不限' },
+                  ]}
+                  size="sm"
+                  aria-label="价格上限"
+                />
               </div>
               <div className="flex items-center gap-1.5">
                 <label className="text-xs text-[#86868b] font-medium">销量下限:</label>
-                <select value={minSales} onChange={e => setMinSales(Number(e.target.value))} className="text-xs border border-black/10 rounded-lg px-2 py-1.5 bg-[#f5f5f7] focus:outline-none">
-                  <option value={0}>不限</option>
-                  <option value={50}>≥50</option>
-                  <option value={100}>≥100</option>
-                  <option value={300}>≥300</option>
-                </select>
+                <Select
+                  value={String(minSales)}
+                  onChange={(v) => setMinSales(Number(v))}
+                  options={[
+                    { value: '0', label: '不限' },
+                    { value: '50', label: '≥50' },
+                    { value: '100', label: '≥100' },
+                    { value: '300', label: '≥300' },
+                  ]}
+                  size="sm"
+                  aria-label="销量下限"
+                />
               </div>
             </div>
           </div>
