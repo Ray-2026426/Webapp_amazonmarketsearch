@@ -123,6 +123,23 @@ const pageCss = `
     0% { background-position: 0% 50%; }
     100% { background-position: 200% 50%; }
   }
+  .demand-glow-wrap {
+    position: relative;
+    display: inline-block;
+    overflow: hidden;
+    vertical-align: baseline;
+    border-radius: 4px;
+  }
+  .demand-glow-wrap::after {
+    content: '';
+    position: absolute;
+    inset: -10% -20%;
+    background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.65) 50%, transparent 65%);
+    transform: translateX(-120%);
+    animation: cta-shine 2.8s ease-in-out infinite;
+    pointer-events: none;
+    mix-blend-mode: soft-light;
+  }
   .demand-glow {
     display: inline-block;
     background-image: linear-gradient(90deg, #4f46e5, #8b5cf6, #6366f1, #4f46e5);
@@ -184,7 +201,8 @@ const pageCss = `
     .amz-login-page .drift-particle,
     .amz-login-page .cta-insight,
     .amz-login-page .cta-insight::after,
-    .amz-login-page .demand-glow { animation: none !important; }
+    .amz-login-page .demand-glow,
+    .amz-login-page .demand-glow-wrap::after { animation: none !important; }
   }
 `;
 
@@ -857,7 +875,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             <h1 className="font-display text-[2.6rem] sm:text-[3rem] lg:text-[3.5rem] text-[#1d1d1f] tracking-tight leading-[1.08] mb-4">
               洞察数据背后的
               <br />
-              <span className="demand-glow">真需求</span>
+              <span className="demand-glow-wrap"><span className="demand-glow">真需求</span></span>
             </h1>
             <p className="text-[#424245] text-lg lg:text-xl leading-snug mb-3 max-w-md">
               AI 读懂搜索词与买家真话，把零散数据还原成用户洞察——谁要买、为何买、还缺什么。

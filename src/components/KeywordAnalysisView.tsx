@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { Keyword } from '../utils/parser';
 import {
-  ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell,
   BarChart, Bar,
 } from 'recharts';
 import {
@@ -53,33 +53,134 @@ const TB = () => (
 const safeJobMeta = (jobType?: string) =>
   (jobType && JOB_TYPE_META[jobType as keyof typeof JOB_TYPE_META]) || JOB_TYPE_META.functional;
 
-const JTBDTip = ({ active, payload }: any) => {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload as JTBDStat & { color: string };
-  const jm = safeJobMeta(d.jobType);
+/** 自绘气泡图：避开 Recharts Scatter/ZAxis 在生产环境的 constructor 崩溃 */
+function JTBDBubbleMap({
+  points,
+  mode,
+  onJobClick,
+}: {
+  points: Array<Record<string, any>>;
+  mode: 'job' | 'keyword';
+  onJobClick: (job: string) => void;
+}) {
+  const [hover, setHover] = useState<{ d: Record<string, any>; cx: number; cy: number } | null>(null);
+  const W = 720;
+  const H = 400;
+  const pad = { t: 28, r: 28, b: 48, l: 56 };
+
+  const layout = useMemo(() => {
+    if (!points.length) return null;
+    const xs = points.map(p => Number(p.x) || 0);
+    const ys = points.map(p => Number(p.y) || 0);
+    const zs = points.map(p => Number(p.z) || 1);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const minZ = Math.min(...zs);
+    const maxZ = Math.max(...zs);
+    const spanX = maxX - minX || 1;
+    const spanY = maxY - minY || 1;
+    const spanZ = maxZ - minZ || 1;
+    const sx = (x: number) => pad.l + ((x - minX) / spanX) * (W - pad.l - pad.r);
+    const sy = (y: number) => pad.t + (1 - (y - minY) / spanY) * (H - pad.t - pad.b);
+    const sr = (z: number) => 9 + ((z - minZ) / spanZ) * (mode === 'job' ? 18 : 14);
+    const ticksX = [0, 0.25, 0.5, 0.75, 1].map(t => minX + spanX * t);
+    const ticksY = [0, 0.25, 0.5, 0.75, 1].map(t => minY + spanY * t);
+    return { sx, sy, sr, ticksX, ticksY, minX, maxX, minY, maxY };
+  }, [points, mode]);
+
+  if (!points.length || !layout) {
+    return <div className="h-full flex items-center justify-center text-sm text-[#86868b]">暂无地图数据</div>;
+  }
+
+  const { sx, sy, sr, ticksX, ticksY } = layout;
+
   return (
-    <div className="bg-white border border-black/10 rounded-2xl shadow-xl p-4 max-w-[260px]">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="font-bold text-[#1d1d1f] text-sm truncate">{d.job}</span>
-        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
-          style={{ color: scoreColor(d.opportunityScore), backgroundColor: `${scoreColor(d.opportunityScore)}1A` }}>
-          {d.opportunityScore}分
-        </span>
-      </div>
-      <div className="space-y-1 text-xs text-[#86868b]">
-        {[['任务类型', jm.label], ['周搜索量', d.totalVolume.toLocaleString()], ['平均CPC', `$${Number(d.avgCpc || 0).toFixed(2)}`], ['均CVR', `${(Number(d.avgCvr || 0) * 100).toFixed(1)}%`], ['平均难度', Number(d.avgDifficulty || 0).toFixed(1)], ['词数', String(d.count)],
-        ].map(([l, v]) => (
-          <div key={String(l)} className="flex justify-between gap-4"><span>{l}</span><span className="font-semibold text-[#1d1d1f]">{v}</span></div>
+    <div className="relative w-full h-full" onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" role="img" aria-label="JTBD 需求-竞争地图">
+        {ticksX.map((tx, i) => (
+          <line key={`vx${i}`} x1={sx(tx)} y1={pad.t} x2={sx(tx)} y2={H - pad.b} stroke="#e5e7eb" strokeDasharray="3 3" />
         ))}
-      </div>
-      {d.topKeywords?.length > 0 && (
-        <div className="mt-2 pt-2 border-t border-black/5"><div className="text-[10px] text-[#86868b] mb-1">代表词</div>
-          <div className="flex flex-wrap gap-1">{d.topKeywords.slice(0, 3).map((kw: string) => (<span key={kw} className="text-[10px] bg-[#f5f5f7] px-1.5 py-0.5 rounded">{kw}</span>))}</div>
+        {ticksY.map((ty, i) => (
+          <line key={`hy${i}`} x1={pad.l} y1={sy(ty)} x2={W - pad.r} y2={sy(ty)} stroke="#e5e7eb" strokeDasharray="3 3" />
+        ))}
+        {ticksX.map((tx, i) => (
+          <text key={`xl${i}`} x={sx(tx)} y={H - 18} textAnchor="middle" fill="#86868b" fontSize="11">
+            {tx >= 1000 ? `${(tx / 1000).toFixed(0)}k` : Math.round(tx)}
+          </text>
+        ))}
+        {ticksY.map((ty, i) => (
+          <text key={`yl${i}`} x={pad.l - 8} y={sy(ty) + 4} textAnchor="end" fill="#86868b" fontSize="11">
+            ${ty.toFixed(2)}
+          </text>
+        ))}
+        <text x={W / 2} y={H - 4} textAnchor="middle" fill="#aeaeb2" fontSize="11">需求（周搜）</text>
+        <text x={14} y={H / 2} textAnchor="middle" fill="#aeaeb2" fontSize="11" transform={`rotate(-90 14 ${H / 2})`}>竞争 CPC</text>
+        {points.map((d, i) => {
+          const cx = sx(Number(d.x) || 0);
+          const cy = sy(Number(d.y) || 0);
+          const r = sr(Number(d.z) || 1);
+          const job = String(d.job || '');
+          return (
+            <circle
+              key={i}
+              cx={cx}
+              cy={cy}
+              r={r}
+              fill={d.color || '#6366f1'}
+              fillOpacity={0.82}
+              stroke="#fff"
+              strokeWidth={1.5}
+              style={{ cursor: job ? 'pointer' : 'default' }}
+              onMouseEnter={() => setHover({ d, cx, cy })}
+              onClick={() => { if (job) onJobClick(job); }}
+            />
+          );
+        })}
+      </svg>
+      {hover && (
+        <div
+          className="pointer-events-none absolute z-10 bg-white border border-black/10 rounded-2xl shadow-xl p-3 max-w-[240px] text-xs"
+          style={{
+            left: Math.min(Math.max(hover.cx / W * 100, 18), 72) + '%',
+            top: Math.max(8, (hover.cy / H) * 100 - 8) + '%',
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          {mode === 'job' ? (
+            <>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="font-bold text-sm text-[#1d1d1f] truncate">{hover.d.job}</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                  style={{ color: scoreColor(hover.d.opportunityScore || 0), backgroundColor: `${scoreColor(hover.d.opportunityScore || 0)}1A` }}>
+                  {hover.d.opportunityScore}分
+                </span>
+              </div>
+              <div className="space-y-1 text-[#86868b]">
+                <div className="flex justify-between gap-4"><span>类型</span><span className="font-semibold text-[#1d1d1f]">{safeJobMeta(hover.d.jobType).label}</span></div>
+                <div className="flex justify-between gap-4"><span>周搜</span><span className="font-semibold text-[#1d1d1f]">{Number(hover.d.x || 0).toLocaleString()}</span></div>
+                <div className="flex justify-between gap-4"><span>CPC</span><span className="font-semibold text-[#1d1d1f]">${Number(hover.d.y || 0).toFixed(2)}</span></div>
+                <div className="flex justify-between gap-4"><span>词数</span><span className="font-semibold text-[#1d1d1f]">{hover.d.count}</span></div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="font-bold text-sm text-[#1d1d1f] mb-1">{hover.d.keyword}</div>
+              {hover.d.translation && <div className="text-[#86868b] mb-2">{hover.d.translation}</div>}
+              <div className="space-y-1 text-[#86868b]">
+                <div className="flex justify-between gap-4"><span>任务</span><span className="font-semibold text-[#1d1d1f]">{hover.d.job}</span></div>
+                <div className="flex justify-between gap-4"><span>周搜</span><span className="font-semibold text-[#1d1d1f]">{Number(hover.d.x || 0).toLocaleString()}</span></div>
+                <div className="flex justify-between gap-4"><span>CPC</span><span className="font-semibold text-[#1d1d1f]">${Number(hover.d.y || 0).toFixed(2)}</span></div>
+                <div className="flex justify-between gap-4"><span>CVR</span><span className="font-semibold text-[#1d1d1f]">{(Number(hover.d.cvr || 0) * 100).toFixed(1)}%</span></div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
   );
-};
+}
 
 function Pager({ page, total, onChange }: { page: number; total: number; onChange: (p: number) => void }) {
   if (total <= 1) return null;
@@ -460,17 +561,20 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
 
   const kwScat = useMemo(() => {
     const withJob = keywords.filter(k => (k.jobToBeDone || '').trim()).sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume).slice(0, 80);
-    return withJob.map((k, i) => ({
-      keyword: k.keyword,
-      job: k.jobToBeDone,
-      x: k.weeklySearchVolume,
-      y: k.cpcBid,
-      z: Math.max(40, Math.min(160, k.weeklySearchVolume / 50)),
-      color: k.userIntentStage ? INTENT_META[k.userIntentStage].color : SC[i % SC.length],
-      cvr: k.conversionRate,
-      intent: k.userIntentStage,
-      translation: k.translation,
-    }));
+    return withJob.map((k, i) => {
+      const intentMeta = k.userIntentStage ? INTENT_META[k.userIntentStage as keyof typeof INTENT_META] : undefined;
+      return {
+        keyword: k.keyword,
+        job: k.jobToBeDone,
+        x: k.weeklySearchVolume,
+        y: k.cpcBid,
+        z: Math.max(40, Math.min(160, k.weeklySearchVolume / 50)),
+        color: intentMeta?.color || SC[i % SC.length],
+        cvr: k.conversionRate,
+        intent: k.userIntentStage,
+        translation: k.translation,
+      };
+    });
   }, [keywords]);
 
   const medX = useMemo(() => {
@@ -599,53 +703,15 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
           <div className="rounded-lg bg-rose-50 border border-rose-100 px-2.5 py-2 text-rose-800">低需求 · 高 CPC → 谨慎</div>
         </div>
       </CardHeader>
-      <CardContent className="h-[440px]">
-        {mapMode === 'job' ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 20, right: 30, bottom: 24, left: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis type="number" dataKey="x" name="需求" tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} label={{ value: '需求（周搜）', position: 'insideBottom', offset: -12, fontSize: 11 }} />
-              <YAxis type="number" dataKey="y" name="CPC" tickFormatter={(v: number) => `$${v.toFixed(2)}`} label={{ value: '竞争 CPC', angle: -90, position: 'insideLeft', offset: 8, fontSize: 11 }} />
-              <ZAxis type="number" dataKey="z" range={[60, 280]} />
-              <Tooltip content={JTBDTip} />
-              <Scatter data={jobScat} onClick={(d: any) => {
-                const job = d?.job || d?.payload?.job || (Array.isArray(d) ? d[0]?.payload?.job : undefined);
-                if (job) openJob(String(job));
-              }} cursor="pointer">
-                {jobScat.map((d, i) => <Cell key={i} fill={d.color} fillOpacity={0.82} />)}
-              </Scatter>
-            </ScatterChart>
-          </ResponsiveContainer>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 20, right: 30, bottom: 24, left: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis type="number" dataKey="x" name="需求" tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} label={{ value: '需求（周搜）', position: 'insideBottom', offset: -12, fontSize: 11 }} />
-              <YAxis type="number" dataKey="y" name="CPC" tickFormatter={(v: number) => `$${v.toFixed(2)}`} label={{ value: '竞争 CPC', angle: -90, position: 'insideLeft', offset: 8, fontSize: 11 }} />
-              <ZAxis type="number" dataKey="z" range={[40, 220]} />
-              <Tooltip content={({ active, payload }: any) => {
-                if (!active || !payload?.length) return null;
-                const d = payload[0].payload;
-                return (
-                  <div className="bg-white border border-black/10 rounded-2xl shadow-xl p-3 max-w-[240px] text-xs">
-                    <div className="font-bold text-sm text-[#1d1d1f] mb-1">{d.keyword}</div>
-                    <div className="text-[#86868b] mb-2">{d.translation}</div>
-                    <div className="space-y-1 text-[#86868b]">
-                      <div className="flex justify-between gap-4"><span>任务</span><span className="font-semibold text-[#1d1d1f]">{d.job}</span></div>
-                      <div className="flex justify-between gap-4"><span>周搜</span><span className="font-semibold text-[#1d1d1f]">{d.x.toLocaleString()}</span></div>
-                      <div className="flex justify-between gap-4"><span>CPC</span><span className="font-semibold text-[#1d1d1f]">${d.y.toFixed(2)}</span></div>
-                      <div className="flex justify-between gap-4"><span>CVR</span><span className="font-semibold text-[#1d1d1f]">{(d.cvr * 100).toFixed(1)}%</span></div>
-                    </div>
-                  </div>
-                );
-              }} />
-              <Scatter data={kwScat} onClick={(d: any) => { const job = d?.job || d?.payload?.job; if (job) openJob(job); }} cursor="pointer">
-                {kwScat.map((d, i) => <Cell key={i} fill={d.color} fillOpacity={0.8} />)}
-              </Scatter>
-            </ScatterChart>
-          </ResponsiveContainer>
-        )}
-        <p className="text-[10px] text-[#aeaeb2] mt-1 text-center">中位参考线约：需求 {fmtNum(medX)} · CPC ${medY.toFixed(2)}（用于心算象限，非强制切割）</p>
+      <CardContent className="h-[440px] flex flex-col">
+        <div className="flex-1 min-h-0">
+          <JTBDBubbleMap
+            points={mapMode === 'job' ? jobScat : kwScat}
+            mode={mapMode}
+            onJobClick={openJob}
+          />
+        </div>
+        <p className="text-[10px] text-[#aeaeb2] mt-1 text-center shrink-0">中位参考线约：需求 {fmtNum(medX)} · CPC ${medY.toFixed(2)}（用于心算象限，非强制切割）</p>
       </CardContent>
     </Card>
 
