@@ -24,9 +24,9 @@ import { clearWorkspaceIndexedDb } from './utils/workspaceIdb';
 import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, formatRevenue, computeMarketReportFingerprint } from './utils/parser';
 import { get, set, del } from 'idb-keyval';
 import { Toaster, toast } from 'sonner';
-import { getCurrentUser, logout, type SessionUser } from './utils/auth';
+import { ensureBuiltinAdmin, getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
+import { ensureAdminMcpDefaults, loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
 import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
-import { loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
 import { LoginPage } from './components/LoginPage';
 import { AiSettingsPanel } from './components/AiSettingsPanel';
@@ -116,16 +116,30 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
 export default function App() {
   // ── Auth & AI Settings ────────────────────────────────────────────────────
-  const [currentUser, setCurrentUser] = useState<SessionUser | null>(() => getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(() => {
+    ensureBuiltinAdmin();
+    try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
+    return getCurrentUser();
+  });
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(() => loadAiSettings());
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
   const [isAvatarSettingsOpen, setIsAvatarSettingsOpen] = useState(false);
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
 
+  // 每次进入应用：同步内置管理员 + 四家 MCP 默认 Key
+  useEffect(() => {
+    ensureBuiltinAdmin();
+    try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
+  }, []);
+
   const handleLoginSuccess = useCallback(() => {
     const isGuest = sessionStorage.getItem('guest_mode') === '1';
     if (!isGuest) {
-      setCurrentUser(getCurrentUser());
+      const user = getCurrentUser();
+      if (isAdminSession(user)) {
+        try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
+      }
+      setCurrentUser(user);
       setAiSettings(loadAiSettings());
     } else {
       // Guest mode: set a dummy user

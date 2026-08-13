@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/
 import {
   Upload, FileSpreadsheet, Brain, Trash2, Edit2, Check, X, Filter, ExternalLink, Zap, Search,
   Target, Lightbulb, Sparkles, TrendingUp, Tag, Download, ArrowUpDown, ChevronDown, ChevronUp,
-  Users, Map, Route, HeartHandshake, ChevronLeft, ChevronRight, Info, MousePointerClick, HelpCircle,
+  Users, Map as MapIcon, Route, HeartHandshake, ChevronLeft, ChevronRight, Info, MousePointerClick, HelpCircle,
 } from 'lucide-react';
 import { Keyword } from '../utils/parser';
 import {
@@ -19,10 +19,22 @@ import { InsightReportPanels } from './InsightReportPanels';
 
 const scoreColor = (s: number) => s >= 75 ? '#10b981' : s >= 60 ? '#3b82f6' : s >= 45 ? '#f59e0b' : '#9ca3af';
 const scoreBg = (s: number) => s >= 75 ? 'bg-emerald-50' : s >= 60 ? 'bg-blue-50' : s >= 45 ? 'bg-amber-50' : 'bg-[#f5f5f7]';
-const fmtNum = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0);
+const fmtNum = (v: number) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '0';
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(0);
+};
 const PAGE_SIZE_JTBD = 8;
 const PAGE_SIZE_RAW = 30;
 const PAGE_SIZE_DRILL = 20;
+
+const safeNum = (v: unknown, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+const safeIntentMeta = (stage?: string) =>
+  (stage && INTENT_META[stage as keyof typeof INTENT_META]) || null;
+
 
 const TL = [
   { id: 'ss', name: '卖家精灵', desc: 'ABA 关键词反查', url: 'https://www.sellersprite.com/v3/aba-research', bg: 'bg-violet-50', bd: 'border-violet-100', ac: 'text-violet-600', ib: 'bg-violet-100', tag: 'ABA 反查' },
@@ -276,7 +288,7 @@ export function KwView(p: KwViewProps) {
       </Card>
       {keywords.length > 0 && (<>
         <div className="flex gap-1 bg-[#f5f5f7] p-1 rounded-2xl w-fit flex-wrap">{(['intent' as const,'jtbd' as const,'scenario' as const,'report' as const]).map(id => {
-          const meta = { intent: { l: '意图画像', I: Route, s: true }, jtbd: { l: 'JTBD 地图', I: Target, s: hasInsight }, scenario: { l: '场景洞察', I: Map, s: hasInsight }, report: { l: '用户报告', I: Lightbulb, s: true } }[id];
+          const meta = { intent: { l: '意图画像', I: Route, s: true }, jtbd: { l: 'JTBD 地图', I: Target, s: hasInsight }, scenario: { l: '场景洞察', I: MapIcon, s: hasInsight }, report: { l: '用户报告', I: Lightbulb, s: true } }[id];
           if (!meta.s) return null;
           return <button key={id} onClick={() => setTab(id)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${tab === id ? 'bg-white text-[#1d1d1f] shadow-sm' : 'text-[#86868b] hover:text-[#1d1d1f]'}`}><meta.I className="w-4 h-4" />{meta.l}</button>;
         })}</div>
@@ -458,10 +470,13 @@ function KeywordDrillModal({
               {paged.map(kw => (
                 <tr key={kw.id} className="hover:bg-[#f5f5f7]/50">
                   <td className="px-5 py-3"><div className="font-medium">{kw.keyword}</div><div className="text-xs text-[#86868b]">{kw.translation}</div></td>
-                  <td className="px-5 py-3 text-right font-mono">{kw.weeklySearchVolume.toLocaleString()}</td>
-                  <td className="px-5 py-3 text-right font-mono">${kw.cpcBid.toFixed(2)}</td>
-                  <td className="px-5 py-3 text-right font-mono">{(kw.conversionRate * 100).toFixed(2)}%</td>
-                  <td className="px-5 py-3">{kw.userIntentStage ? <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ color: INTENT_META[kw.userIntentStage].color, background: `${INTENT_META[kw.userIntentStage].color}15` }}>{INTENT_META[kw.userIntentStage].label}</span> : '—'}</td>
+                  <td className="px-5 py-3 text-right font-mono">{safeNum(kw.weeklySearchVolume).toLocaleString()}</td>
+                  <td className="px-5 py-3 text-right font-mono">${safeNum(kw.cpcBid).toFixed(2)}</td>
+                  <td className="px-5 py-3 text-right font-mono">{(safeNum(kw.conversionRate) * 100).toFixed(2)}%</td>
+                  <td className="px-5 py-3">{(() => {
+                    const m = safeIntentMeta(kw.userIntentStage);
+                    return m ? <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ color: m.color, background: `${m.color}15` }}>{m.label}</span> : '—';
+                  })()}</td>
                 </tr>
               ))}
               {paged.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-[#86868b]">暂无关联关键词</td></tr>}
@@ -624,7 +639,7 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
               </div>
               <div className="font-semibold text-sm text-[#1d1d1f] mb-1">{j.job}</div>
               <p className="text-[12px] text-[#86868b] leading-relaxed">
-                周搜 {j.totalVolume.toLocaleString()} · CPC ${j.avgCpc.toFixed(2)} · CVR {(j.avgCvr * 100).toFixed(1)}%
+                周搜 {safeNum(j.totalVolume).toLocaleString()} · CPC ${safeNum(j.avgCpc).toFixed(2)} · CVR {(safeNum(j.avgCvr) * 100).toFixed(1)}%
                 {j.avgCvr >= 0.12 ? ' — 转化偏高，适合主推。' : j.avgCpc < 1.2 ? ' — 需求在、竞争相对可控。' : ' — 先验证 Listing 是否讲清该任务。'}
               </p>
             </button>
@@ -661,7 +676,7 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
                     <span className="text-[10px] text-[#86868b]">{j.count}词 · {j.totalVolume.toLocaleString()}/周</span>
                   </div>
                   <div className="text-xs text-[#86868b] mt-1 truncate">
-                    CPC ${j.avgCpc.toFixed(2)} · CVR {(j.avgCvr * 100).toFixed(1)}%
+                    CPC ${safeNum(j.avgCpc).toFixed(2)} · CVR {(safeNum(j.avgCvr) * 100).toFixed(1)}%
                     {scene ? ` · 主场景：${scene}` : ''} · 代表：{j.topKeywords.slice(0, 3).join('、')}
                   </div>
                 </div>
@@ -711,7 +726,7 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
             onJobClick={openJob}
           />
         </div>
-        <p className="text-[10px] text-[#aeaeb2] mt-1 text-center shrink-0">中位参考线约：需求 {fmtNum(medX)} · CPC ${medY.toFixed(2)}（用于心算象限，非强制切割）</p>
+        <p className="text-[10px] text-[#aeaeb2] mt-1 text-center shrink-0">中位参考线约：需求 {fmtNum(medX)} · CPC ${safeNum(medY).toFixed(2)}（用于心算象限，非强制切割）</p>
       </CardContent>
     </Card>
 
@@ -755,8 +770,8 @@ function ScenarioTab({ insights, keywords, seg, setSeg }: { insights: ScenarioIn
       </div>
     )}
     <div className="text-xs text-[#86868b] bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 flex items-start gap-2"><MousePointerClick className="w-3.5 h-3.5 text-blue-500 mt-0.5 shrink-0" /><span>点击排行榜条目，将弹出该维度的关键词明细。</span></div>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><RankCard title="使用场景" icon={Map} items={insights.scenarios} color="#3b82f6" /><RankCard title="目标人群" icon={Users} items={insights.users} color="#8b5cf6" /><RankCard title="痛点排行" icon={TrendingUp} items={insights.painPoints} color="#ef4444" /><RankCard title="功能需求" icon={Tag} items={insights.features} color="#10b981" /></div>
-    {heatScenarios.length > 0 && heatUsers.length > 0 && (<Card className="border-none shadow-sm"><CardHeader><CardTitle className="text-base font-semibold"><Map className="w-4 h-4 text-indigo-600 inline mr-1" />场景×人群热力</CardTitle><CardDescription>颜色越深，交叉搜索量越大 — 优先打深色格子对应的场景×人群组合</CardDescription></CardHeader><CardContent className="overflow-x-auto"><table className="w-full text-xs min-w-[560px]"><thead><tr><th className="p-3 text-left text-[#86868b] font-medium">场景 \ 人群</th>{heatUsers.map(u => <th key={u} className="p-3 text-center text-[#86868b] font-medium">{u}</th>)}</tr></thead><tbody>{heatScenarios.map(sc => (<tr key={sc}><td className="p-3 font-medium text-[#1d1d1f]">{sc}</td>{heatUsers.map(u => { const cell = insights.crossMatrix.find(c => c.scenario === sc && c.user === u); const vol = cell?.volume || 0; const intensity = vol / heatMax; return (<td key={u} className="p-1.5"><button type="button" onClick={() => cell && openDim(sc)} className="w-full min-h-[52px] rounded-xl py-3 text-center font-mono text-[12px] font-semibold" style={{ background: vol > 0 ? `rgba(79,70,229,${0.10 + intensity * 0.78})` : '#f5f5f7', color: intensity > 0.45 ? '#fff' : '#1d1d1f' }}>{vol > 0 ? fmtNum(vol) : '—'}</button></td>); })}</tr>))}</tbody></table></CardContent></Card>)}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><RankCard title="使用场景" icon={MapIcon} items={insights.scenarios} color="#3b82f6" /><RankCard title="目标人群" icon={Users} items={insights.users} color="#8b5cf6" /><RankCard title="痛点排行" icon={TrendingUp} items={insights.painPoints} color="#ef4444" /><RankCard title="功能需求" icon={Tag} items={insights.features} color="#10b981" /></div>
+    {heatScenarios.length > 0 && heatUsers.length > 0 && (<Card className="border-none shadow-sm"><CardHeader><CardTitle className="text-base font-semibold"><MapIcon className="w-4 h-4 text-indigo-600 inline mr-1" />场景×人群热力</CardTitle><CardDescription>颜色越深，交叉搜索量越大 — 优先打深色格子对应的场景×人群组合</CardDescription></CardHeader><CardContent className="overflow-x-auto"><table className="w-full text-xs min-w-[560px]"><thead><tr><th className="p-3 text-left text-[#86868b] font-medium">场景 \ 人群</th>{heatUsers.map(u => <th key={u} className="p-3 text-center text-[#86868b] font-medium">{u}</th>)}</tr></thead><tbody>{heatScenarios.map(sc => (<tr key={sc}><td className="p-3 font-medium text-[#1d1d1f]">{sc}</td>{heatUsers.map(u => { const cell = insights.crossMatrix.find(c => c.scenario === sc && c.user === u); const vol = cell?.volume || 0; const intensity = vol / heatMax; return (<td key={u} className="p-1.5"><button type="button" onClick={() => cell && openDim(sc)} className="w-full min-h-[52px] rounded-xl py-3 text-center font-mono text-[12px] font-semibold" style={{ background: vol > 0 ? `rgba(79,70,229,${0.10 + intensity * 0.78})` : '#f5f5f7', color: intensity > 0.45 ? '#fff' : '#1d1d1f' }}>{vol > 0 ? fmtNum(vol) : '—'}</button></td>); })}</tr>))}</tbody></table></CardContent></Card>)}
     {modalKey && <KeywordDrillModal title={modalKey} words={words} onClose={() => setModalKey(null)} />}
   </div>);
 }
@@ -785,5 +800,5 @@ function RawTable({ filt, eid, etags, q, setQ, cat, setCat, onStartEdit, onSaveE
   const prevQ = React.useRef(q); const prevCat = React.useRef(cat);
   React.useEffect(() => { if (prevQ.current !== q || prevCat.current !== cat) { setPage(0); prevQ.current = q; prevCat.current = cat; } }, [q, cat]);
   return (<Card className="border-none shadow-sm overflow-hidden"><CardHeader className="bg-[#f5f5f7]/50 border-b border-black/5"><div className="flex flex-col md:flex-row md:items-center justify-between gap-4"><div className="flex items-center gap-4"><div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868b]" /><input type="text" placeholder="搜索关键词..." value={q} onChange={e => setQ(e.target.value)} className="pl-10 pr-4 py-2 bg-white border border-black/5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 w-56" /></div><div className="flex items-center gap-2"><Filter className="w-4 h-4 text-[#86868b]" /><select value={cat} onChange={e => setCat(e.target.value)} className="bg-white border border-black/5 rounded-xl text-sm px-3 py-2"><option value="all">全部</option>{TAGS.map(t => <option key={t} value={t}>{t}</option>)}</select></div></div><div className="text-xs text-[#86868b]">{filt.length} 个词 · 第 {page + 1}/{totalPages} 页</div></div></CardHeader>
-    <CardContent className="p-0"><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-xs text-[#86868b] uppercase bg-[#f5f5f7] border-b border-black/5"><tr><th className="px-6 py-4">关键词/翻译</th><th className="px-6 py-4 text-right">周搜索量</th><th className="px-6 py-4 text-right">CPC</th><th className="px-6 py-4">意图</th><th className="px-6 py-4">JTBD</th><th className="px-6 py-4">场景/人群</th><th className="px-6 py-4">AI标签</th><th className="px-6 py-4 text-center">操作</th></tr></thead><tbody className="divide-y divide-black/5">{paged.map(kw => (<tr key={kw.id} className="hover:bg-[#f5f5f7]/50"><td className="px-6 py-4"><div className="font-medium">{kw.keyword}</div><div className="text-xs text-[#86868b]">{kw.translation}</div></td><td className="px-6 py-4 text-right font-mono">{kw.weeklySearchVolume.toLocaleString()}</td><td className="px-6 py-4 text-right font-mono">${kw.cpcBid.toFixed(2)}</td><td className="px-6 py-4">{kw.userIntentStage ? <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ color: INTENT_META[kw.userIntentStage].color, background: `${INTENT_META[kw.userIntentStage].color}15` }}>{INTENT_META[kw.userIntentStage].label}</span> : <span className="text-[#86868b] text-xs">—</span>}</td><td className="px-6 py-4">{kw.jobToBeDone || '—'}</td><td className="px-6 py-4 text-xs text-[#86868b]">{[kw.useScenario, kw.targetUser].filter(Boolean).join(' · ') || '—'}</td><td className="px-6 py-4">{eid === kw.id ? (<div className="flex flex-wrap gap-1">{TAGS.map(t => (<button key={t} onClick={() => onTogTag(t)} className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${etags.includes(t) ? 'bg-indigo-100 text-indigo-600' : 'bg-white text-[#86868b] border border-black/5'}`}>{t}</button>))}</div>) : (<div className="flex flex-wrap gap-1">{kw.aiTags.length > 0 ? kw.aiTags.map(t => <span key={t} className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] border border-indigo-100">{t}</span>) : <span className="text-[#86868b] text-xs italic">—</span>}</div>)}</td><td className="px-6 py-4 text-center">{eid === kw.id ? (<div className="flex items-center justify-center gap-2"><button onClick={() => onSaveEdit(kw.id)} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg"><Check className="w-4 h-4" /></button><button onClick={onCancelEdit} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><X className="w-4 h-4" /></button></div>) : (<button onClick={() => onStartEdit(kw)} className="p-1.5 text-[#86868b] hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><Edit2 className="w-4 h-4" /></button>)}</td></tr>))}{paged.length === 0 && <tr><td colSpan={8} className="px-6 py-8 text-center text-[#86868b]">没有匹配的关键词</td></tr>}</tbody></table></div><Pager page={page} total={totalPages} onChange={setPage} /></CardContent></Card>);
+    <CardContent className="p-0"><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-xs text-[#86868b] uppercase bg-[#f5f5f7] border-b border-black/5"><tr><th className="px-6 py-4">关键词/翻译</th><th className="px-6 py-4 text-right">周搜索量</th><th className="px-6 py-4 text-right">CPC</th><th className="px-6 py-4">意图</th><th className="px-6 py-4">JTBD</th><th className="px-6 py-4">场景/人群</th><th className="px-6 py-4">AI标签</th><th className="px-6 py-4 text-center">操作</th></tr></thead><tbody className="divide-y divide-black/5">{paged.map(kw => (<tr key={kw.id} className="hover:bg-[#f5f5f7]/50"><td className="px-6 py-4"><div className="font-medium">{kw.keyword}</div><div className="text-xs text-[#86868b]">{kw.translation}</div></td><td className="px-6 py-4 text-right font-mono">{safeNum(kw.weeklySearchVolume).toLocaleString()}</td><td className="px-6 py-4 text-right font-mono">${safeNum(kw.cpcBid).toFixed(2)}</td><td className="px-6 py-4">{(() => { const m = safeIntentMeta(kw.userIntentStage); return m ? <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ color: m.color, background: `${m.color}15` }}>{m.label}</span> : <span className="text-[#86868b] text-xs">—</span>; })()}</td><td className="px-6 py-4">{kw.jobToBeDone || '—'}</td><td className="px-6 py-4 text-xs text-[#86868b]">{[kw.useScenario, kw.targetUser].filter(Boolean).join(' · ') || '—'}</td><td className="px-6 py-4">{eid === kw.id ? (<div className="flex flex-wrap gap-1">{TAGS.map(t => (<button key={t} onClick={() => onTogTag(t)} className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${etags.includes(t) ? 'bg-indigo-100 text-indigo-600' : 'bg-white text-[#86868b] border border-black/5'}`}>{t}</button>))}</div>) : (<div className="flex flex-wrap gap-1">{(Array.isArray(kw.aiTags) && kw.aiTags.length > 0) ? kw.aiTags.map(t => <span key={t} className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] border border-indigo-100">{t}</span>) : <span className="text-[#86868b] text-xs italic">—</span>}</div>)}</td><td className="px-6 py-4 text-center">{eid === kw.id ? (<div className="flex items-center justify-center gap-2"><button onClick={() => onSaveEdit(kw.id)} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg"><Check className="w-4 h-4" /></button><button onClick={onCancelEdit} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><X className="w-4 h-4" /></button></div>) : (<button onClick={() => onStartEdit(kw)} className="p-1.5 text-[#86868b] hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><Edit2 className="w-4 h-4" /></button>)}</td></tr>))}{paged.length === 0 && <tr><td colSpan={8} className="px-6 py-8 text-center text-[#86868b]">没有匹配的关键词</td></tr>}</tbody></table></div><Pager page={page} total={totalPages} onChange={setPage} /></CardContent></Card>);
 }

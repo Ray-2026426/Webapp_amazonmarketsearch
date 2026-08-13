@@ -4,6 +4,8 @@ import {
   getSellerSpriteEndpoint,
   getActiveLingXingProvider,
   getLingXingEndpoint,
+  getXydcEndpoint,
+  getSorftimeEndpoint,
   loadMcpSettings,
   type McpSettings,
   type McpProviderEntry,
@@ -848,12 +850,75 @@ export async function testMcpEndpoint(endpoint: string, secretKey: string): Prom
   }
 }
 
+/** 西柚等：用自定义认证头做 initialize 握手 */
+async function testMcpEndpointWithAuthHeaders(
+  endpoint: string,
+  authHeaders: Record<string, string>
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json, text/event-stream',
+        'Content-Type': 'application/json',
+        'MCP-Protocol-Version': '2025-03-26',
+        ...authHeaders,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 'amz-market-research-app-test', version: '1.0.0' },
+        },
+      }),
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      /Failed to fetch|NetworkError|Load failed/i.test(msg)
+        ? '网络请求失败。请确认 npm run dev 已启动，且 MCP 地址留空走应用内代理。'
+        : msg
+    );
+  }
+  const text = await res.text();
+  const sessionId = res.headers.get('mcp-session-id') || undefined;
+  if (!res.ok && !sessionId) {
+    const parsed = parseMcpHttpBody(text);
+    throw new Error(parsed?.error?.message || text.slice(0, 200) || `验证失败 (${res.status})`);
+  }
+}
+
 /** 测试某条 MCP 数据源 */
 export async function testMcpProvider(
   provider: Pick<McpProviderEntry, 'kind' | 'secretKey' | 'mcpUrl'>
 ): Promise<void> {
   const secretKey = provider.secretKey.trim();
   if (!secretKey) throw new Error('请先填写密钥');
+
+  if (provider.kind === 'xydc') {
+    const endpoint = getXydcEndpoint(provider.mcpUrl);
+    const token = secretKey.replace(/^Bearer\s+/i, '').trim();
+    await testMcpEndpointWithAuthHeaders(endpoint, { Authorization: `Bearer ${token}` });
+    return;
+  }
+
+  if (provider.kind === 'lingxing') {
+    const endpoint = getLingXingEndpoint(provider.mcpUrl);
+    await testMcpEndpointWithAuthHeaders(endpoint, { 'X-Mcp-Key': secretKey });
+    return;
+  }
+
+  if (provider.kind === 'sorftime') {
+    const endpoint = getSorftimeEndpoint(provider.mcpUrl, secretKey);
+    // Sorftime 的 key 已在 query，无需额外鉴权头
+    await testMcpEndpointWithAuthHeaders(endpoint, {});
+    return;
+  }
+
   const endpoint =
     provider.kind === 'sellersprite'
       ? getSellerSpriteEndpoint(provider.mcpUrl)

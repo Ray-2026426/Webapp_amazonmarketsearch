@@ -164,10 +164,10 @@ export function calcJTBDStats(kws: Keyword[]): JTBDStat[] {
   const maxVolume = volumes.length ? Math.max(...volumes) : 0;
 
   return [...map.entries()].map(([job, list]) => {
-    const tv = list.reduce((s, k) => s + k.weeklySearchVolume, 0);
-    const ac = list.reduce((s, k) => s + k.cpcBid, 0) / list.length;
-    const acvr = list.reduce((s, k) => s + k.conversionRate, 0) / list.length;
-    const ad = list.reduce((s, k) => s + k.difficulty, 0) / list.length;
+    const tv = list.reduce((s, k) => s + (Number(k.weeklySearchVolume) || 0), 0);
+    const ac = list.reduce((s, k) => s + (Number(k.cpcBid) || 0), 0) / list.length;
+    const acvr = list.reduce((s, k) => s + (Number(k.conversionRate) || 0), 0) / list.length;
+    const ad = list.reduce((s, k) => s + (Number(k.difficulty) || 0), 0) / list.length;
     // 取该任务下出现最多的 jobType
     const typeCount: Record<string, number> = {};
     list.forEach(k => {

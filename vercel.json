@@ -41,6 +41,30 @@
     {
       "source": "/api-proxy/sellersprite-mcp/(.*)",
       "destination": "https://mcp.sellersprite.com/mcp/$1"
+    },
+    {
+      "source": "/api-proxy/xydc-mcp",
+      "destination": "https://mcp.xydc.com/mcp"
+    },
+    {
+      "source": "/api-proxy/xydc-mcp/(.*)",
+      "destination": "https://mcp.xydc.com/mcp/$1"
+    },
+    {
+      "source": "/api-proxy/lingxing-mcp",
+      "destination": "https://openmcp.lingxing.com/mcp-servers/lingxing-mcp"
+    },
+    {
+      "source": "/api-proxy/lingxing-mcp/(.*)",
+      "destination": "https://openmcp.lingxing.com/mcp-servers/lingxing-mcp/$1"
+    },
+    {
+      "source": "/api-proxy/sorftime-mcp",
+      "destination": "https://mcp.sorftime.com/"
+    },
+    {
+      "source": "/api-proxy/sorftime-mcp/(.*)",
+      "destination": "https://mcp.sorftime.com/$1"
     }
   ]
 }

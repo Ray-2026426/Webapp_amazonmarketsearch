@@ -18,8 +18,13 @@ import {
   loadFeatureFlags,
   saveFeatureFlags,
   createSellerSpriteProvider,
+  createXydcProvider,
+  createLingXingProvider,
+  createSorftimeProvider,
   createCustomProvider,
   DEFAULT_SELLERSPRITE_MCP_URL,
+  DEFAULT_XYDC_MCP_URL,
+  DEFAULT_SORFTIME_MCP_URL,
   type McpProviderEntry,
   type AppFeatureFlags,
 } from '../utils/mcpConfig';
@@ -70,7 +75,10 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     const loaded = loadMcpSettings().providers;
     return loaded.map((p) => ({
       ...p,
-      mcpUrl: /mcp\.sellersprite\.com/i.test(p.mcpUrl) ? '' : p.mcpUrl,
+      mcpUrl:
+        /mcp\.sellersprite\.com/i.test(p.mcpUrl) || /mcp\.xydc\.com/i.test(p.mcpUrl)
+          ? ''
+          : p.mcpUrl,
     }));
   });
   const [testingProviderId, setTestingProviderId] = useState<string | null>(null);
@@ -537,12 +545,19 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
           {tab === 'mcp' && (
             <div className="space-y-5 overflow-y-auto">
               <div className="rounded-2xl bg-violet-50 border border-violet-100 px-4 py-3 text-sm text-violet-900 leading-relaxed">
-                可配置多家 MCP 数据源。当前抓取评论 / 流量词 / 竞品详情默认用「卖家精灵」；也可添加其他 MCP（填名称、地址、密钥）。密钥只保存在本机浏览器。
+                可配置多家 MCP：领星、卖家精灵、西柚洞察、Sorftime。管理员会自动预填密钥；业务抓取仍以卖家精灵为主。密钥只保存在本机浏览器。
               </div>
 
               {mcpProviders.map((p, idx) => {
                 const testState = mcpTestResults[p.id];
                 const isTesting = testingProviderId === p.id;
+                const kindLabel =
+                  p.kind === 'sellersprite' ? '卖家精灵'
+                  : p.kind === 'xydc' ? '西柚洞察'
+                  : p.kind === 'lingxing' ? '领星'
+                  : p.kind === 'sorftime' ? 'Sorftime'
+                  : '自定义';
+                const usesAppProxy = p.kind === 'sellersprite' || p.kind === 'xydc' || p.kind === 'lingxing' || p.kind === 'sorftime';
                 return (
                   <div
                     key={p.id}
@@ -551,7 +566,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
                         <span className="text-xs font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-lg shrink-0">
-                          {p.kind === 'sellersprite' ? '卖家精灵' : '自定义'}
+                          {kindLabel}
                         </span>
                         <input
                           value={p.name}
@@ -581,14 +596,22 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
 
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[#86868b] flex items-center gap-1">
-                        <Key className="w-3.5 h-3.5" /> 密钥 / Secret Key
+                        <Key className="w-3.5 h-3.5" />
+                        {p.kind === 'xydc' ? 'MCP Token（Bearer）'
+                          : p.kind === 'lingxing' ? 'X-Mcp-Key'
+                          : p.kind === 'sorftime' ? 'Sorftime Key'
+                          : '密钥 / Secret Key'}
                       </label>
                       <div className="flex gap-2">
                         <input
                           type="password"
                           value={p.secretKey}
                           onChange={(e) => updateProvider(p.id, { secretKey: e.target.value })}
-                          placeholder="粘贴密钥…"
+                          placeholder={
+                            p.kind === 'xydc' ? '粘贴西柚 Token…'
+                            : p.kind === 'sorftime' ? '粘贴 Sorftime Key…'
+                            : '粘贴密钥…'
+                          }
                           className="flex-1 px-3 py-2 bg-white border border-black/5 rounded-xl text-sm font-mono"
                         />
                         <button
@@ -612,14 +635,14 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[#86868b] flex items-center gap-1">
                         <Globe className="w-3.5 h-3.5" /> MCP 地址
-                        {p.kind === 'sellersprite' ? '（建议留空）' : '（必填）'}
+                        {usesAppProxy ? '（建议留空）' : '（必填）'}
                       </label>
                       <input
                         type="text"
                         value={p.mcpUrl}
                         onChange={(e) => updateProvider(p.id, { mcpUrl: e.target.value })}
                         placeholder={
-                          p.kind === 'sellersprite'
+                          usesAppProxy
                             ? '留空 = 走应用内安全代理'
                             : 'https://your-mcp.example.com/mcp'
                         }
@@ -631,12 +654,25 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                           ，否则浏览器会跨域报错。只有自建中转时才填自定义地址。
                         </p>
                       )}
+                      {p.kind === 'xydc' && (
+                        <p className="text-[11px] text-[#86868b] leading-relaxed">
+                          不要填 <code className="bg-black/5 px-1 rounded">{DEFAULT_XYDC_MCP_URL}</code>
+                          ，官方地址已由应用代理。Token 填上面一栏即可（不用带 Bearer 前缀）。
+                        </p>
+                      )}
+                      {p.kind === 'sorftime' && (
+                        <p className="text-[11px] text-[#86868b] leading-relaxed">
+                          不要填 <code className="bg-black/5 px-1 rounded">{DEFAULT_SORFTIME_MCP_URL}</code>
+                          ，Key 填上面一栏；应用会自动拼到请求参数。
+                        </p>
+                      )}
                       {p.kind === 'custom' && (
                         <p className="text-[11px] text-[#86868b] leading-relaxed">
                           其他 MCP 需支持浏览器跨域，或填你自己的同源代理路径（如 /api-proxy/xxx）。
                         </p>
                       )}
-                      {p.kind === 'sellersprite' && /mcp\.sellersprite\.com/i.test(p.mcpUrl) && (
+                      {(p.kind === 'sellersprite' || p.kind === 'xydc' || p.kind === 'lingxing' || p.kind === 'sorftime') &&
+                        (/mcp\.sellersprite\.com/i.test(p.mcpUrl) || /mcp\.xydc\.com/i.test(p.mcpUrl) || /openmcp\.lingxing\.com/i.test(p.mcpUrl) || /mcp\.sorftime\.com/i.test(p.mcpUrl)) && (
                         <button
                           type="button"
                           className="text-xs text-amber-800 underline"
@@ -652,11 +688,35 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                         提示：用户洞察、关键词、竞品分析的在线抓取，都会优先用启用中的卖家精灵。
                       </p>
                     )}
+                    {p.kind === 'xydc' && (
+                      <p className="text-[11px] text-orange-700/80">
+                        提示：西柚洞察适合流量结构、广告节奏、关键词打法分析；当前业务抓取仍以卖家精灵为主。
+                      </p>
+                    )}
+                    {p.kind === 'lingxing' && (
+                      <p className="text-[11px] text-sky-700/80">
+                        提示：领星适合店铺/关键词等 ERP 侧数据；鉴权头为 X-Mcp-Key。
+                      </p>
+                    )}
+                    {p.kind === 'sorftime' && (
+                      <p className="text-[11px] text-emerald-700/80">
+                        提示：Sorftime 适合 Listing / 品类 / 关键词深度调研；当前应用内抓取仍以卖家精灵为主。
+                      </p>
+                    )}
                   </div>
                 );
               })}
 
               <div className="flex flex-wrap gap-2">
+                {!mcpProviders.some((p) => p.kind === 'lingxing') && (
+                  <button
+                    type="button"
+                    onClick={() => setMcpProviders((prev) => [...prev, createLingXingProvider()])}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-sky-200 text-sky-700 text-sm font-medium hover:bg-sky-50"
+                  >
+                    <Plus className="w-4 h-4" /> 添加领星
+                  </button>
+                )}
                 {!mcpProviders.some((p) => p.kind === 'sellersprite') && (
                   <button
                     type="button"
@@ -664,6 +724,24 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-violet-200 text-violet-700 text-sm font-medium hover:bg-violet-50"
                   >
                     <Plus className="w-4 h-4" /> 添加卖家精灵
+                  </button>
+                )}
+                {!mcpProviders.some((p) => p.kind === 'xydc') && (
+                  <button
+                    type="button"
+                    onClick={() => setMcpProviders((prev) => [...prev, createXydcProvider()])}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-orange-200 text-orange-700 text-sm font-medium hover:bg-orange-50"
+                  >
+                    <Plus className="w-4 h-4" /> 添加西柚洞察
+                  </button>
+                )}
+                {!mcpProviders.some((p) => p.kind === 'sorftime') && (
+                  <button
+                    type="button"
+                    onClick={() => setMcpProviders((prev) => [...prev, createSorftimeProvider()])}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-medium hover:bg-emerald-50"
+                  >
+                    <Plus className="w-4 h-4" /> 添加 Sorftime
                   </button>
                 )}
                 <button

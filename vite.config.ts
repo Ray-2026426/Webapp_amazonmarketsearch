@@ -63,10 +63,21 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (p: string) => p.replace(/^\/api-proxy\/sellersprite-mcp/, '/mcp'),
         },
+        '/api-proxy/xydc-mcp': {
+          target: 'https://mcp.xydc.com',
+          changeOrigin: true,
+          rewrite: (p: string) => p.replace(/^\/api-proxy\/xydc-mcp/, '/mcp'),
+        },
         '/api-proxy/lingxing-mcp': {
           target: 'https://openmcp.lingxing.com',
           changeOrigin: true,
           rewrite: (p: string) => p.replace(/^\/api-proxy\/lingxing-mcp/, '/mcp-servers/lingxing-mcp'),
+        },
+        '/api-proxy/sorftime-mcp': {
+          target: 'https://mcp.sorftime.com',
+          changeOrigin: true,
+          // Key 在 query（?key=），代理会原样转发；路径改到根
+          rewrite: () => '/',
         },
       },
     },

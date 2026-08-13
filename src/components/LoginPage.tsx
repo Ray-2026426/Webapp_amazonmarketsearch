@@ -798,31 +798,31 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     },
   ];
 
-  /* ── 洞察：来自真实退款分析（品类无关示例） ── */
+  /* ── 洞察：薄枕头退货/评论摘录（与示例数据同一品类，一眼能懂） ── */
   const realInsightCards = [
     {
       icon: Shield, iconColor: '#6366f1', iconBg: 'bg-indigo-50',
-      title: '高退货变体的品类级缺陷',
-      stat: '56.1%', statDesc: '集中在某一材质线',
-      detail: '准确度/规格偏差投诉是对照线的 2.5 倍，但竞品 A+ 页面完全没有针对性解释。',
+      title: '头号差评不是「坏了」',
+      stat: '太高', statDesc: '退货原话高频',
+      detail: '买家反复写 Too high / 顶脖子——枕头未必坏，是「想象中的薄」和「到手的高」对不上。主图加尺子就能改。',
     },
     {
       icon: TrendingUp, iconColor: '#8b5cf6', iconBg: 'bg-violet-50',
-      title: '误买根因不在产品在 Listing',
-      stat: '2.8×', statDesc: '不兼容投诉倍率',
-      detail: '不兼容投诉倍率显著偏高——标题描述的适用场景不够精确。优化 Listing 文案即可压降。',
+      title: '退货留言里藏着正确规格',
+      stat: '再订矮一档', statDesc: '误买后自救',
+      detail: '有人退货写 will reorder 5"：产品矩阵其实够，是选购页没帮人选对高度。改 Listing / A+「选高度」，比改模具便宜。',
     },
     {
       icon: Clock, iconColor: '#6366f1', iconBg: 'bg-indigo-50',
-      title: '退货窗口期的干预机会',
+      title: '退货多发生在开箱那一周',
       stat: '前 7 天', statDesc: '集中退货窗口',
-      detail: '绝大部分退货在收到后一周内发生——开箱体验和首次使用指导是降低退货率的关键节点。',
+      detail: '真空包装拆开先「扁扁的」，膨松步骤没写清就直接退。把开箱三步写进主图/五点，能拦住一批冲动退。',
     },
     {
       icon: Zap, iconColor: '#8b5cf6', iconBg: 'bg-violet-50',
-      title: '弃购主因并非质量',
-      stat: '38.9%', statDesc: '"不需要了"退货',
-      detail: '头号退货原因不是产品缺陷，而是消费者"收到后发现不需要"——购买前信息匹配出了问题。',
+      title: '平台勾「描述不符」= 预期管理失败',
+      stat: '描述不符', statDesc: '多于纯质量问题',
+      detail: '勾的是 Not as described，白话是「广告说 ultra slim，体感仍偏厚」。先修表达与高度可视化，别一上来怪供应链。',
     },
   ];
 
@@ -1265,10 +1265,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           {/* Evidence cards from refund analysis */}
           <div>
             <div className="mb-8 max-w-2xl">
-              <p className="text-[12px] font-semibold text-[#86868b] uppercase tracking-wider mb-2">证据摘录</p>
-              <h3 className="text-xl font-semibold text-[#1d1d1f] mb-2">评论与退货里藏着可改的产品逻辑</h3>
+              <p className="text-[12px] font-semibold text-[#86868b] uppercase tracking-wider mb-2">证据摘录 · 薄枕头示例</p>
+              <h3 className="text-xl font-semibold text-[#1d1d1f] mb-2">退货原话一读，就知道该改产品还是改页面</h3>
               <p className="text-[14px] text-[#86868b] leading-relaxed">
-                以下是一次真实品类分析的输出摘录——你会发现，埋在退货记录和搜索行为里的，是完整的用户与 Listing 逻辑。
+                下面四条来自薄枕头品类的评论/退货摘录——不是堆百分比，而是「买家怎么说 → 你该动哪一块」。
               </p>
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5">

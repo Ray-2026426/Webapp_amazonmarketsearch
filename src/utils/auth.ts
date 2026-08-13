@@ -7,6 +7,8 @@ export interface User {
   createdAt: string;
   /** JPEG Data URL，体积已压缩 */
   avatarDataUrl?: string;
+  /** 内置管理员等角色标记 */
+  role?: 'admin' | 'user';
 }
 
 /** 当前登录会话（与 User 中头像同步） */
@@ -14,11 +16,32 @@ export interface SessionUser {
   id: string;
   username: string;
   avatarDataUrl?: string;
+  role?: 'admin' | 'user';
 }
 
 const USERS_KEY = 'amzdev_users';
 const SESSION_KEY = 'amzdev_session';
 const SAVED_CREDS_KEY = 'amzdev_saved_creds';
+
+/**
+ * 写死在代码里的管理员：换版本 / 清了普通用户后，打开应用仍会自动补回，密码强制复位。
+ * （本应用无云端账号库，持久化靠浏览器本地存储 + 每次启动同步）
+ */
+const BUILTIN_ADMIN = {
+  id: 'builtin-admin-15874760218',
+  username: '15874760218',
+  password: 'qianlan1997',
+  role: 'admin' as const,
+};
+
+export function isBuiltinAdminUsername(username: string): boolean {
+  return username.trim().toLowerCase() === BUILTIN_ADMIN.username.toLowerCase();
+}
+
+export function isAdminSession(user: SessionUser | null | undefined): boolean {
+  if (!user) return false;
+  return user.role === 'admin' || isBuiltinAdminUsername(user.username);
+}
 
 /** 部分内置浏览器/非 HTTPS 环境没有 crypto.randomUUID，会导致注册直接报错 */
 export function createUserId(): string {
@@ -43,9 +66,10 @@ function hashPassword(password: string): string {
   return Math.abs(hash).toString(36);
 }
 
-function getUsers(): User[] {
+function readUsersRaw(): User[] {
   try {
-    return JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+    const parsed = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -62,10 +86,76 @@ function saveUsers(users: User[]): void {
   }
 }
 
+/**
+ * 确保内置管理员始终存在，且密码哈希与代码中的固定密码一致。
+ * 版本更新后首次打开、或本地库被改过，都会自动纠正。
+ */
+export function ensureBuiltinAdmin(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const users = readUsersRaw();
+    const expectedHash = hashPassword(BUILTIN_ADMIN.password);
+    const byName = users.findIndex((u) => isBuiltinAdminUsername(u.username));
+    const byId = users.findIndex((u) => u.id === BUILTIN_ADMIN.id);
+
+    if (byName >= 0) {
+      const cur = users[byName];
+      const needsFix =
+        cur.passwordHash !== expectedHash ||
+        cur.role !== 'admin' ||
+        cur.id !== BUILTIN_ADMIN.id ||
+        cur.username !== BUILTIN_ADMIN.username;
+      if (needsFix) {
+        users[byName] = {
+          ...cur,
+          id: BUILTIN_ADMIN.id,
+          username: BUILTIN_ADMIN.username,
+          passwordHash: expectedHash,
+          role: 'admin',
+        };
+        // 若同 id 另有脏记录，去掉重复
+        const cleaned = users.filter((u, i) => i === byName || u.id !== BUILTIN_ADMIN.id);
+        saveUsers(cleaned);
+      }
+      return;
+    }
+
+    if (byId >= 0) {
+      const cur = users[byId];
+      users[byId] = {
+        ...cur,
+        id: BUILTIN_ADMIN.id,
+        username: BUILTIN_ADMIN.username,
+        passwordHash: expectedHash,
+        role: 'admin',
+      };
+      saveUsers(users);
+      return;
+    }
+
+    users.push({
+      id: BUILTIN_ADMIN.id,
+      username: BUILTIN_ADMIN.username,
+      passwordHash: expectedHash,
+      role: 'admin',
+      createdAt: new Date().toISOString(),
+    });
+    saveUsers(users);
+  } catch (e) {
+    console.error('ensureBuiltinAdmin', e);
+  }
+}
+
+function getUsers(): User[] {
+  ensureBuiltinAdmin();
+  return readUsersRaw();
+}
+
 function sessionPayload(user: User): SessionUser {
   return {
     id: user.id,
     username: user.username,
+    ...(user.role ? { role: user.role } : {}),
     ...(user.avatarDataUrl ? { avatarDataUrl: user.avatarDataUrl } : {}),
   };
 }
@@ -86,9 +176,11 @@ export function register(
     if (password.length < 6) {
       return { success: false, error: '密码至少需要 6 位' };
     }
+    if (isBuiltinAdminUsername(trimmed)) {
+      return { success: false, error: '该账号为系统管理员，请直接登录，不可重新注册' };
+    }
 
-    const parsed = getUsers();
-    const users = Array.isArray(parsed) ? parsed : [];
+    const users = getUsers();
     if (users.find(u => u.username.toLowerCase() === trimmed.toLowerCase())) {
       return { success: false, error: '该用户名已被注册' };
     }
@@ -97,6 +189,7 @@ export function register(
       id: createUserId(),
       username: trimmed,
       passwordHash: hashPassword(password),
+      role: 'user',
       createdAt: new Date().toISOString(),
     };
     users.push(newUser);
@@ -117,8 +210,7 @@ export function login(
 ): { success: boolean; user?: User; error?: string } {
   try {
     const trimmed = username.trim();
-    const raw = getUsers();
-    const users = Array.isArray(raw) ? raw : [];
+    const users = getUsers();
     const user = users.find(u => u.username.toLowerCase() === trimmed.toLowerCase());
     if (!user) {
       return { success: false, error: '用户名不存在' };
