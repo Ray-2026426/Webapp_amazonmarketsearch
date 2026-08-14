@@ -7,6 +7,8 @@ import { Product, HistoryRecord } from '../utils/parser';
 import { toast } from 'sonner';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { FeishuPushButton } from './FeishuPushButton';
+import { marketReportToMarkdown } from '../utils/reportToMarkdown';
 // html2pdf loaded dynamically in handleDownloadPDF
 
 interface MarketAnalysisReportProps {
@@ -158,7 +160,14 @@ ${products.slice(0, 20).map(p => `- ${p.title} (价格: $${p.price}, 评分: ${p
               <CardDescription className="text-[#86868b]">基于全量市场数据与 AI 逻辑框架生成的专业洞察</CardDescription>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            {report && !isGenerating && (
+              <FeishuPushButton
+                compact
+                title="AI 深度市场分析报告"
+                getMarkdown={() => marketReportToMarkdown(isEditing ? editedReport : report)}
+              />
+            )}
             <button
               type="button"
               onClick={() => {

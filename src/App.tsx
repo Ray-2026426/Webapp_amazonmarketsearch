@@ -27,6 +27,7 @@ import { Toaster, toast } from 'sonner';
 import { ensureBuiltinAdmin, getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
 import { ensureAdminMcpDefaults, loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
 import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
+import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
 import { LoginPage } from './components/LoginPage';
 import { AiSettingsPanel } from './components/AiSettingsPanel';
@@ -131,6 +132,13 @@ export default function App() {
   useEffect(() => {
     ensureBuiltinAdmin();
     try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
+  }, []);
+
+  // 飞书 OAuth 回跳：把 token 写入本机
+  useEffect(() => {
+    const r = consumeOAuthCallbackFromUrl();
+    if (r.ok) toast.success('飞书授权成功，可在报告页点击「推送到飞书」');
+    else if (r.error) toast.error(`飞书授权失败：${r.error}`);
   }, []);
 
   const handleLoginSuccess = useCallback(() => {
@@ -1580,6 +1588,7 @@ export default function App() {
                     domain={marketplace.domain}
                     preselectedAsins={selectedCompareAsins}
                     demoSnapshot={isDemoData ? competitorDemo : null}
+                    userId={currentUser?.id || 'guest'}
                   />
                 </div>
               )}

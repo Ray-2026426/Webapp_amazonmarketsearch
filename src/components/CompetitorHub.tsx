@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Crosshair, Loader2, Image as ImageIcon, Activity, Grid3X3, Plus, X, Upload,
   ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Star, Package, ExternalLink, RefreshCw, Sparkles, HelpCircle, Trash2,
+  History, Save,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { SecondaryReportPage } from './SecondaryReportPage';
@@ -26,6 +27,16 @@ import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
 import { Select } from './ui/Select';
+import {
+  listCompetitorHistoryMeta,
+  saveCompetitorSnapshot,
+  loadCompetitorSnapshot,
+  deleteCompetitorSnapshot,
+  suggestCompetitorSnapshotTitle,
+  type CompetitorHistoryMeta,
+} from '../utils/competitorHistory';
+import { FeishuPushButton } from './FeishuPushButton';
+import { competitorReportToMarkdown } from '../utils/reportToMarkdown';
 
 type WizardStep = 1 | 2 | 3;
 type ResultTab = 'listing' | 'traffic' | 'matrix';
@@ -37,6 +48,8 @@ interface CompetitorHubProps {
   preselectedAsins?: string[];
   /** 示例模式：直接展示真实竞品对比结果（无需再点「开始对比」） */
   demoSnapshot?: CompetitorDemoSnapshot | null;
+  /** 登录用户 id；游客用 guest，用于本机历史隔离 */
+  userId?: string;
 }
 
 interface AsinPack {
@@ -210,7 +223,9 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   marketplaceCode = 'US',
   preselectedAsins = [],
   demoSnapshot = null,
+  userId = 'guest',
 }) => {
+  const historyUserId = userId || 'guest';
   const [step, setStep] = useState<WizardStep>(1);
   const [asinInput, setAsinInput] = useState('');
   const [selected, setSelected] = useState<string[]>(() =>
@@ -252,6 +267,102 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiReportHtml, setAiReportHtml] = useState(() => demoSnapshot?.aiReportHtml ?? '');
   const [aiReportOpen, setAiReportOpen] = useState(false);
+
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyList, setHistoryList] = useState<CompetitorHistoryMeta[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [savingHistory, setSavingHistory] = useState(false);
+
+  const refreshHistoryList = async () => {
+    try {
+      const items = await listCompetitorHistoryMeta(historyUserId);
+      setHistoryList(items);
+    } catch (e) {
+      console.error('listCompetitorHistoryMeta', e);
+    }
+  };
+
+  useEffect(() => {
+    void refreshHistoryList();
+  }, [historyUserId]);
+
+  const handleSaveHistory = async () => {
+    if (!hasResult || !details.length) {
+      toast.error('请先完成对比分析再保存');
+      return;
+    }
+    setSavingHistory(true);
+    try {
+      const res = await saveCompetitorSnapshot(historyUserId, {
+        title: suggestCompetitorSnapshotTitle(marketplace, selected),
+        marketplace,
+        selected,
+        details,
+        trafficStats,
+        topKeywords,
+        matrices,
+        aiReportHtml,
+        packs,
+      });
+      if (res.ok === false) {
+        toast.error(res.error || '保存失败');
+        return;
+      }
+      toast.success(`已保存：${res.meta.title}`);
+      await refreshHistoryList();
+    } finally {
+      setSavingHistory(false);
+    }
+  };
+
+  const handleLoadHistory = async (id: string) => {
+    setHistoryLoading(true);
+    try {
+      const snap = await loadCompetitorSnapshot(historyUserId, id);
+      if (!snap) {
+        toast.error('找不到该历史记录');
+        return;
+      }
+      setMarketplace(normalizeMarketplaceCode(snap.marketplace));
+      setSelected(snap.selected.map((a) => a.toUpperCase()));
+      setDetails(snap.details || []);
+      setTrafficStats(snap.trafficStats || []);
+      setTopKeywords(snap.topKeywords || {});
+      setMatrices(snap.matrices || []);
+      setAiReportHtml(snap.aiReportHtml || '');
+      const nextPacks: Record<string, AsinPack> = {};
+      for (const [asin, pack] of Object.entries(snap.packs || {})) {
+        nextPacks[asin.toUpperCase()] = {
+          zipName: pack.zipName,
+          secondaryPreviewUrls: [...(pack.secondaryPreviewUrls || [])],
+          aplusPreviewUrls: [...(pack.aplusPreviewUrls || [])],
+          bulletPoints: pack.bulletPoints,
+        };
+      }
+      setPacks(nextPacks);
+      setBrandSiblings(extractBrandSiblingsFromProducts(products, snap.details || [], []));
+      setHasResult(true);
+      setStep(3);
+      setResultTab('listing');
+      setHistoryOpen(false);
+      toast.success(`已加载：${snap.meta.title}`);
+    } catch (e) {
+      toast.error(`加载失败：${e instanceof Error ? e.message : ''}`);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleDeleteHistory = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await deleteCompetitorSnapshot(historyUserId, id);
+      await refreshHistoryList();
+      toast.success('已删除历史记录');
+    } catch {
+      toast.error('删除失败');
+    }
+  };
 
   // 示例快照：直接进入结果页，展示真实 Listing / 主图
   useEffect(() => {
@@ -532,14 +643,71 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div>
-        <h2 className="text-[24px] font-bold text-[#1d1d1f] tracking-tight flex items-center gap-2">
-          <Crosshair className="w-6 h-6 text-indigo-600" />
-          竞品分析
-        </h2>
-        <p className="text-[#86868b] text-sm mt-1">
-          可从市场大盘 ASIN 列表勾选带入，或手动添加。对比完成后可一键生成「Listing + 流量 + 产品矩阵」综合 AI 报告。
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <h2 className="text-[24px] font-bold text-[#1d1d1f] tracking-tight flex items-center gap-2">
+            <Crosshair className="w-6 h-6 text-indigo-600" />
+            竞品分析
+          </h2>
+          <p className="text-[#86868b] text-sm mt-1">
+            可从市场大盘 ASIN 列表勾选带入，或手动添加。对比完成后可一键生成「Listing + 流量 + 产品矩阵」综合 AI 报告。
+          </p>
+        </div>
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setHistoryOpen((v) => !v);
+              void refreshHistoryList();
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-black/[0.08] bg-white text-sm font-semibold text-[#1d1d1f] hover:border-indigo-200 shadow-sm"
+          >
+            <History className="w-4 h-4 text-indigo-500" />
+            历史分析
+            {historyList.length > 0 && (
+              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full">
+                {historyList.length}
+              </span>
+            )}
+          </button>
+          {historyOpen && (
+            <div className="absolute right-0 top-full mt-2 z-40 w-[min(100vw-2rem,360px)] rounded-2xl border border-black/8 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)] p-2 max-h-80 overflow-auto">
+              {historyLoading ? (
+                <div className="px-3 py-6 text-center text-xs text-[#86868b]">加载中…</div>
+              ) : historyList.length === 0 ? (
+                <div className="px-3 py-6 text-center text-xs text-[#86868b]">暂无历史。完成对比后点「保存本次分析」。</div>
+              ) : (
+                historyList.map((item) => (
+                  <div
+                    key={item.id}
+                    className="group flex items-start gap-2 rounded-xl px-2.5 py-2 hover:bg-[#f5f5f7] cursor-pointer"
+                    onClick={() => void handleLoadHistory(item.id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-semibold text-[#1d1d1f] truncate">{item.title}</div>
+                      <div className="text-[11px] text-[#86868b] mt-0.5">
+                        {item.marketplace} · {item.asinList.length} 个 ASIN
+                        {item.hasAiReport ? ' · 含 AI 报告' : ''}
+                        {item.hasTraffic ? ' · 含流量' : ''}
+                      </div>
+                      <div className="text-[10px] text-[#aeaeb2] mt-0.5">
+                        {new Date(item.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      title="删除"
+                      onClick={(e) => void handleDeleteHistory(item.id, e)}
+                      className="p-1.5 rounded-lg text-[#aeaeb2] hover:text-rose-600 hover:bg-rose-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -734,6 +902,15 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                 <div className="flex gap-2 flex-wrap">
                   <button
                     type="button"
+                    onClick={() => void handleSaveHistory()}
+                    disabled={savingHistory || !hasResult}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm font-semibold disabled:opacity-50 hover:bg-emerald-100"
+                  >
+                    {savingHistory ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    保存本次分析
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => void runFullAiReport()}
                     disabled={aiLoading}
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
@@ -792,6 +969,13 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
           onClose={() => setAiReportOpen(false)}
           onRegenerate={() => void runFullAiReport()}
           regenerating={aiLoading}
+          extraActions={
+            <FeishuPushButton
+              compact
+              title="竞品 AI 综合报告"
+              getMarkdown={() => competitorReportToMarkdown(aiReportHtml, '竞品 AI 综合报告')}
+            />
+          }
         >
           <div
             className="competitor-ai-report text-[15px] leading-[1.75] text-[#3f3f46] [&_h1]:text-[22px] [&_h1]:font-semibold [&_h1]:text-indigo-950 [&_h1]:mb-4 [&_h2]:text-[18px] [&_h2]:font-semibold [&_h2]:text-indigo-900 [&_h2]:mt-8 [&_h2]:mb-3 [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:text-indigo-800 [&_h3]:mt-5 [&_h3]:mb-2 [&_p]:mb-3 [&_ul]:mb-3 [&_li]:mb-1.5 [&_table]:w-full [&_table]:text-sm [&_th]:text-left [&_th]:py-2 [&_td]:py-2 [&_td]:border-b [&_td]:border-indigo-50"

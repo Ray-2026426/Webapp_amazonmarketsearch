@@ -17,6 +17,8 @@ import {
 } from './KeywordAnalysis';
 import { InsightReportPanels } from './InsightReportPanels';
 import { Select } from './ui/Select';
+import { FeishuPushButton } from './FeishuPushButton';
+import { aiInsightToMarkdown } from '../utils/reportToMarkdown';
 
 const scoreColor = (s: number) => s >= 75 ? '#10b981' : s >= 60 ? '#3b82f6' : s >= 45 ? '#f59e0b' : '#9ca3af';
 const scoreBg = (s: number) => s >= 75 ? 'bg-emerald-50' : s >= 60 ? 'bg-blue-50' : s >= 45 ? 'bg-amber-50' : 'bg-[#f5f5f7]';
@@ -783,6 +785,13 @@ function ReportTab({ ins, hasInsight, genIns, onGenAI }: { ins: AiInsight | null
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <FeishuPushButton
+          compact
+          title="AI 用户洞察报告"
+          getMarkdown={() => aiInsightToMarkdown(ins, 'AI 用户洞察报告')}
+        />
+      </div>
       <InsightReportPanels ins={ins} />
       <div className="flex justify-end">
         <button type="button" onClick={onGenAI} disabled={genIns} className="flex items-center gap-2 px-4 py-2 bg-[#f5f5f7] hover:bg-[#ebebeb] text-[#86868b] rounded-xl text-sm font-medium">

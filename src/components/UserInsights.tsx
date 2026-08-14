@@ -19,6 +19,8 @@ import { InsightReportPanels, tryParseAiInsight } from './InsightReportPanels';
 import type { AiInsight } from './KeywordAnalysis';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, Legend, PieChart, Pie } from 'recharts';
 import { Select } from './ui/Select';
+import { FeishuPushButton } from './FeishuPushButton';
+import { vocReportToMarkdown } from '../utils/reportToMarkdown';
 
 interface TagLibrary {
   positive: string[];
@@ -1797,6 +1799,20 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                 onClose={() => setDeepReportOpen(false)}
                 onRegenerate={() => void runDeepReport()}
                 regenerating={isReportLoading}
+                extraActions={
+                  <FeishuPushButton
+                    compact
+                    title="VOC 深度洞察报告"
+                    getMarkdown={() =>
+                      vocReportToMarkdown({
+                        insight: deepInsight,
+                        html: deepReportHtml || undefined,
+                        markdown: deepReportMarkdown || undefined,
+                        title: 'VOC 深度洞察报告',
+                      })
+                    }
+                  />
+                }
               >
                 {deepInsight ? (
                   <InsightReportPanels ins={deepInsight} evidenceLabel="证据" />
