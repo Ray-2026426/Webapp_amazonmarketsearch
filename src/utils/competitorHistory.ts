@@ -32,6 +32,19 @@ export interface CompetitorPackPersist {
   bulletPoints: string;
 }
 
+/** 竞品工作区状态（可挂到「总保存」快照，也可独立历史） */
+export interface CompetitorWorkspaceState {
+  marketplace: string;
+  selected: string[];
+  details: AsinDetailSnapshot[];
+  trafficStats: TrafficStatSnapshot[];
+  topKeywords: Record<string, TrafficKeywordDetail[]>;
+  matrices: ParentMatrixSnapshot[];
+  aiReportHtml: string;
+  packs: Record<string, CompetitorPackPersist>;
+  hasResult: boolean;
+}
+
 export interface CompetitorHistorySnapshot {
   version: 1;
   meta: CompetitorHistoryMeta;

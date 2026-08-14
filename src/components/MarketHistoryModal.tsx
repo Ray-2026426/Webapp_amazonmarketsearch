@@ -50,9 +50,10 @@ export const MarketHistoryModal: React.FC<MarketHistoryModalProps> = ({
               <History className="w-5 h-5 text-indigo-600" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-[#1d1d1f]">我的市场历史</h2>
+              <h2 className="text-lg font-bold text-[#1d1d1f]">我的工作区历史</h2>
               <p className="text-xs text-[#86868b]">
-                数据保存在本机浏览器，最多 {MAX_MARKET_SNAPSHOTS_PER_USER} 条；列表不占内存，点开才加载完整数据。
+                点左侧「总保存」写入；打开后市场 / 关键词 / VOC / 竞品一并恢复。本机最多{' '}
+                {MAX_MARKET_SNAPSHOTS_PER_USER} 条。
               </p>
             </div>
           </div>
@@ -68,7 +69,7 @@ export const MarketHistoryModal: React.FC<MarketHistoryModalProps> = ({
               <span className="text-sm">加载列表…</span>
             </div>
           ) : items.length === 0 ? (
-            <p className="text-sm text-[#86868b] text-center py-12">暂无已保存的市场，请在有数据时点击「保存当前市场」。</p>
+            <p className="text-sm text-[#86868b] text-center py-12">暂无历史。有数据后点侧边栏「总保存」即可。</p>
           ) : (
             <ul className="space-y-2">
               {items.map((it) => (
@@ -79,7 +80,8 @@ export const MarketHistoryModal: React.FC<MarketHistoryModalProps> = ({
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold text-[#1d1d1f] line-clamp-2">{it.title}</div>
                     <div className="text-[11px] text-[#86868b] mt-1">
-                      {it.marketplaceCode} · {it.productCount} ASIN · {it.segmentCount} 个细分 ·{' '}
+                      {it.marketplaceCode} · {it.productCount} ASIN · {it.segmentCount} 个细分
+                      {it.hasCompetitor ? ' · 含竞品' : ''} ·{' '}
                       {new Date(it.createdAt).toLocaleString('zh-CN', { hour12: false })}
                     </div>
                   </div>

@@ -20,6 +20,7 @@ import { ProfitCalculator } from './components/ProfitCalculator';
 import { MarketAnalysisReport } from './components/MarketAnalysisReport';
 import { MarketHistoryModal } from './components/MarketHistoryModal';
 import { saveMarketSnapshot, suggestMarketSnapshotTitle, type MarketHistorySnapshot } from './utils/marketHistory';
+import type { CompetitorWorkspaceState } from './utils/competitorHistory';
 import { clearWorkspaceIndexedDb } from './utils/workspaceIdb';
 import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, formatRevenue, computeMarketReportFingerprint } from './utils/parser';
 import { get, set, del } from 'idb-keyval';
@@ -261,6 +262,10 @@ export default function App() {
   const [selectedCompareAsins, setSelectedCompareAsins] = useState<string[]>([]);
   /** 示例竞品快照：游客/示例模式下让竞品分析页直接有结果可看 */
   const [competitorDemo, setCompetitorDemo] = useState<CompetitorDemoSnapshot | null>(null);
+  /** 竞品工作区（由 CompetitorHub 同步上来，供总保存） */
+  const [competitorWorkspace, setCompetitorWorkspace] = useState<CompetitorWorkspaceState | null>(null);
+  const [competitorRestoreKey, setCompetitorRestoreKey] = useState(0);
+  const [competitorRestorePayload, setCompetitorRestorePayload] = useState<CompetitorWorkspaceState | null>(null);
 
   const isRegisteredUser = Boolean(currentUser && currentUser.id !== 'guest');
 
@@ -372,10 +377,19 @@ export default function App() {
       setAnchorAnnotations(normalizeAnchorAnnotations(snap.anchorAnnotations));
       setAnnotateMode(false);
       setIsDataLoaded(true);
-      toast.success(`已打开历史市场：${snap.meta.title}`);
+      setIsDemoData(false);
+      // 恢复该历史里的竞品页（没有则清空）
+      const comp = snap.competitorWorkspace ?? null;
+      setCompetitorWorkspace(comp);
+      setCompetitorRestorePayload(comp);
+      setCompetitorRestoreKey((k) => k + 1);
+      if (comp?.selected?.length) {
+        setSelectedCompareAsins(comp.selected.slice(0, 5));
+      }
+      toast.success(`已打开历史版本：${snap.meta.title}（各页面一并恢复）`);
     } catch (e) {
       console.error(e);
-      toast.error('打开历史市场失败，请重试');
+      toast.error('打开历史失败，请重试');
     } finally {
       setIsLoading(false);
     }
@@ -383,14 +397,14 @@ export default function App() {
 
   const handleSaveMarketToHistory = useCallback(async () => {
     if (!isRegisteredUser || !currentUser) {
-      toast.error('请使用注册账号登录后再保存历史（游客模式不可用）');
+      toast.error('请使用注册账号登录后再保存（游客模式不可用）');
       return;
     }
     const suggested = suggestMarketSnapshotTitle(marketplace.code, historySourceLabel || undefined, products);
-    const name = window.prompt('为这条市场命名（可留空则使用建议名称）', suggested);
+    const name = window.prompt('为这条工作区命名（市场+关键词+VOC+竞品一并保存；可留空用建议名）', suggested);
     if (name === null) return;
     const finalTitle = name.trim() || suggested;
-    toast.info('正在保存到本机…');
+    toast.info('正在总保存到本机…');
     const res = await saveMarketSnapshot(currentUser.id, {
       title: finalTitle,
       historySourceLabel: historySourceLabel || undefined,
@@ -418,12 +432,14 @@ export default function App() {
       marketReportCache,
       activeView,
       anchorAnnotations,
+      competitorWorkspace: competitorWorkspace?.hasResult ? competitorWorkspace : competitorWorkspace,
     });
     if ('error' in res) {
       toast.error(res.error);
       return;
     }
-    toast.success('已保存到我的市场历史（存在本机浏览器）');
+    const withComp = competitorWorkspace?.hasResult ? '（含竞品分析）' : '';
+    toast.success(`已总保存到本机历史${withComp}`);
   }, [
     isRegisteredUser,
     currentUser,
@@ -452,6 +468,7 @@ export default function App() {
     activeView,
     historySourceLabel,
     anchorAnnotations,
+    competitorWorkspace,
   ]);
 
   const handleExportPdf = useCallback(() => {
@@ -510,6 +527,11 @@ export default function App() {
     setHistorySourceLabel('');
     setAnchorAnnotations([]);
     setAnnotateMode(false);
+    setCompetitorWorkspace(null);
+    setCompetitorRestorePayload(null);
+    setCompetitorRestoreKey((k) => k + 1);
+    setCompetitorDemo(null);
+    setSelectedCompareAsins([]);
     
     // 3. Reset KPI selections
     setSelectedKpiMonths([]);
@@ -1199,8 +1221,8 @@ export default function App() {
             <div className="flex items-stretch gap-1.5 px-2">
               <button
                 type="button"
-                title="我的市场历史"
-                aria-label="我的市场历史"
+                title="我的工作区历史（总保存的版本）"
+                aria-label="我的工作区历史"
                 onClick={() => setIsMarketHistoryOpen(true)}
                 className="shrink-0 w-10 flex items-center justify-center rounded-xl border border-black/5 bg-[#f5f5f7] text-[#86868b] hover:bg-white hover:text-indigo-600 hover:border-indigo-100 transition-colors"
               >
@@ -1208,12 +1230,12 @@ export default function App() {
               </button>
               <button
                 type="button"
-                title="保存当前市场到历史"
+                title="总保存：市场/关键词/VOC/竞品一并存成一个历史版本"
                 onClick={() => void handleSaveMarketToHistory()}
                 disabled={!isDataLoaded}
-                className="flex-1 min-w-0 py-2 px-2 rounded-xl border border-black/5 bg-[#f5f5f7] text-xs font-semibold text-[#86868b] hover:bg-white hover:text-indigo-600 hover:border-indigo-100 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                className="flex-1 min-w-0 py-2 px-2 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-colors disabled:opacity-40 disabled:pointer-events-none"
               >
-                保存市场
+                总保存
               </button>
             </div>
           )}
@@ -1580,8 +1602,12 @@ export default function App() {
               </div>
               }
 
-              {activeView === 'competitors' && (
-                <div className="max-w-7xl mx-auto" data-annotate-anchor="competitors-root">
+              {/* 有市场数据时保持挂载，切 Tab 不丢竞品结果，也便于总保存 */}
+              {(isDataLoaded || activeView === 'competitors') && (
+                <div
+                  className={activeView === 'competitors' ? 'max-w-7xl mx-auto' : 'hidden'}
+                  data-annotate-anchor="competitors-root"
+                >
                   <CompetitorHub
                     products={products}
                     marketplaceCode={marketplace.code}
@@ -1589,10 +1615,13 @@ export default function App() {
                     preselectedAsins={selectedCompareAsins}
                     demoSnapshot={isDemoData ? competitorDemo : null}
                     userId={currentUser?.id || 'guest'}
+                    workspaceFromParent={competitorWorkspace}
+                    workspaceRestoreKey={competitorRestoreKey}
+                    restorePayload={competitorRestorePayload}
+                    onWorkspaceSync={setCompetitorWorkspace}
                   />
                 </div>
               )}
-
               {/* 有市场数据、或当前在用户洞察、或已有评论数据时保持挂载（后台打标不因切 Tab 中断） */}
               {(isDataLoaded || activeView === 'insights' || reviews.length > 0) && (
                 <div

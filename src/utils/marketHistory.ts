@@ -2,6 +2,7 @@ import { get, set, del } from 'idb-keyval';
 import type { Product, HistoryRecord, Review, Keyword } from './parser';
 import { createUserId } from './auth';
 import type { AnchorAnnotation } from './anchorAnnotations';
+import type { CompetitorWorkspaceState } from './competitorHistory';
 
 /** 单账号最多保留条数，避免本机 IndexedDB 过大导致卡顿 */
 export const MAX_MARKET_SNAPSHOTS_PER_USER = 12;
@@ -13,6 +14,8 @@ export interface MarketHistoryMeta {
   marketplaceCode: string;
   productCount: number;
   segmentCount: number;
+  /** 是否含竞品对比结果（总保存后） */
+  hasCompetitor?: boolean;
 }
 
 export interface MarketHistoryIndexFile {
@@ -49,6 +52,8 @@ export interface MarketHistorySnapshot {
   historySourceLabel?: string;
   /** 锚点批注（旧快照可能无此字段） */
   anchorAnnotations?: AnchorAnnotation[];
+  /** 竞品分析工作区（总保存一并写入；旧快照可能无） */
+  competitorWorkspace?: CompetitorWorkspaceState | null;
 }
 
 /**
@@ -126,6 +131,7 @@ export async function saveMarketSnapshot(
       marketplaceCode: input.marketplace.code,
       productCount: input.products.length,
       segmentCount: input.segments.length,
+      hasCompetitor: Boolean(input.competitorWorkspace?.hasResult),
     };
 
     while (items.length >= MAX_MARKET_SNAPSHOTS_PER_USER) {
@@ -163,6 +169,7 @@ export async function saveMarketSnapshot(
       activeView: input.activeView,
       historySourceLabel: input.historySourceLabel,
       anchorAnnotations: input.anchorAnnotations ?? [],
+      competitorWorkspace: input.competitorWorkspace ?? null,
     };
 
     await set(snapshotKey(userId, id), full);

@@ -33,7 +33,9 @@ import {
   loadCompetitorSnapshot,
   deleteCompetitorSnapshot,
   suggestCompetitorSnapshotTitle,
+  sanitizePacksForPersist,
   type CompetitorHistoryMeta,
+  type CompetitorWorkspaceState,
 } from '../utils/competitorHistory';
 import { FeishuPushButton } from './FeishuPushButton';
 import { competitorReportToMarkdown } from '../utils/reportToMarkdown';
@@ -50,6 +52,12 @@ interface CompetitorHubProps {
   demoSnapshot?: CompetitorDemoSnapshot | null;
   /** 登录用户 id；游客用 guest，用于本机历史隔离 */
   userId?: string;
+  /** 父级持有的工作区（总保存用）；切 Tab 不丢 */
+  workspaceFromParent?: CompetitorWorkspaceState | null;
+  /** 递增时从 workspaceFromParent / restorePayload 强制灌入 */
+  workspaceRestoreKey?: number;
+  restorePayload?: CompetitorWorkspaceState | null;
+  onWorkspaceSync?: (ws: CompetitorWorkspaceState | null) => void;
 }
 
 interface AsinPack {
@@ -224,23 +232,17 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   preselectedAsins = [],
   demoSnapshot = null,
   userId = 'guest',
+  workspaceFromParent = null,
+  workspaceRestoreKey = 0,
+  restorePayload = null,
+  onWorkspaceSync,
 }) => {
   const historyUserId = userId || 'guest';
-  const [step, setStep] = useState<WizardStep>(1);
-  const [asinInput, setAsinInput] = useState('');
-  const [selected, setSelected] = useState<string[]>(() =>
-    (demoSnapshot?.selectedAsins?.length
-      ? demoSnapshot.selectedAsins
-      : preselectedAsins
-    )
-      .slice(0, MAX_ASINS)
-      .map((a) => a.toUpperCase())
-  );
-  const [marketplace, setMarketplace] = useState(normalizeMarketplaceCode(marketplaceCode));
-  const [packs, setPacks] = useState<Record<string, AsinPack>>(() => {
-    if (!demoSnapshot?.packs) return {};
+  const seed = restorePayload || workspaceFromParent || null;
+
+  const packsFromPersist = (raw?: Record<string, { zipName: string; secondaryPreviewUrls: string[]; aplusPreviewUrls: string[]; bulletPoints: string }> | null): Record<string, AsinPack> => {
     const next: Record<string, AsinPack> = {};
-    for (const [asin, pack] of Object.entries(demoSnapshot.packs)) {
+    for (const [asin, pack] of Object.entries(raw || {})) {
       next[asin.toUpperCase()] = {
         zipName: pack.zipName,
         secondaryPreviewUrls: [...(pack.secondaryPreviewUrls || [])],
@@ -249,29 +251,122 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
       };
     }
     return next;
+  };
+
+  const applyWorkspace = (ws: CompetitorWorkspaceState) => {
+    setMarketplace(normalizeMarketplaceCode(ws.marketplace));
+    setSelected((ws.selected || []).map((a) => a.toUpperCase()));
+    setDetails(ws.details || []);
+    setTrafficStats(ws.trafficStats || []);
+    setTopKeywords(ws.topKeywords || {});
+    setMatrices(ws.matrices || []);
+    setAiReportHtml(ws.aiReportHtml || '');
+    setPacks(packsFromPersist(ws.packs));
+    setBrandSiblings(extractBrandSiblingsFromProducts(products, ws.details || [], []));
+    const ok = Boolean(ws.hasResult && (ws.details?.length || 0) > 0);
+    setHasResult(ok);
+    if (ok) {
+      setStep(3);
+      setResultTab('listing');
+    }
+  };
+
+  const [step, setStep] = useState<WizardStep>(() => (seed?.hasResult ? 3 : 1));
+  const [asinInput, setAsinInput] = useState('');
+  const [selected, setSelected] = useState<string[]>(() => {
+    if (seed?.selected?.length) return seed.selected.map((a) => a.toUpperCase()).slice(0, MAX_ASINS);
+    return (demoSnapshot?.selectedAsins?.length ? demoSnapshot.selectedAsins : preselectedAsins)
+      .slice(0, MAX_ASINS)
+      .map((a) => a.toUpperCase());
+  });
+  const [marketplace, setMarketplace] = useState(
+    normalizeMarketplaceCode(seed?.marketplace || marketplaceCode)
+  );
+  const [packs, setPacks] = useState<Record<string, AsinPack>>(() => {
+    if (seed?.packs) return packsFromPersist(seed.packs);
+    if (!demoSnapshot?.packs) return {};
+    return packsFromPersist(demoSnapshot.packs);
   });
   const [parsingAsin, setParsingAsin] = useState<string | null>(null);
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
-  const [hasResult, setHasResult] = useState(() => Boolean(demoSnapshot?.details?.length));
+  const [hasResult, setHasResult] = useState(() =>
+    Boolean(seed?.hasResult || demoSnapshot?.details?.length)
+  );
   const [resultTab, setResultTab] = useState<ResultTab>('listing');
 
-  const [details, setDetails] = useState<AsinDetailSnapshot[]>(() => demoSnapshot?.details ?? []);
-  const [trafficStats, setTrafficStats] = useState<TrafficStatSnapshot[]>([]);
-  const [topKeywords, setTopKeywords] = useState<Record<string, TrafficKeywordDetail[]>>({});
-  const [matrices, setMatrices] = useState<ParentMatrixSnapshot[]>([]);
+  const [details, setDetails] = useState<AsinDetailSnapshot[]>(
+    () => seed?.details ?? demoSnapshot?.details ?? []
+  );
+  const [trafficStats, setTrafficStats] = useState<TrafficStatSnapshot[]>(
+    () => seed?.trafficStats ?? []
+  );
+  const [topKeywords, setTopKeywords] = useState<Record<string, TrafficKeywordDetail[]>>(
+    () => seed?.topKeywords ?? {}
+  );
+  const [matrices, setMatrices] = useState<ParentMatrixSnapshot[]>(() => seed?.matrices ?? []);
   const [brandSiblings, setBrandSiblings] = useState<BrandSiblingRow[]>([]);
 
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiReportHtml, setAiReportHtml] = useState(() => demoSnapshot?.aiReportHtml ?? '');
+  const [aiReportHtml, setAiReportHtml] = useState(
+    () => seed?.aiReportHtml ?? demoSnapshot?.aiReportHtml ?? ''
+  );
   const [aiReportOpen, setAiReportOpen] = useState(false);
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyList, setHistoryList] = useState<CompetitorHistoryMeta[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [savingHistory, setSavingHistory] = useState(false);
+  const lastRestoreKey = useRef(0);
+
+  // 总保存：把当前竞品状态同步给父级
+  useEffect(() => {
+    if (!onWorkspaceSync) return;
+    const ws: CompetitorWorkspaceState = {
+      marketplace,
+      selected,
+      details,
+      trafficStats,
+      topKeywords,
+      matrices,
+      aiReportHtml,
+      packs: sanitizePacksForPersist(packs),
+      hasResult,
+    };
+    onWorkspaceSync(ws);
+  }, [
+    marketplace,
+    selected,
+    details,
+    trafficStats,
+    topKeywords,
+    matrices,
+    aiReportHtml,
+    packs,
+    hasResult,
+    onWorkspaceSync,
+  ]);
+
+  // 从「总历史」打开：强制灌入
+  useEffect(() => {
+    if (!workspaceRestoreKey || workspaceRestoreKey === lastRestoreKey.current) return;
+    lastRestoreKey.current = workspaceRestoreKey;
+    const payload = restorePayload ?? workspaceFromParent;
+    if (!payload) {
+      setHasResult(false);
+      setDetails([]);
+      setTrafficStats([]);
+      setTopKeywords({});
+      setMatrices([]);
+      setAiReportHtml('');
+      setPacks({});
+      setStep(1);
+      return;
+    }
+    applyWorkspace(payload);
+  }, [workspaceRestoreKey, restorePayload, workspaceFromParent]);
 
   const refreshHistoryList = async () => {
     try {
@@ -909,6 +1004,9 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                     {savingHistory ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     保存本次分析
                   </button>
+                  <span className="text-[11px] text-[#86868b] self-center">
+                    也可在左侧点「总保存」，和全站一起存进工作区历史
+                  </span>
                   <button
                     type="button"
                     onClick={() => void runFullAiReport()}
