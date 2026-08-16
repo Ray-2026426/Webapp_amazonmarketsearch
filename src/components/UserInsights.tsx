@@ -1816,51 +1816,40 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
                 </div>
               </CardHeader>
               <CardContent className="p-6">
-                {deepInsight ? (
-                  <div className="space-y-4">
-                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
-                      <div className="text-[11px] font-semibold text-indigo-600 uppercase tracking-wider mb-1">用户画像摘要</div>
-                      <p className="text-sm text-[#1d1d1f] leading-relaxed line-clamp-3">{deepInsight.userPersona}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (deepReport) setDeepReportOpen(true);
+                  }}
+                  disabled={!deepReport}
+                  className={`w-full min-h-[150px] rounded-2xl border border-dashed p-6 text-left transition-all ${
+                    deepReport
+                      ? 'border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 hover:border-indigo-300 cursor-pointer'
+                      : 'border-black/10 bg-[#f8f9fb] cursor-default'
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${deepReport ? 'bg-indigo-600 text-white' : 'bg-white text-zinc-300 border border-black/5'}`}>
+                        <FileText className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-[#1d1d1f] mb-1">
+                          {deepReport ? '深度洞察报告已生成' : '尚未生成深度洞察报告'}
+                        </div>
+                        <p className="text-sm text-[#86868b] leading-relaxed max-w-2xl">
+                          {deepReport
+                            ? '点击此卡片进入完整报告页；一级页只保留入口，避免和详情页重复展示。'
+                            : '点击右上角「生成深度洞察」，生成后这里会变成完整报告入口。'}
+                        </p>
+                      </div>
                     </div>
-                    <div className="grid sm:grid-cols-3 gap-3 text-[12px]">
-                      <div className="rounded-xl bg-[#f8f9fb] border border-black/5 p-3">
-                        <div className="text-[#86868b] mb-1">场景</div>
-                        <div className="text-[#1d1d1f] font-medium">{(deepInsight.userScenes || []).slice(0, 2).join(' · ') || '—'}</div>
-                      </div>
-                      <div className="rounded-xl bg-[#f8f9fb] border border-black/5 p-3">
-                        <div className="text-[#86868b] mb-1">痛点</div>
-                        <div className="text-[#1d1d1f] font-medium">{(deepInsight.userPainPoints || []).slice(0, 2).join(' · ') || '—'}</div>
-                      </div>
-                      <div className="rounded-xl bg-[#f8f9fb] border border-black/5 p-3">
-                        <div className="text-[#86868b] mb-1">决策阶段</div>
-                        <div className="text-[#1d1d1f] font-medium">{(deepInsight.decisionStages || []).map(s => s.name).filter(Boolean).join(' → ') || '—'}</div>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3 pt-1">
-                      <button type="button" onClick={() => setDeepReportOpen(true)} className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">
-                        <FileText className="w-4 h-4" />打开完整报告
-                      </button>
-                      <button type="button" onClick={() => void runDeepReport()} disabled={isReportLoading} className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-indigo-200 text-indigo-700 rounded-xl text-sm font-semibold hover:bg-indigo-50 disabled:opacity-60">
-                        {isReportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                        重新生成
-                      </button>
+                    <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold shrink-0 ${deepReport ? 'bg-white text-indigo-700 border border-indigo-200' : 'bg-white text-[#86868b] border border-black/5'}`}>
+                      <FileText className="w-4 h-4" />
+                      {deepReport ? '打开报告' : '等待生成'}
                     </div>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-6 text-[#86868b]">
-                    <FileText className="w-10 h-10 mb-3 text-zinc-200"/>
-                    <p className="text-sm text-center max-w-md">
-                      {deepReport
-                        ? '已有旧版报告。可直接查看，或点击「生成深度洞察」升级为结构化三块报告。'
-                        : '点击右上角「生成深度洞察」，将在本区直接展示画像 / 路径 / 结论摘要。'}
-                    </p>
-                    {deepReport && (
-                      <button type="button" onClick={() => setDeepReportOpen(true)} className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold">
-                        查看已有报告
-                      </button>
-                    )}
-                  </div>
-                )}
+                </button>
               </CardContent>
             </Card>
 
@@ -1931,14 +1920,40 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
                 </div>
               </CardHeader>
               <CardContent className="p-6">
-                <div className="flex flex-col items-center justify-center py-8 text-[#86868b]">
-                  <Route className="w-12 h-12 mb-3 text-zinc-200"/>
-                  <p className="text-sm text-center">
-                    {journeyRows.length > 0 || journeyReportRaw
-                      ? '旅程表明细已生成。点击「查看旅程」打开宽屏阅读页。'
-                      : '可选：需要更细的 5W1H 阶段表时再生成；主结论请看上方「深度洞察」。'}
-                  </p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (journeyRows.length > 0 || journeyReportRaw) setJourneyOpen(true);
+                  }}
+                  disabled={!(journeyRows.length > 0 || journeyReportRaw)}
+                  className={`w-full min-h-[140px] rounded-2xl border border-dashed p-6 text-left transition-all ${
+                    journeyRows.length > 0 || journeyReportRaw
+                      ? 'border-violet-200 bg-violet-50/35 hover:bg-violet-50 hover:border-violet-300 cursor-pointer'
+                      : 'border-black/10 bg-[#f8f9fb] cursor-default'
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${journeyRows.length > 0 || journeyReportRaw ? 'bg-violet-600 text-white' : 'bg-white text-zinc-300 border border-black/5'}`}>
+                        <Route className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-[#1d1d1f] mb-1">
+                          {journeyRows.length > 0 || journeyReportRaw ? '5W1H 旅程表已生成' : '5W1H 旅程表未生成'}
+                        </div>
+                        <p className="text-sm text-[#86868b] leading-relaxed max-w-2xl">
+                          {journeyRows.length > 0 || journeyReportRaw
+                            ? '点击此卡片进入宽屏旅程页，查看阶段路径、证据引用和改进动作。'
+                            : '这是深度洞察的可选附表；需要更细的用户路径拆解时再生成。'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold shrink-0 ${journeyRows.length > 0 || journeyReportRaw ? 'bg-white text-violet-700 border border-violet-200' : 'bg-white text-[#86868b] border border-black/5'}`}>
+                      <Route className="w-4 h-4" />
+                      {journeyRows.length > 0 || journeyReportRaw ? '打开旅程' : '等待生成'}
+                    </div>
+                  </div>
+                </button>
               </CardContent>
             </Card>
 

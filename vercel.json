@@ -35,6 +35,10 @@
       "destination": "https://open.bigmodel.cn/$1"
     },
     {
+      "source": "/api-proxy/doubao/(.*)",
+      "destination": "https://ark.cn-beijing.volces.com/$1"
+    },
+    {
       "source": "/api-proxy/sellersprite-mcp",
       "destination": "https://mcp.sellersprite.com/mcp"
     },

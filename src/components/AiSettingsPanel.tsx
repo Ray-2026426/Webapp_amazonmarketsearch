@@ -448,6 +448,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                       qwen: 'https://dashscope.console.aliyun.com/apiKey',
                       moonshot: 'https://platform.moonshot.cn/console/api-keys',
                       zhipu: 'https://open.bigmodel.cn/usercenter/apikeys',
+                      doubao: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
                     }[provider]}
                     target="_blank"
                     rel="noopener noreferrer"

@@ -1,8 +1,9 @@
 import { buildUserBackgroundSystemPrompt } from './userBackground';
+import { getCurrentUser, isAdminSession } from './auth';
 
 // AI Provider Configuration & Unified Call Layer
 
-export type AiProvider = 'gemini' | 'openai' | 'claude' | 'deepseek' | 'qwen' | 'moonshot' | 'zhipu';
+export type AiProvider = 'gemini' | 'openai' | 'claude' | 'deepseek' | 'qwen' | 'moonshot' | 'zhipu' | 'doubao';
 
 export interface AiProviderConfig {
   id: AiProvider;
@@ -70,6 +71,14 @@ export const AI_PROVIDERS: AiProviderConfig[] = [
     models: ['glm-4-flash', 'glm-4-air', 'glm-4', 'glm-4-plus'],
     apiKeyPlaceholder: '\u8bf7\u8f93\u5165\u667a\u8c31 API Key',
   },
+  {
+    id: 'doubao',
+    name: '\u8c46\u5305 / \u706b\u5c71\u65b9\u821f',
+    baseUrl: '/api-proxy/doubao/api/v3',
+    defaultModel: 'doubao-seed-1-6-flash-250615',
+    models: ['doubao-seed-1-6-flash-250615', 'doubao-seed-1-6-thinking-250715', 'doubao-1-5-pro-32k-250115', 'doubao-1-5-lite-32k-250115'],
+    apiKeyPlaceholder: 'Volcengine Ark API Key',
+  },
 ];
 
 export interface AiSettings {
@@ -96,12 +105,27 @@ export function getEffectiveModels(settings: AiSettings, provider: AiProvider): 
 
 const AI_SETTINGS_KEY = 'amzdev_ai_settings';
 
+function getAiSettingsKey(): string {
+  const user = getCurrentUser();
+  return user?.id ? `${AI_SETTINGS_KEY}__${user.id}` : AI_SETTINGS_KEY;
+}
+
+function canUseDefaultAiKey(): boolean {
+  return isAdminSession(getCurrentUser());
+}
+
 export function loadAiSettings(): AiSettings | null {
   try {
-    const raw = localStorage.getItem(AI_SETTINGS_KEY);
+    const storageKey = getAiSettingsKey();
+    const raw = localStorage.getItem(storageKey);
     if (raw) return JSON.parse(raw) as AiSettings;
+    const legacyRaw = canUseDefaultAiKey() ? localStorage.getItem(AI_SETTINGS_KEY) : null;
+    if (legacyRaw) {
+      localStorage.setItem(storageKey, legacyRaw);
+      return JSON.parse(legacyRaw) as AiSettings;
+    }
     // \u56de\u9000\u5230 .env.local \u9ed8\u8ba4\u914d\u7f6e\uff0c\u65e0\u9700\u624b\u52a8\u8f93\u5165
-    const defaultKey = import.meta.env.VITE_DEFAULT_AI_KEY as string | undefined;
+    const defaultKey = canUseDefaultAiKey() ? (import.meta.env.VITE_DEFAULT_AI_KEY as string | undefined) : '';
     const defaultProvider = (import.meta.env.VITE_DEFAULT_AI_PROVIDER ?? 'deepseek') as AiProvider;
     const defaultModel = (import.meta.env.VITE_DEFAULT_AI_MODEL ?? 'deepseek-chat') as string;
     // 无密钥时也返回 DeepSeek 默认项，方便你在「AI 设置」里直接填 Key
@@ -116,7 +140,7 @@ export function loadAiSettings(): AiSettings | null {
 }
 
 export function saveAiSettings(settings: AiSettings): void {
-  localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(settings));
+  localStorage.setItem(getAiSettingsKey(), JSON.stringify(settings));
 }
 
 export function getProviderConfig(provider: AiProvider): AiProviderConfig {
@@ -367,6 +391,16 @@ export function resolveCustomApiUrl(url: string, provider: AiProvider): string {
     return cleaned;
   }
 
+  if (provider === 'doubao') {
+    if (/\/api\/v3\/chat\/completions$/i.test(cleaned)) return cleaned;
+    if (/\/api\/v3$/i.test(cleaned)) return `${cleaned}/chat/completions`;
+    try {
+      const path = new URL(cleaned).pathname.replace(/\/+$/, '') || '/';
+      if (path === '/' || path === '') return `${cleaned}/api/v3/chat/completions`;
+    } catch {}
+    return cleaned;
+  }
+
   // 中转 API 常见：.../v1 → 只补 /chat/completions
   if (/\/v1$/i.test(cleaned)) return `${cleaned}/chat/completions`;
 
@@ -426,6 +460,9 @@ export function buildEndpoint(settings: AiSettings, provider: AiProvider): strin
   const baseUrl = getProviderConfig(provider).baseUrl.replace(/\/+$/, '');
   if (provider === 'zhipu') {
     return `${baseUrl}/api/paas/v4/chat/completions`;
+  }
+  if (provider === 'doubao') {
+    return `${baseUrl}/chat/completions`;
   }
   return `${baseUrl}/v1/chat/completions`;
 }

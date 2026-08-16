@@ -6,3 +6,4 @@
 /api-proxy/qwen/* https://dashscope.aliyuncs.com/:splat 200
 /api-proxy/moonshot/* https://api.moonshot.cn/:splat 200
 /api-proxy/zhipu/* https://open.bigmodel.cn/:splat 200
+/api-proxy/doubao/* https://ark.cn-beijing.volces.com/:splat 200

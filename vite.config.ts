@@ -58,6 +58,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (p: string) => p.replace(/^\/api-proxy\/zhipu/, ''),
         },
+        '/api-proxy/doubao': {
+          target: 'https://ark.cn-beijing.volces.com',
+          changeOrigin: true,
+          rewrite: (p: string) => p.replace(/^\/api-proxy\/doubao/, ''),
+        },
         '/api-proxy/sellersprite-mcp': {
           target: 'https://mcp.sellersprite.com',
           changeOrigin: true,

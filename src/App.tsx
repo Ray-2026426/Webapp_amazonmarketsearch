@@ -15,7 +15,7 @@ import { FileUpload } from './components/FileUpload';
 import { DateRangeSelector } from './components/DateRangeSelector';
 import { SegmentationManager } from './components/SegmentationManager';
 import { UserInsights } from './components/UserInsights';
-import { KeywordAnalysis } from './components/KeywordAnalysis';
+import { KeywordAnalysis, type AiInsight } from './components/KeywordAnalysis';
 import { ProfitCalculator } from './components/ProfitCalculator';
 import { MarketAnalysisReport } from './components/MarketAnalysisReport';
 import { MarketHistoryModal } from './components/MarketHistoryModal';
@@ -125,8 +125,11 @@ export default function App() {
   // ── Auth & AI Settings ────────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(() => {
     ensureBuiltinAdmin();
-    try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
-    return getCurrentUser();
+    const user = getCurrentUser();
+    if (isAdminSession(user)) {
+      try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
+    }
+    return user;
   });
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(() => loadAiSettings());
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
@@ -136,8 +139,10 @@ export default function App() {
   // 每次进入应用：同步内置管理员 + 四家 MCP 默认 Key
   useEffect(() => {
     ensureBuiltinAdmin();
-    try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
-  }, []);
+    if (isAdminSession(currentUser)) {
+      try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
+    }
+  }, [currentUser]);
 
   // 飞书 OAuth 回跳：把 token 写入本机
   useEffect(() => {
@@ -256,6 +261,12 @@ export default function App() {
 
   // Keyword Analysis State
   const [keywords, setKeywords] = useState<Keyword[]>([]);
+  const [keywordInsight, setKeywordInsight] = useState<AiInsight | null>(null);
+  const [keywordInsightRestoreKey, setKeywordInsightRestoreKey] = useState(0);
+  const handleKeywordInsightSync = useCallback((state: AiInsight | null) => {
+    setKeywordInsight(state);
+    void set('keywordInsight', state);
+  }, []);
 
   /** 主内容滚动区 ref，供锚点批注绑定滚动与点击捕获 */
   const scrollMainRef = useRef<HTMLDivElement>(null);
@@ -289,6 +300,8 @@ export default function App() {
     setMarketplace(demo.marketplace);
     setHistorySourceLabel(demo.sourceLabel);
     setKeywords(demo.keywords);
+    setKeywordInsight(demo.keywordAiInsight);
+    setKeywordInsightRestoreKey((k) => k + 1);
     setReviews(demo.reviews);
     setPersona(demo.persona);
     const demoInsightsWorkspace: UserInsightsWorkspaceState = {
@@ -330,6 +343,7 @@ export default function App() {
     void set('userInsightsWorkspace', demoInsightsWorkspace);
     void set('marketReportCache', reportCache);
     void set('keywords', demo.keywords);
+    void set('keywordInsight', demo.keywordAiInsight);
     void set('reviews', demo.reviews);
     if (opts?.toastMsg) {
       toast.success('已加载示例数据（含 AI 洞察报告 / 主图 / 评论 / 关键词 / 竞品）');
@@ -369,6 +383,7 @@ export default function App() {
       await set('reviews', snap.reviews);
       await set('persona', snap.persona);
       await set('keywords', snap.keywords);
+      await set('keywordInsight', snap.keywordInsight ?? null);
       await set('marketReportCache', snap.marketReportCache);
       await set('activeView', snap.activeView);
       await set('historySourceLabel', snap.historySourceLabel ?? '');
@@ -397,6 +412,8 @@ export default function App() {
       setReviews(snap.reviews);
       setPersona(snap.persona);
       setKeywords(snap.keywords);
+      setKeywordInsight(snap.keywordInsight ?? null);
+      setKeywordInsightRestoreKey((k) => k + 1);
       setMarketReportCache(snap.marketReportCache);
       setActiveView(snap.activeView);
       setHistorySourceLabel(snap.historySourceLabel ?? '');
@@ -459,6 +476,7 @@ export default function App() {
       reviews,
       persona,
       keywords,
+      keywordInsight,
       marketReportCache,
       activeView,
       anchorAnnotations,
@@ -495,6 +513,7 @@ export default function App() {
     reviews,
     persona,
     keywords,
+    keywordInsight,
     marketReportCache,
     activeView,
     historySourceLabel,
@@ -547,6 +566,8 @@ export default function App() {
     setMonths([]);
     setReviews([]);
     setKeywords([]);
+    setKeywordInsight(null);
+    setKeywordInsightRestoreKey((k) => k + 1);
     setAsinToSegment({});
     setSegmentChildren({});
     setAsinToSubSegment({});
@@ -688,7 +709,7 @@ export default function App() {
               savedAsinToSegment, savedSegmentChildren, savedAsinToSubSegment, savedSegmentDescriptions, savedSegmentSubDescriptions,
               savedSegmentDepth, savedSegmentLevel3Children, savedAsinToLevel3Segment, savedSegmentLevel3Descriptions,
               savedReviews, savedPersona, savedKeywords, savedSelectedSegment,
-              savedMarketReportCache, savedHistorySourceLabel, savedAnchorAnnotations,
+              savedKeywordInsight, savedMarketReportCache, savedHistorySourceLabel, savedAnchorAnnotations,
               savedSelectedKpiMonths, savedPreviousKpiMonths, savedLastYearKpiMonths,
               savedUserInsightsWorkspace,
             ] = await Promise.all([
@@ -696,6 +717,7 @@ export default function App() {
               get('asinToSegment'), get('segmentChildren'), get('asinToSubSegment'), get('segmentDescriptions'), get('segmentSubDescriptions'),
               get('segmentDepth'), get('segmentLevel3Children'), get('asinToLevel3Segment'), get('segmentLevel3Descriptions'),
               get('reviews'), get('persona'), get('keywords'), get('selectedSegment'),
+              get('keywordInsight'),
               get('marketReportCache'),
               get('historySourceLabel'),
               get('anchorAnnotations'),
@@ -727,6 +749,8 @@ export default function App() {
             if (savedReviews) setReviews(savedReviews);
             if (savedPersona) setPersona(savedPersona);
             if (savedKeywords) setKeywords(savedKeywords);
+            setKeywordInsight((savedKeywordInsight as AiInsight | null | undefined) ?? null);
+            setKeywordInsightRestoreKey((k) => k + 1);
             if (savedSelectedSegment) {
               setSelectedSegment(coerceSegmentFilterKey(String(savedSelectedSegment), loadedDepth));
             }
@@ -766,6 +790,7 @@ export default function App() {
               setCompetitorDemo(demo.competitorDemo);
               setIsDemoData(true);
               if (!savedKeywords?.length) setKeywords(demo.keywords);
+              if (!savedKeywordInsight) setKeywordInsight(demo.keywordAiInsight);
               if (!savedReviews?.length) setReviews(demo.reviews);
               setSelectedCompareAsins(demo.competitorDemo.selectedAsins.slice(0, 5));
             }
@@ -777,10 +802,11 @@ export default function App() {
           }
         } else {
           // 新用户：没有任何已保存的市场数据，加载演示数据让用户直观看到 APP 效果
-          const [savedReviews, savedPersona, savedKeywords, savedAnchorAnnotations, savedUserInsightsWorkspace] = await Promise.all([
+          const [savedReviews, savedPersona, savedKeywords, savedKeywordInsight, savedAnchorAnnotations, savedUserInsightsWorkspace] = await Promise.all([
             get('reviews'),
             get('persona'),
             get('keywords'),
+            get('keywordInsight'),
             get('anchorAnnotations'),
             get('userInsightsWorkspace'),
           ]);
@@ -794,6 +820,8 @@ export default function App() {
             setReviews(savedReviews);
             if (savedPersona) setPersona(savedPersona);
             if (savedKeywords) setKeywords(savedKeywords);
+            setKeywordInsight((savedKeywordInsight as AiInsight | null | undefined) ?? null);
+            setKeywordInsightRestoreKey((k) => k + 1);
             setAnchorAnnotations(normalizeAnchorAnnotations(savedAnchorAnnotations));
             const insightsWs = normalizeUserInsightsWorkspace(savedUserInsightsWorkspace);
             setUserInsightsWorkspace(insightsWs);
@@ -870,6 +898,7 @@ export default function App() {
         await set('reviews', reviews);
         await set('persona', persona);
         await set('keywords', keywords);
+        await set('keywordInsight', keywordInsight);
         await set('marketReportCache', marketReportCache);
         await set('historySourceLabel', historySourceLabel);
         await set('anchorAnnotations', anchorAnnotations);
@@ -888,7 +917,7 @@ export default function App() {
     products, history, months, segments, asinToSegment, segmentChildren, asinToSubSegment, segmentDescriptions, segmentSubDescriptions,
     segmentDepth, segmentLevel3Children, asinToLevel3Segment, segmentLevel3Descriptions,
     selectedSegment, selectedKpiMonths, previousKpiMonths, lastYearKpiMonths,
-    reviews, persona, keywords, marketReportCache, historySourceLabel, anchorAnnotations, userInsightsWorkspace
+    reviews, persona, keywords, keywordInsight, marketReportCache, historySourceLabel, anchorAnnotations, userInsightsWorkspace
   ]);
 
   const segmentFilterOptions = useMemo(() => {
@@ -1700,6 +1729,9 @@ export default function App() {
                     marketplaceCode={marketplace.code}
                     suggestAsins={products.slice(0, 8).map((p) => p.asin).filter(Boolean)}
                     initialInsight={isDemoData ? getDemoData().keywordAiInsight : null}
+                    persistedInsight={keywordInsight}
+                    insightRestoreKey={keywordInsightRestoreKey}
+                    onInsightSync={handleKeywordInsightSync}
                   />
                 </div>
               }

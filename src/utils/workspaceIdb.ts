@@ -25,6 +25,7 @@ export const WORKSPACE_IDB_KEYS = [
   'reviews',
   'persona',
   'keywords',
+  'keywordInsight',
   'marketReportCache',
   'historySourceLabel',
   'anchorAnnotations',

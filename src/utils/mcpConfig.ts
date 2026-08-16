@@ -1,4 +1,5 @@
 /** MCP 数据源配置（可多家）+ 应用功能开关（仅存本机浏览器） */
+import { getCurrentUser, isAdminSession } from './auth';
 
 const MCP_KEY = 'amzdev_mcp_settings';
 const FEATURES_KEY = 'amzdev_feature_flags';
@@ -28,6 +29,15 @@ export const ADMIN_DEFAULT_MCP_KEYS = {
   xydc: 'mcp_407eba6698f9e99d23ecaad5364e4be6',
   sorftime: 'mddheg1wejzyqlzim2p4d216vmhldz09',
 } as const;
+
+function getMcpSettingsKey(): string {
+  const user = getCurrentUser();
+  return user?.id ? `${MCP_KEY}__${user.id}` : MCP_KEY;
+}
+
+function canUseAdminMcpDefaults(): boolean {
+  return isAdminSession(getCurrentUser());
+}
 
 /** 单条 MCP 数据源 */
 export interface McpProviderEntry {
@@ -87,22 +97,24 @@ function uid(): string {
 }
 
 export function createSellerSpriteProvider(partial?: Partial<McpProviderEntry>): McpProviderEntry {
+  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
     id: partial?.id || `ss_${uid()}`,
     name: partial?.name || '卖家精灵',
     kind: 'sellersprite',
-    secretKey: (partial?.secretKey || envDefaultSellerSpriteSecret() || ADMIN_DEFAULT_MCP_KEYS.sellersprite || '').trim(),
+    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultSellerSpriteSecret() || ADMIN_DEFAULT_MCP_KEYS.sellersprite : '') || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
 }
 
 export function createLingXingProvider(partial?: Partial<McpProviderEntry>): McpProviderEntry {
+  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
     id: partial?.id || `lx_${uid()}`,
     name: partial?.name || '领星',
     kind: 'lingxing',
-    secretKey: (partial?.secretKey || ADMIN_DEFAULT_MCP_KEYS.lingxing || '').trim(),
+    secretKey: (partial?.secretKey || (defaultsAllowed ? ADMIN_DEFAULT_MCP_KEYS.lingxing : '') || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
@@ -120,22 +132,24 @@ export function createCustomProvider(partial?: Partial<McpProviderEntry>): McpPr
 }
 
 export function createXydcProvider(partial?: Partial<McpProviderEntry>): McpProviderEntry {
+  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
     id: partial?.id || `xydc_${uid()}`,
     name: partial?.name || '西柚洞察',
     kind: 'xydc',
-    secretKey: (partial?.secretKey || envDefaultXydcSecret() || ADMIN_DEFAULT_MCP_KEYS.xydc || '').trim(),
+    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultXydcSecret() || ADMIN_DEFAULT_MCP_KEYS.xydc : '') || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
 }
 
 export function createSorftimeProvider(partial?: Partial<McpProviderEntry>): McpProviderEntry {
+  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
     id: partial?.id || `sorf_${uid()}`,
     name: partial?.name || 'Sorftime',
     kind: 'sorftime',
-    secretKey: (partial?.secretKey || ADMIN_DEFAULT_MCP_KEYS.sorftime || '').trim(),
+    secretKey: (partial?.secretKey || (defaultsAllowed ? ADMIN_DEFAULT_MCP_KEYS.sorftime : '') || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
@@ -151,8 +165,9 @@ function parseProviderKind(raw: unknown): McpProviderKind {
 
 /** 保证四家内置数据源默认存在，并在 Key 为空时用管理员默认值补齐 */
 function ensureBuiltinProviders(providers: McpProviderEntry[]): McpProviderEntry[] {
-  const envXydc = envDefaultXydcSecret() || ADMIN_DEFAULT_MCP_KEYS.xydc;
-  const envSs = envDefaultSellerSpriteSecret() || ADMIN_DEFAULT_MCP_KEYS.sellersprite;
+  const defaultsAllowed = canUseAdminMcpDefaults();
+  const envXydc = defaultsAllowed ? envDefaultXydcSecret() || ADMIN_DEFAULT_MCP_KEYS.xydc : '';
+  const envSs = defaultsAllowed ? envDefaultSellerSpriteSecret() || ADMIN_DEFAULT_MCP_KEYS.sellersprite : '';
   const list = providers.map((p) => {
     if (p.kind === 'xydc' && !p.secretKey.trim() && envXydc) {
       return { ...p, secretKey: envXydc };
@@ -160,10 +175,10 @@ function ensureBuiltinProviders(providers: McpProviderEntry[]): McpProviderEntry
     if (p.kind === 'sellersprite' && !p.secretKey.trim() && envSs) {
       return { ...p, secretKey: envSs };
     }
-    if (p.kind === 'lingxing' && !p.secretKey.trim()) {
+    if (defaultsAllowed && p.kind === 'lingxing' && !p.secretKey.trim()) {
       return { ...p, secretKey: ADMIN_DEFAULT_MCP_KEYS.lingxing };
     }
-    if (p.kind === 'sorftime' && !p.secretKey.trim()) {
+    if (defaultsAllowed && p.kind === 'sorftime' && !p.secretKey.trim()) {
       return { ...p, secretKey: ADMIN_DEFAULT_MCP_KEYS.sorftime };
     }
     return p;
@@ -210,9 +225,24 @@ function normalizeProviders(raw: Partial<McpSettings>): McpProviderEntry[] {
 
 function loadMcpSettingsRaw(): McpSettings {
   try {
-    const raw = localStorage.getItem(MCP_KEY);
+    const storageKey = getMcpSettingsKey();
+    const raw = localStorage.getItem(storageKey);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<McpSettings>;
+      const providers = normalizeProviders(parsed);
+      const ss = providers.find((p) => p.kind === 'sellersprite' && p.enabled)
+        || providers.find((p) => p.kind === 'sellersprite')
+        || providers[0];
+      return {
+        secretKey: ss?.secretKey || '',
+        mcpUrl: ss?.mcpUrl || '',
+        providers,
+      };
+    }
+    const legacyRaw = canUseAdminMcpDefaults() ? localStorage.getItem(MCP_KEY) : null;
+    if (legacyRaw) {
+      localStorage.setItem(storageKey, legacyRaw);
+      const parsed = JSON.parse(legacyRaw) as Partial<McpSettings>;
       const providers = normalizeProviders(parsed);
       const ss = providers.find((p) => p.kind === 'sellersprite' && p.enabled)
         || providers.find((p) => p.kind === 'sellersprite')
@@ -226,8 +256,9 @@ function loadMcpSettingsRaw(): McpSettings {
   } catch {
     /* ignore */
   }
+  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
-    secretKey: ADMIN_DEFAULT_MCP_KEYS.sellersprite,
+    secretKey: defaultsAllowed ? ADMIN_DEFAULT_MCP_KEYS.sellersprite : '',
     mcpUrl: '',
     providers: [
       createLingXingProvider(),
@@ -247,6 +278,9 @@ export function loadMcpSettings(): McpSettings {
  * 会写回 localStorage。
  */
 export function ensureAdminMcpDefaults(): McpSettings {
+  if (!canUseAdminMcpDefaults()) {
+    return loadMcpSettingsRaw();
+  }
   const current = loadMcpSettingsRaw();
   const providers = ensureBuiltinProviders(current.providers || []).map((p) => {
     if (p.kind === 'lingxing') {
@@ -419,7 +453,7 @@ export function saveMcpSettings(settings: McpSettings): void {
     || providers[0];
 
   localStorage.setItem(
-    MCP_KEY,
+    getMcpSettingsKey(),
     JSON.stringify({
       secretKey: ss?.secretKey || '',
       mcpUrl: ss?.mcpUrl || '',

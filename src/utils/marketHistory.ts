@@ -1,5 +1,6 @@
 import { get, set, del } from 'idb-keyval';
 import type { Product, HistoryRecord, Review, Keyword } from './parser';
+import type { AiInsight } from '../components/KeywordAnalysis';
 import { createUserId } from './auth';
 import type { AnchorAnnotation } from './anchorAnnotations';
 import type { CompetitorWorkspaceState } from './competitorHistory';
@@ -19,6 +20,8 @@ export interface MarketHistoryMeta {
   hasCompetitor?: boolean;
   /** 是否含用户洞察 AI 结论（总保存后） */
   hasUserInsights?: boolean;
+  /** 是否含关键词 AI 用户报告（总保存后） */
+  hasKeywordInsight?: boolean;
 }
 
 export interface MarketHistoryIndexFile {
@@ -49,6 +52,7 @@ export interface MarketHistorySnapshot {
   reviews: Review[];
   persona: { people: string; scenarios: string; needs: string } | null;
   keywords: Keyword[];
+  keywordInsight?: AiInsight | null;
   marketReportCache: { fingerprint: string; body: string } | null;
   activeView: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit';
   /** 上传「历史表现」文件时的文件名（无扩展名），用于默认命名 US-xxx */
@@ -138,6 +142,7 @@ export async function saveMarketSnapshot(
       segmentCount: input.segments.length,
       hasCompetitor: Boolean(input.competitorWorkspace?.hasResult),
       hasUserInsights: Boolean(input.userInsightsWorkspace?.hasResult),
+      hasKeywordInsight: Boolean(input.keywordInsight),
     };
 
     while (items.length >= MAX_MARKET_SNAPSHOTS_PER_USER) {
@@ -171,6 +176,7 @@ export async function saveMarketSnapshot(
       reviews: input.reviews,
       persona: input.persona,
       keywords: input.keywords,
+      keywordInsight: input.keywordInsight ?? null,
       marketReportCache: input.marketReportCache,
       activeView: input.activeView,
       historySourceLabel: input.historySourceLabel,

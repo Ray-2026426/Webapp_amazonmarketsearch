@@ -315,6 +315,11 @@ interface Props {
   suggestAsins?: string[];
   /** 示例数据预置的 AI 用户洞察报告 */
   initialInsight?: AiInsight | null;
+  /** App 层持久化的关键词报告 */
+  persistedInsight?: AiInsight | null;
+  /** 历史快照/IndexedDB 恢复时递增，强制灌入持久化报告 */
+  insightRestoreKey?: number;
+  onInsightSync?: (state: AiInsight | null) => void;
 }
 
 export const KeywordAnalysis = React.memo(function KeywordAnalysis({
@@ -323,6 +328,9 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
   marketplaceCode = 'US',
   suggestAsins = [],
   initialInsight = null,
+  persistedInsight = null,
+  insightRestoreKey = 0,
+  onInsightSync,
 }: Props) {
   const [isAI, setIsAI] = useState(false);
   const [prog, setProg] = useState({ c: 0, t: 0 });
@@ -332,18 +340,27 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
   const [cat, setCat] = useState('all');
   const [seg, setSeg] = useState<string | null>(null);
   const [tab, setTab] = useState<'intent' | 'jtbd' | 'scenario' | 'report'>(
-    () => (initialInsight ? 'report' : 'intent')
+    () => (persistedInsight || initialInsight ? 'report' : 'intent')
   );
-  const [ins, setIns] = useState<AiInsight | null>(() => initialInsight ?? null);
+  const [ins, setIns] = useState<AiInsight | null>(() => persistedInsight ?? initialInsight ?? null);
   const [genIns, setGenIns] = useState(false);
   const [showT, setShowT] = useState(false);
   const [seedHint, setSeedHint] = useState('');
   const abort = useRef<AbortController | null>(null);
+  const lastInsightRestoreKey = useRef(0);
 
   useEffect(() => {
     if (!initialInsight) return;
+    if (persistedInsight) return;
     setIns(initialInsight);
-  }, [initialInsight]);
+  }, [initialInsight, persistedInsight]);
+
+  useEffect(() => {
+    if (!insightRestoreKey || insightRestoreKey === lastInsightRestoreKey.current) return;
+    lastInsightRestoreKey.current = insightRestoreKey;
+    setIns(persistedInsight ?? initialInsight ?? null);
+    if (persistedInsight || initialInsight) setTab('report');
+  }, [initialInsight, insightRestoreKey, persistedInsight]);
 
   const hasInsight = useMemo(() => hasInsightTags(keywords), [keywords]);
   const intentStats = useMemo(() => hasInsight ? calcIntentStats(keywords) : [], [keywords, hasInsight]);
@@ -372,6 +389,7 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
       setKeywords(d);
       setSeg(null);
       setIns(null);
+      onInsightSync?.(null);
       toast.success(`已导入 ${d.length} 个关键词`);
     } catch {
       toast.error('解析失败，请检查格式。');
@@ -418,6 +436,7 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
       });
       setSeg(null);
       setIns(null);
+      onInsightSync?.(null);
       toast.success(`已从 ABA 抓取 ${all.length} 个关联词（种子词：${seed}）`);
       return;
     }
@@ -449,6 +468,7 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
     });
     setSeg(null);
     setIns(null);
+    onInsightSync?.(null);
     toast.success(`已从卖家精灵抓取 ${all.length} 个关键词（${params.asins.length} 个 ASIN）`);
   };
 
@@ -647,7 +667,9 @@ ${jobs.slice(0, 8).map(j => `- ${j.job}（${JOB_TYPE_META[j.jobType].label}）�
 }`;
       const r = await generateText(p, cfg, { jsonMode: true });
       const m = r.match(/\{.*\}/s);
-      setIns(JSON.parse(m ? m[0] : r));
+      const next = JSON.parse(m ? m[0] : r) as AiInsight;
+      setIns(next);
+      onInsightSync?.(next);
       setTab('report');
     } catch (e) {
       toast.error(`失败: ${e instanceof Error ? e.message : ''}`);
@@ -661,6 +683,7 @@ ${jobs.slice(0, 8).map(j => `- ${j.job}（${JOB_TYPE_META[j.jobType].label}）�
     setQ('');
     setSeg(null);
     setIns(null);
+    onInsightSync?.(null);
     setTab('intent');
     setSeedHint('');
   };
@@ -703,6 +726,11 @@ ${jobs.slice(0, 8).map(j => `- ${j.job}（${JOB_TYPE_META[j.jobType].label}）�
       onRunAI={runAI}
       onStop={stop}
       onGenAI={genAI}
+      onSaveInsight={() => {
+        if (!ins) return;
+        onInsightSync?.(ins);
+        toast.success('已保存关键词报告，下次打开会自动恢复。');
+      }}
       onClear={clear}
       onExport={onExport}
       onStartEdit={startEdit}
