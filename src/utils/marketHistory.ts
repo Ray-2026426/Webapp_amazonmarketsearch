@@ -3,6 +3,7 @@ import type { Product, HistoryRecord, Review, Keyword } from './parser';
 import { createUserId } from './auth';
 import type { AnchorAnnotation } from './anchorAnnotations';
 import type { CompetitorWorkspaceState } from './competitorHistory';
+import type { UserInsightsWorkspaceState } from './userInsightsHistory';
 
 /** 单账号最多保留条数，避免本机 IndexedDB 过大导致卡顿 */
 export const MAX_MARKET_SNAPSHOTS_PER_USER = 12;
@@ -16,6 +17,8 @@ export interface MarketHistoryMeta {
   segmentCount: number;
   /** 是否含竞品对比结果（总保存后） */
   hasCompetitor?: boolean;
+  /** 是否含用户洞察 AI 结论（总保存后） */
+  hasUserInsights?: boolean;
 }
 
 export interface MarketHistoryIndexFile {
@@ -54,6 +57,8 @@ export interface MarketHistorySnapshot {
   anchorAnnotations?: AnchorAnnotation[];
   /** 竞品分析工作区（总保存一并写入；旧快照可能无） */
   competitorWorkspace?: CompetitorWorkspaceState | null;
+  /** 用户洞察工作区（深度洞察/旅程表，总保存一并写入；旧快照可能无） */
+  userInsightsWorkspace?: UserInsightsWorkspaceState | null;
 }
 
 /**
@@ -132,6 +137,7 @@ export async function saveMarketSnapshot(
       productCount: input.products.length,
       segmentCount: input.segments.length,
       hasCompetitor: Boolean(input.competitorWorkspace?.hasResult),
+      hasUserInsights: Boolean(input.userInsightsWorkspace?.hasResult),
     };
 
     while (items.length >= MAX_MARKET_SNAPSHOTS_PER_USER) {
@@ -170,6 +176,7 @@ export async function saveMarketSnapshot(
       historySourceLabel: input.historySourceLabel,
       anchorAnnotations: input.anchorAnnotations ?? [],
       competitorWorkspace: input.competitorWorkspace ?? null,
+      userInsightsWorkspace: input.userInsightsWorkspace ?? null,
     };
 
     await set(snapshotKey(userId, id), full);

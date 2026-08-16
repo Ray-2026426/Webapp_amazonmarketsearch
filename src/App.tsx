@@ -21,6 +21,10 @@ import { MarketAnalysisReport } from './components/MarketAnalysisReport';
 import { MarketHistoryModal } from './components/MarketHistoryModal';
 import { saveMarketSnapshot, suggestMarketSnapshotTitle, type MarketHistorySnapshot } from './utils/marketHistory';
 import type { CompetitorWorkspaceState } from './utils/competitorHistory';
+import {
+  normalizeUserInsightsWorkspace,
+  type UserInsightsWorkspaceState,
+} from './utils/userInsightsHistory';
 import { clearWorkspaceIndexedDb } from './utils/workspaceIdb';
 import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, formatRevenue, computeMarketReportFingerprint } from './utils/parser';
 import { get, set, del } from 'idb-keyval';
@@ -266,6 +270,14 @@ export default function App() {
   const [competitorWorkspace, setCompetitorWorkspace] = useState<CompetitorWorkspaceState | null>(null);
   const [competitorRestoreKey, setCompetitorRestoreKey] = useState(0);
   const [competitorRestorePayload, setCompetitorRestorePayload] = useState<CompetitorWorkspaceState | null>(null);
+  /** 用户洞察工作区：深度洞察报告 / 5W1H 旅程表，随 IndexedDB 与总保存恢复 */
+  const [userInsightsWorkspace, setUserInsightsWorkspace] = useState<UserInsightsWorkspaceState | null>(null);
+  const [userInsightsRestoreKey, setUserInsightsRestoreKey] = useState(0);
+  const [userInsightsRestorePayload, setUserInsightsRestorePayload] = useState<UserInsightsWorkspaceState | null>(null);
+  const handleUserInsightsWorkspaceSync = useCallback((state: UserInsightsWorkspaceState) => {
+    setUserInsightsWorkspace(state);
+    void set('userInsightsWorkspace', state);
+  }, []);
 
   const isRegisteredUser = Boolean(currentUser && currentUser.id !== 'guest');
 
@@ -279,6 +291,18 @@ export default function App() {
     setKeywords(demo.keywords);
     setReviews(demo.reviews);
     setPersona(demo.persona);
+    const demoInsightsWorkspace: UserInsightsWorkspaceState = {
+      tagLib: null,
+      deepReport: demo.vocDeepReportHtml,
+      deepInsight: null,
+      journeyReportRaw: null,
+      journeyRows: [],
+      updatedAt: new Date().toISOString(),
+      hasResult: Boolean(demo.vocDeepReportHtml),
+    };
+    setUserInsightsWorkspace(demoInsightsWorkspace);
+    setUserInsightsRestorePayload(demoInsightsWorkspace);
+    setUserInsightsRestoreKey((k) => k + 1);
     setCompetitorDemo(demo.competitorDemo);
     setSelectedCompareAsins(demo.competitorDemo.selectedAsins.slice(0, 5));
     // 示例报告指纹按「无分层」计算，同步清空分层以免缓存对不上
@@ -303,6 +327,7 @@ export default function App() {
     void set('demoDataVersion', demo.demoVersion);
     void set('isDemoData', true);
     void set('persona', demo.persona);
+    void set('userInsightsWorkspace', demoInsightsWorkspace);
     void set('marketReportCache', reportCache);
     void set('keywords', demo.keywords);
     void set('reviews', demo.reviews);
@@ -348,6 +373,7 @@ export default function App() {
       await set('activeView', snap.activeView);
       await set('historySourceLabel', snap.historySourceLabel ?? '');
       await set('anchorAnnotations', normalizeAnchorAnnotations(snap.anchorAnnotations));
+      await set('userInsightsWorkspace', snap.userInsightsWorkspace ?? null);
 
       setMarketplace(snap.marketplace);
       setProducts(snap.products);
@@ -378,6 +404,10 @@ export default function App() {
       setAnnotateMode(false);
       setIsDataLoaded(true);
       setIsDemoData(false);
+      const insightsWs = normalizeUserInsightsWorkspace(snap.userInsightsWorkspace);
+      setUserInsightsWorkspace(insightsWs);
+      setUserInsightsRestorePayload(insightsWs);
+      setUserInsightsRestoreKey((k) => k + 1);
       // 恢复该历史里的竞品页（没有则清空）
       const comp = snap.competitorWorkspace ?? null;
       setCompetitorWorkspace(comp);
@@ -433,6 +463,7 @@ export default function App() {
       activeView,
       anchorAnnotations,
       competitorWorkspace: competitorWorkspace?.hasResult ? competitorWorkspace : competitorWorkspace,
+      userInsightsWorkspace,
     });
     if ('error' in res) {
       toast.error(res.error);
@@ -469,6 +500,7 @@ export default function App() {
     historySourceLabel,
     anchorAnnotations,
     competitorWorkspace,
+    userInsightsWorkspace,
   ]);
 
   const handleExportPdf = useCallback(() => {
@@ -532,6 +564,9 @@ export default function App() {
     setCompetitorRestoreKey((k) => k + 1);
     setCompetitorDemo(null);
     setSelectedCompareAsins([]);
+    setUserInsightsWorkspace(null);
+    setUserInsightsRestorePayload(null);
+    setUserInsightsRestoreKey((k) => k + 1);
     
     // 3. Reset KPI selections
     setSelectedKpiMonths([]);
@@ -655,6 +690,7 @@ export default function App() {
               savedReviews, savedPersona, savedKeywords, savedSelectedSegment,
               savedMarketReportCache, savedHistorySourceLabel, savedAnchorAnnotations,
               savedSelectedKpiMonths, savedPreviousKpiMonths, savedLastYearKpiMonths,
+              savedUserInsightsWorkspace,
             ] = await Promise.all([
               get('history'), get('months'), get('segments'),
               get('asinToSegment'), get('segmentChildren'), get('asinToSubSegment'), get('segmentDescriptions'), get('segmentSubDescriptions'),
@@ -666,6 +702,7 @@ export default function App() {
               get('selectedKpiMonths'),
               get('previousKpiMonths'),
               get('lastYearKpiMonths'),
+              get('userInsightsWorkspace'),
             ]);
 
             if (savedHistory) setHistory(savedHistory);
@@ -705,6 +742,10 @@ export default function App() {
               setHistorySourceLabel(savedHistorySourceLabel);
             }
             setAnchorAnnotations(normalizeAnchorAnnotations(savedAnchorAnnotations));
+            const insightsWs = normalizeUserInsightsWorkspace(savedUserInsightsWorkspace);
+            setUserInsightsWorkspace(insightsWs);
+            setUserInsightsRestorePayload(insightsWs);
+            setUserInsightsRestoreKey((k) => k + 1);
 
             const validMonthSubset = (arr: unknown, available: string[]): arr is string[] =>
               Array.isArray(arr) &&
@@ -736,11 +777,12 @@ export default function App() {
           }
         } else {
           // 新用户：没有任何已保存的市场数据，加载演示数据让用户直观看到 APP 效果
-          const [savedReviews, savedPersona, savedKeywords, savedAnchorAnnotations] = await Promise.all([
+          const [savedReviews, savedPersona, savedKeywords, savedAnchorAnnotations, savedUserInsightsWorkspace] = await Promise.all([
             get('reviews'),
             get('persona'),
             get('keywords'),
             get('anchorAnnotations'),
+            get('userInsightsWorkspace'),
           ]);
           const hasSavedReviews = savedReviews && Array.isArray(savedReviews) && savedReviews.length > 0;
 
@@ -753,6 +795,10 @@ export default function App() {
             if (savedPersona) setPersona(savedPersona);
             if (savedKeywords) setKeywords(savedKeywords);
             setAnchorAnnotations(normalizeAnchorAnnotations(savedAnchorAnnotations));
+            const insightsWs = normalizeUserInsightsWorkspace(savedUserInsightsWorkspace);
+            setUserInsightsWorkspace(insightsWs);
+            setUserInsightsRestorePayload(insightsWs);
+            setUserInsightsRestoreKey((k) => k + 1);
             console.log('Restored reviews-only workspace from IDB.');
           }
         }
@@ -827,6 +873,7 @@ export default function App() {
         await set('marketReportCache', marketReportCache);
         await set('historySourceLabel', historySourceLabel);
         await set('anchorAnnotations', anchorAnnotations);
+        await set('userInsightsWorkspace', userInsightsWorkspace);
         
         localStorage.setItem('last_save_time', new Date().toISOString());
       } catch (err) {
@@ -841,7 +888,7 @@ export default function App() {
     products, history, months, segments, asinToSegment, segmentChildren, asinToSubSegment, segmentDescriptions, segmentSubDescriptions,
     segmentDepth, segmentLevel3Children, asinToLevel3Segment, segmentLevel3Descriptions,
     selectedSegment, selectedKpiMonths, previousKpiMonths, lastYearKpiMonths,
-    reviews, persona, keywords, marketReportCache, historySourceLabel, anchorAnnotations
+    reviews, persona, keywords, marketReportCache, historySourceLabel, anchorAnnotations, userInsightsWorkspace
   ]);
 
   const segmentFilterOptions = useMemo(() => {
@@ -1637,6 +1684,10 @@ export default function App() {
                     insightsUiActive={activeView === 'insights'}
                     marketplaceCode={marketplace.code}
                     initialDeepReport={isDemoData ? getDemoData().vocDeepReportHtml : null}
+                    workspaceFromParent={userInsightsWorkspace}
+                    workspaceRestoreKey={userInsightsRestoreKey}
+                    restorePayload={userInsightsRestorePayload}
+                    onWorkspaceSync={handleUserInsightsWorkspaceSync}
                   />
                 </div>
               )}

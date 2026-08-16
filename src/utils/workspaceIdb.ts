@@ -28,6 +28,7 @@ export const WORKSPACE_IDB_KEYS = [
   'marketReportCache',
   'historySourceLabel',
   'anchorAnnotations',
+  'userInsightsWorkspace',
   'segmentationPrompt',
 ] as const;
 

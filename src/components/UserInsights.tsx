@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Upload, Sparkles, Loader2, MessageSquare, ThumbsUp, ThumbsDown, MapPin, Users as UsersIcon, Search, X, ChevronLeft, ChevronRight, ChevronDown, TrendingUp, FileText, Heart, Route, SlidersHorizontal, Languages, Pencil } from 'lucide-react';
+import { Upload, Sparkles, Loader2, MessageSquare, ThumbsUp, ThumbsDown, MapPin, Users as UsersIcon, Search, X, ChevronLeft, ChevronRight, ChevronDown, TrendingUp, FileText, Heart, Route, SlidersHorizontal, Languages, Pencil, Save } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Card';
 import {
   parseReviewsWithMapping,
@@ -21,6 +21,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Select } from './ui/Select';
 import { FeishuPushButton } from './FeishuPushButton';
 import { vocReportToMarkdown } from '../utils/reportToMarkdown';
+import type { UserInsightsWorkspaceState } from '../utils/userInsightsHistory';
 
 interface TagLibrary {
   positive: string[];
@@ -41,6 +42,13 @@ interface UserInsightsProps {
   marketplaceCode?: string;
   /** 示例数据预置的 VOC 深度报告（HTML 或 Markdown） */
   initialDeepReport?: string | null;
+  /** 当前用户洞察工作区状态：用于刷新/重新登录后恢复 AI 结论 */
+  workspaceFromParent?: UserInsightsWorkspaceState | null;
+  /** 从历史或 IndexedDB 恢复时递增，强制把父级状态灌入本组件 */
+  workspaceRestoreKey?: number;
+  restorePayload?: UserInsightsWorkspaceState | null;
+  /** 把深度洞察/旅程表同步给 App，由 App 写入 IndexedDB/总保存 */
+  onWorkspaceSync?: (state: UserInsightsWorkspaceState) => void;
 }
 
 const COLORS = ['#6366f1','#8b5cf6','#ec4899','#f43f5e','#f59e0b','#10b981','#06b6d4','#3b82f6','#84cc16','#f97316'];
@@ -348,19 +356,32 @@ function parseTagLinesFromInput(text: string): string[] {
   return out;
 }
 
-export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products, reviews, setReviews, persona, setPersona, insightsUiActive = true, marketplaceCode = 'US', initialDeepReport = null }) => {
+export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
+  products,
+  reviews,
+  setReviews,
+  persona,
+  setPersona,
+  insightsUiActive = true,
+  marketplaceCode = 'US',
+  initialDeepReport = null,
+  workspaceFromParent = null,
+  workspaceRestoreKey = 0,
+  restorePayload = null,
+  onWorkspaceSync,
+}) => {
   // ── State ──────────────────────────────────────────────
   const [step, setStep] = useState<'idle'|'step1'|'step2'|'done'>('idle');
   const [stepProgress, setStepProgress] = useState('');
-  const [tagLib, setTagLib] = useState<TagLibrary | null>(null);
-  const [deepReport, setDeepReport] = useState<string | null>(() => initialDeepReport ?? null);
+  const [tagLib, setTagLib] = useState<TagLibrary | null>(() => workspaceFromParent?.tagLib ?? null);
+  const [deepReport, setDeepReport] = useState<string | null>(() => workspaceFromParent?.deepReport ?? initialDeepReport ?? null);
   const [deepInsight, setDeepInsight] = useState<AiInsight | null>(() =>
-    initialDeepReport ? tryParseAiInsight(initialDeepReport) : null
+    workspaceFromParent?.deepInsight ?? (workspaceFromParent?.deepReport ? tryParseAiInsight(workspaceFromParent.deepReport) : initialDeepReport ? tryParseAiInsight(initialDeepReport) : null)
   );
   const [isReportLoading, setIsReportLoading] = useState(false);
   const [deepReportOpen, setDeepReportOpen] = useState(false);
-  const [journeyReportRaw, setJourneyReportRaw] = useState<string | null>(null);
-  const [journeyRows, setJourneyRows] = useState<JourneyRow[]>([]);
+  const [journeyReportRaw, setJourneyReportRaw] = useState<string | null>(() => workspaceFromParent?.journeyReportRaw ?? null);
+  const [journeyRows, setJourneyRows] = useState<JourneyRow[]>(() => workspaceFromParent?.journeyRows ?? []);
   const [journeyOpen, setJourneyOpen] = useState(false);
   const [isJourneyLoading, setIsJourneyLoading] = useState(false);
   /** 每成功拉取一次旅程数据 +1，强制整段旅程 UI 重挂载，避免与 Recharts 并发提交 DOM 时 insertBefore 崩溃 */
@@ -400,12 +421,54 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
   const journeyQuoteTrRef = useRef<Record<string, string>>({});
   journeyQuoteTrRef.current = journeyQuoteTr;
   const [expandedReviewIds, setExpandedReviewIds] = useState<Record<string, boolean>>({});
+  const lastWorkspaceRestoreKey = useRef(0);
 
   useEffect(() => {
     if (!initialDeepReport) return;
+    if (workspaceFromParent?.deepReport) return;
     setDeepReport(initialDeepReport);
     setDeepInsight(tryParseAiInsight(initialDeepReport));
-  }, [initialDeepReport]);
+  }, [initialDeepReport, workspaceFromParent?.deepReport]);
+
+  const buildWorkspaceState = useCallback((savedAt = new Date().toISOString()): UserInsightsWorkspaceState => {
+    const hasResult = Boolean(deepReport || journeyReportRaw || journeyRows.length > 0);
+    return {
+      tagLib,
+      deepReport,
+      deepInsight,
+      journeyReportRaw,
+      journeyRows,
+      updatedAt: hasResult ? savedAt : '',
+      hasResult,
+    };
+  }, [deepInsight, deepReport, journeyReportRaw, journeyRows, tagLib]);
+
+  useEffect(() => {
+    if (!onWorkspaceSync) return;
+    onWorkspaceSync(buildWorkspaceState());
+  }, [buildWorkspaceState, onWorkspaceSync]);
+
+  useEffect(() => {
+    if (!workspaceRestoreKey || workspaceRestoreKey === lastWorkspaceRestoreKey.current) return;
+    lastWorkspaceRestoreKey.current = workspaceRestoreKey;
+    const seed = restorePayload ?? workspaceFromParent;
+    if (!seed) return;
+    setTagLib(seed.tagLib ?? null);
+    setDeepReport(seed.deepReport ?? null);
+    setDeepInsight(seed.deepInsight ?? (seed.deepReport ? tryParseAiInsight(seed.deepReport) : null));
+    setJourneyReportRaw(seed.journeyReportRaw ?? null);
+    setJourneyRows(seed.journeyRows ?? []);
+    setJourneyMountId((n) => n + 1);
+  }, [restorePayload, workspaceFromParent, workspaceRestoreKey]);
+
+  const handleSaveWorkspace = useCallback(() => {
+    if (!onWorkspaceSync) {
+      toast.success('当前洞察已保留在本页。');
+      return;
+    }
+    onWorkspaceSync(buildWorkspaceState());
+    toast.success('已保存本次用户洞察，下次打开会自动恢复。');
+  }, [buildWorkspaceState, onWorkspaceSync]);
 
   const deepReportHtml = useMemo(
     () => {
@@ -1725,6 +1788,16 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({ products,
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {(deepReport || journeyRows.length > 0 || journeyReportRaw) && (
+                      <button
+                        type="button"
+                        onClick={handleSaveWorkspace}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-sm font-semibold hover:bg-emerald-100"
+                      >
+                        <Save className="w-4 h-4"/>
+                        保存本次洞察
+                      </button>
+                    )}
                     {deepReport && (
                       <button
                         type="button"
