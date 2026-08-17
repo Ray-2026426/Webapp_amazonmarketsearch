@@ -468,6 +468,28 @@ export const MarketScorecard: React.FC<MarketScorecardProps> = ({ products, hist
   }));
 
   const greenCount = dimensions.filter(d => getTier(d.value, d.tiers) === 'green').length;
+  const historyAsins = new Set(history.map((h) => h.asin));
+  const historyCoverage = products.length ? (products.filter((p) => historyAsins.has(p.asin)).length / products.length) * 100 : 0;
+  const fbaCoverage = products.length ? (fbaPs.length / products.length) * 100 : 0;
+  const launchCoverage = products.length ? (products.filter((p) => p.daysSinceLaunch > 0 || p.launchDate).length / products.length) * 100 : 0;
+  const confidenceNotes = [
+    sortedMonths.length < 12 ? '历史少于12个月，增长率只能作弱信号' : '',
+    historyCoverage < 70 ? `历史匹配率 ${historyCoverage.toFixed(0)}%，趋势与体量可能低估` : '',
+    fbaCoverage < 50 ? `FBA覆盖率 ${fbaCoverage.toFixed(0)}%，成本分置信度低` : '',
+    launchCoverage < 50 ? `上架时间覆盖率 ${launchCoverage.toFixed(0)}%，新品活力可能失真` : '',
+  ].filter(Boolean);
+  const dimEvidence: Record<DimKey, string> = {
+    marketSize: `近3个月月均销售额 ${fmtMoney(marketSize)}；依赖历史销售额覆盖率。`,
+    growth: sortedMonths.length >= 12
+      ? `近6个月销售额对比前6个月 ${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(1)}%。`
+      : `历史月份 ${sortedMonths.length} 个，不足12个月时默认按 0% 增长处理。`,
+    concentration: `Top10 ASIN 销量占比 ${concentration.toFixed(1)}%；越高说明头部垄断越强。`,
+    reviews: `平均评论数 ${avgReviews.toFixed(0)}；用作进入壁垒的粗略代理。`,
+    priceDispersion: `价格CV ${(priceCV * 100).toFixed(1)}%；反映价格带是否分层。`,
+    newProduct: `近90天新品占比 ${newProductRatio.toFixed(1)}%；依赖上架时间覆盖率 ${launchCoverage.toFixed(0)}%。`,
+    rating: `平均评分 ${avgRating.toFixed(2)}；高评分代表口碑稳定，但也可能意味着改进空间小。`,
+    fbaCost: `平均FBA/售价 ${avgFbaRatio.toFixed(1)}%；覆盖 ${fbaPs.length}/${products.length} 个 ASIN。`,
+  };
 
   // Weighted average
   const totalWeight = dimensions.reduce((s, d) => s + d.weight, 0);
@@ -509,6 +531,26 @@ export const MarketScorecard: React.FC<MarketScorecardProps> = ({ products, hist
           {dimensions.map(dim => (
             <ScoreBar key={dim.key} dim={dim} />
           ))}
+        </div>
+        <div className="px-4 pb-4 grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+            <div className="text-xs font-bold text-slate-700 mb-1">评分置信度</div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              {confidenceNotes.length
+                ? confidenceNotes.join('；')
+                : '历史、FBA 与上架时间覆盖较好，评分可作为主要参考。'}
+            </p>
+          </div>
+          <div className="lg:col-span-2 rounded-xl border border-slate-100 bg-white p-3">
+            <div className="text-xs font-bold text-slate-700 mb-2">各维度依据</div>
+            <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5">
+              {dimensions.map((dim) => (
+                <div key={dim.key} className="text-[11px] text-slate-500 leading-relaxed">
+                  <span className="font-semibold text-slate-700">{dim.label}：</span>{dimEvidence[dim.key]}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </>

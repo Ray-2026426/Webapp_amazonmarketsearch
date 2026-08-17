@@ -15,6 +15,7 @@ import {
 import {
   IntentStat, JTBDStat, ScenarioInsights, AiInsight, INTENT_META, JOB_TYPE_META, SC, TAGS,
   calcKwValueDensity,
+  calcLongTailOpportunities,
 } from './KeywordAnalysis';
 import { InsightReportPanels } from './InsightReportPanels';
 import { Select } from './ui/Select';
@@ -533,6 +534,7 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
   const [mapMode, setMapMode] = useState<'job' | 'keyword'>('job');
   const [modalJob, setModalJob] = useState<string | null>(null);
   const ranked = useMemo(() => [...jtbdStats].sort((a, b) => b.opportunityScore - a.opportunityScore), [jtbdStats]);
+  const longTail = useMemo(() => calcLongTailOpportunities(keywords), [keywords]);
   const totalPages = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE_JTBD));
   const paged = ranked.slice(page * PAGE_SIZE_JTBD, (page + 1) * PAGE_SIZE_JTBD);
 
@@ -653,6 +655,50 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
       </div>
     )}
 
+    {longTail.length > 0 && (
+      <Card className="border-none shadow-sm overflow-hidden">
+        <CardHeader className="bg-gradient-to-r from-emerald-50 to-blue-50 border-b border-black/5">
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <Zap className="w-4 h-4 text-emerald-500" />
+            高意图长尾机会
+            <span className="text-xs font-normal text-[#86868b]">不按总量排序，优先看决策意图、CVR、CPC 与难度</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-0 divide-y md:divide-y-0 md:divide-x divide-black/5">
+            {longTail.slice(0, 6).map((k) => {
+              const intentMeta = k.intent ? INTENT_META[k.intent] : null;
+              return (
+                <button
+                  key={`${k.keyword}-${k.job}`}
+                  type="button"
+                  onClick={() => setSeg(k.job)}
+                  className="text-left p-4 hover:bg-[#f5f5f7]/60 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="font-semibold text-sm text-[#1d1d1f] truncate">{k.keyword}</span>
+                    <span className="text-sm font-bold text-emerald-600">{k.score}</span>
+                  </div>
+                  {k.translation && <div className="text-xs text-[#86868b] truncate mb-2">{k.translation}</div>}
+                  <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">{k.job}</span>
+                    {intentMeta && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ color: intentMeta.color, background: `${intentMeta.color}15` }}>
+                        {intentMeta.label}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-[#86868b] leading-relaxed">
+                    周搜 {fmtNum(k.weeklySearchVolume)} · {k.reason}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    )}
+
     <Card className="border-none shadow-sm overflow-hidden">
       <CardHeader className="bg-gradient-to-r from-blue-50 via-pink-50 to-emerald-50 border-b border-black/5">
         <CardTitle className="text-base font-semibold flex items-center gap-2 flex-wrap">
@@ -677,6 +723,15 @@ function JtbdTab({ jtbdStats, keywords, seg, setSeg }: { jtbdStats: JTBDStat[]; 
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-[#1d1d1f] text-sm truncate">{j.job}</span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border" style={{ background: `${safeJobMeta(j.jobType).color}15`, color: safeJobMeta(j.jobType).color }}>{safeJobMeta(j.jobType).label}</span>
+                    {j.evidenceLevel !== 'strong' && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${
+                        j.evidenceLevel === 'medium'
+                          ? 'bg-amber-50 text-amber-700 border-amber-100'
+                          : 'bg-rose-50 text-rose-700 border-rose-100'
+                      }`}>
+                        {j.evidenceLevel === 'medium' ? '中样本' : '薄样本'}
+                      </span>
+                    )}
                     {intent && INTENT_META[intent as keyof typeof INTENT_META] && <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ color: INTENT_META[intent as keyof typeof INTENT_META].color, background: `${INTENT_META[intent as keyof typeof INTENT_META].color}15` }}>{INTENT_META[intent as keyof typeof INTENT_META].label}</span>}
                     <span className="text-[10px] text-[#86868b]">{j.count}词 · {j.totalVolume.toLocaleString()}/周</span>
                   </div>

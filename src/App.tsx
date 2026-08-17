@@ -51,6 +51,8 @@ import { normalizeAnchorAnnotations } from './utils/anchorAnnotations';
 import { MarketScorecard } from './components/MarketScorecard';
 import { PageQuickNav } from './components/PageQuickNav';
 import { AsinCompareBar } from './components/AsinCompareBar';
+import { DataQualityPanel } from './components/DataQualityPanel';
+import { buildMarketDataQuality } from './utils/dataQuality';
 import {
   makeLevel2Key,
   makeLevel3Key,
@@ -960,6 +962,16 @@ export default function App() {
     return history.filter(h => filteredAsins.has(h.asin));
   }, [history, filteredProducts, selectedSegment]);
 
+  const marketDataQuality = useMemo(
+    () => buildMarketDataQuality(filteredProducts, filteredHistory, months),
+    [filteredProducts, filteredHistory, months]
+  );
+
+  const allMarketDataQuality = useMemo(
+    () => buildMarketDataQuality(products, history, months),
+    [products, history, months]
+  );
+
   const getMarketplace = (file1: File, file2: File) => {
     const detect = (filename: string) => {
       const name = filename.toUpperCase();
@@ -1489,6 +1501,7 @@ export default function App() {
                   {featureFlags.showMarketScorecard && (
                     <MarketScorecard products={filteredProducts} history={filteredHistory} months={months} />
                   )}
+                  <DataQualityPanel quality={marketDataQuality} />
 
                   <div className="flex items-center justify-between">
                     <h2 className="text-[20px] font-semibold text-[#1d1d1f]">核心指标</h2>
@@ -1864,6 +1877,7 @@ export default function App() {
           segments={segments}
           asinToSegment={asinToSegment}
           segmentDescriptions={segmentDescriptions}
+          dataQuality={allMarketDataQuality}
           cachedReportMarkdown={
             marketReportCache?.fingerprint === reportDataFingerprint ? marketReportCache.body : null
           }

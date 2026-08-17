@@ -45,6 +45,20 @@ export interface JTBDStat {
   avgDifficulty: number;
   topKeywords: string[];
   opportunityScore: number;
+  evidenceLevel: 'strong' | 'medium' | 'thin';
+}
+
+export interface LongTailOpportunity {
+  keyword: string;
+  translation: string;
+  job: string;
+  intent?: UserIntentStage;
+  weeklySearchVolume: number;
+  cpcBid: number;
+  conversionRate: number;
+  difficulty: number;
+  score: number;
+  reason: string;
 }
 
 export interface RankItem {
@@ -100,6 +114,55 @@ function calcOpportunityScore(
     : 0;
   const easyScore = clamp01(1 - avgDifficulty / 100);
   return Math.round(35 * cvrScore + 25 * cpaScore + 25 * demandScore + 15 * easyScore);
+}
+
+function evidenceMultiplier(count: number): number {
+  if (count >= 5) return 1;
+  if (count >= 3) return 0.94;
+  if (count === 2) return 0.86;
+  return 0.74;
+}
+
+function evidenceLevel(count: number): JTBDStat['evidenceLevel'] {
+  if (count >= 5) return 'strong';
+  if (count >= 3) return 'medium';
+  return 'thin';
+}
+
+export function calcLongTailOpportunities(kws: Keyword[]): LongTailOpportunity[] {
+  const vols = kws.map((k) => k.weeklySearchVolume).filter((v) => v > 0).sort((a, b) => a - b);
+  const medianVol = vols.length ? vols[Math.floor(vols.length / 2)] : 0;
+  return kws
+    .filter((k) => (k.jobToBeDone || '').trim())
+    .map((k) => {
+      const cvrScore = clamp01((Number(k.conversionRate) || 0) / 0.15);
+      const cpcScore = clamp01((3 - (Number(k.cpcBid) || 0)) / 3);
+      const easyScore = clamp01(1 - (Number(k.difficulty) || 0) / 100);
+      const intentBoost = k.userIntentStage === 'decision' ? 1 : k.userIntentStage === 'consideration' ? 0.75 : 0.45;
+      const volumeSignal = medianVol > 0 ? clamp01(Math.log10(k.weeklySearchVolume + 1) / Math.log10(medianVol * 4 + 1)) : 0;
+      const score = Math.round(32 * cvrScore + 24 * intentBoost + 20 * cpcScore + 14 * easyScore + 10 * volumeSignal);
+      const reason = [
+        k.userIntentStage === 'decision' ? '决策意图' : k.userIntentStage === 'consideration' ? '对比筛选意图' : '需求探索意图',
+        k.conversionRate > 0 ? `CVR ${(k.conversionRate * 100).toFixed(1)}%` : '',
+        k.cpcBid > 0 ? `CPC $${k.cpcBid.toFixed(2)}` : '',
+        k.difficulty > 0 ? `难度 ${k.difficulty.toFixed(0)}` : '',
+      ].filter(Boolean).join(' · ');
+      return {
+        keyword: k.keyword,
+        translation: k.translation,
+        job: k.jobToBeDone || '',
+        intent: k.userIntentStage,
+        weeklySearchVolume: k.weeklySearchVolume,
+        cpcBid: k.cpcBid,
+        conversionRate: k.conversionRate,
+        difficulty: k.difficulty,
+        score,
+        reason,
+      };
+    })
+    .filter((k) => k.score >= 55)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12);
 }
 
 function aggregateRank(
@@ -184,10 +247,10 @@ export function calcJTBDStats(kws: Keyword[]): JTBDStat[] {
       avgCvr: acvr,
       avgDifficulty: ad,
       topKeywords: [...list].sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume).slice(0, 5).map(k => k.keyword),
-      opportunityScore: calcOpportunityScore(ac, acvr, tv, maxVolume, ad),
+      opportunityScore: Math.round(calcOpportunityScore(ac, acvr, tv, maxVolume, ad) * evidenceMultiplier(list.length)),
+      evidenceLevel: evidenceLevel(list.length),
     };
   })
-  .filter(j => j.count >= 3)  // 过滤碎片任务（< 3 个关键词的合并）
   .sort((a, b) => b.opportunityScore - a.opportunityScore);
 }
 
@@ -258,6 +321,7 @@ export function exportKeywordsToExcel(keywords: Keyword[]) {
     const jobRows = jobs.map(j => ({
       '机会评分': j.opportunityScore,
       '用户任务': j.job,
+      '证据厚度': j.evidenceLevel === 'strong' ? '强' : j.evidenceLevel === 'medium' ? '中' : '薄',
       '任务类型': JOB_TYPE_META[j.jobType].label,
       '词数': j.count,
       '总周搜索量': j.totalVolume,

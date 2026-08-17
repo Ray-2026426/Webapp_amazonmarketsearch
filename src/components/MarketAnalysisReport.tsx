@@ -9,6 +9,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { FeishuPushButton } from './FeishuPushButton';
 import { marketReportToMarkdown } from '../utils/reportToMarkdown';
+import type { MarketDataQuality } from '../utils/dataQuality';
 // html2pdf loaded dynamically in handleDownloadPDF
 
 interface MarketAnalysisReportProps {
@@ -18,6 +19,7 @@ interface MarketAnalysisReportProps {
   segments: string[];
   asinToSegment: Record<string, string>;
   segmentDescriptions: Record<string, { people: string, scenarios: string, needs: string }>;
+  dataQuality?: MarketDataQuality;
   /** 与当前数据匹配的已生成报告，有则不再自动请求 AI */
   cachedReportMarkdown: string | null;
   /** 生成成功或用户保存编辑后写入父级与本地存储 */
@@ -34,6 +36,7 @@ export const MarketAnalysisReport: React.FC<MarketAnalysisReportProps> = ({
   segments, 
   asinToSegment, 
   segmentDescriptions,
+  dataQuality,
   cachedReportMarkdown,
   onPersistReport,
   hidden = false,
@@ -48,6 +51,51 @@ export const MarketAnalysisReport: React.FC<MarketAnalysisReportProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editedReport, setEditedReport] = useState<string>('');
   const reportRef = useRef<HTMLDivElement>(null);
+
+  const buildEvidencePack = useCallback(() => {
+    const sortedBySales = [...products].sort((a, b) => b.monthlySales - a.monthlySales);
+    const totalRevenue = products.reduce((sum, p) => sum + p.monthlyRevenue, 0);
+    const totalSales = products.reduce((sum, p) => sum + p.monthlySales, 0);
+    const top10Sales = sortedBySales.slice(0, 10).reduce((s, p) => s + p.monthlySales, 0);
+    const concentration = totalSales > 0 ? (top10Sales / totalSales) * 100 : 0;
+    const prices = products.map((p) => p.price).filter((p) => p > 0).sort((a, b) => a - b);
+    const q = (r: number) => prices.length ? prices[Math.min(prices.length - 1, Math.floor((prices.length - 1) * r))] : 0;
+    const fbaPs = products.filter((p) => p.fbaFee > 0 && p.price > 0);
+    const avgFbaRatio = fbaPs.length ? fbaPs.reduce((s, p) => s + p.fbaFee / p.price, 0) / fbaPs.length : 0;
+    const avgRating = products.length ? products.reduce((s, p) => s + p.rating, 0) / products.length : 0;
+    const avgReviews = products.length ? products.reduce((s, p) => s + p.reviewCount, 0) / products.length : 0;
+    const new90 = products.filter((p) => p.daysSinceLaunch > 0 && p.daysSinceLaunch <= 90).length;
+    const sortedMonths = [...months].sort();
+    const sumRevenue = (mlist: string[]) =>
+      mlist.reduce((sum, m) => sum + history.reduce((s, h) => s + (h.history[m]?.revenue || 0), 0), 0);
+    const recent6 = sortedMonths.slice(-6);
+    const prior6 = sortedMonths.slice(-12, -6);
+    const recentRevenue = sumRevenue(recent6);
+    const priorRevenue = sumRevenue(prior6);
+    const growth = priorRevenue > 0 && recentRevenue > 0 ? ((recentRevenue / priorRevenue) - 1) * 100 : null;
+    const topBrands = [...products.reduce((map, p) => {
+      const brand = p.brand || '未知';
+      map.set(brand, (map.get(brand) || 0) + p.monthlyRevenue);
+      return map;
+    }, new Map<string, number>()).entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([brand, rev]) => `${brand}: ${totalRevenue > 0 ? ((rev / totalRevenue) * 100).toFixed(1) : '0'}%`);
+
+    return [
+      `样本: ${products.length} 个 ASIN，历史月份 ${months.length} 个`,
+      `总月销售额: $${Math.round(totalRevenue).toLocaleString()}；总月销量: ${Math.round(totalSales).toLocaleString()}`,
+      `Top10 ASIN 销量占比: ${concentration.toFixed(1)}%`,
+      `价格分位: P25 $${q(0.25).toFixed(2)} / 中位 $${q(0.5).toFixed(2)} / P75 $${q(0.75).toFixed(2)}`,
+      `平均评分: ${avgRating.toFixed(2)}；平均评论数: ${avgReviews.toFixed(0)}`,
+      `近90天新品占比: ${products.length ? ((new90 / products.length) * 100).toFixed(1) : '0'}%`,
+      `平均 FBA/售价: ${fbaPs.length ? `${(avgFbaRatio * 100).toFixed(1)}%（覆盖 ${fbaPs.length}/${products.length}）` : '数据不足'}`,
+      `近6月 vs 前6月销售额变化: ${growth == null ? '数据不足' : `${growth >= 0 ? '+' : ''}${growth.toFixed(1)}%`}`,
+      `头部品牌销售额份额: ${topBrands.join('；') || '数据不足'}`,
+      `数据质量: ${dataQuality ? `${dataQuality.score}分，${dataQuality.summary}` : '未计算'}`,
+      `数据质量注意项: ${dataQuality?.issues.length ? dataQuality.issues.map((i) => i.message).join('；') : '无明显缺口'}`,
+    ].join('\n');
+  }, [dataQuality, history, months, products]);
 
   const generateReport = useCallback(async () => {
     const aiSettings = loadAiSettings();
@@ -66,6 +114,7 @@ export const MarketAnalysisReport: React.FC<MarketAnalysisReportProps> = ({
       const totalSales = products.reduce((sum, p) => sum + p.monthlySales, 0);
       const avgPrice = totalSales > 0 ? totalRevenue / totalSales : 0;
       const topBrands = [...new Set(products.map(p => p.brand))].slice(0, 10).join(', ');
+      const evidencePack = buildEvidencePack();
       
       const segmentSummary = segments.map(s => {
         const segmentProducts = products.filter(p => asinToSegment[p.asin] === s);
@@ -94,6 +143,9 @@ export const MarketAnalysisReport: React.FC<MarketAnalysisReportProps> = ({
 细分市场及用户画像：
 ${segmentSummary}
 
+结构化证据包（报告中的关键判断必须优先引用这里的数字；若证据不足，请明确写“数据不足”）：
+${evidencePack}
+
 产品示例 (前20个):
 ${products.slice(0, 20).map(p => `- ${p.title} (价格: $${p.price}, 评分: ${p.rating})`).join('\n')}
 
@@ -114,7 +166,7 @@ ${products.slice(0, 20).map(p => `- ${p.title} (价格: $${p.price}, 评分: ${p
       setIsGenerating(false);
       setTimeout(() => setProgress(0), 3000);
     }
-  }, [products, segments, asinToSegment, segmentDescriptions, onPersistReport]);
+  }, [buildEvidencePack, products, segments, asinToSegment, segmentDescriptions, onPersistReport]);
 
   const generateReportRef = useRef(generateReport);
   generateReportRef.current = generateReport;
