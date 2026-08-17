@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Upload, Sparkles, Loader2, MessageSquare, ThumbsUp, ThumbsDown, MapPin, Users as UsersIcon, Search, X, ChevronLeft, ChevronRight, ChevronDown, TrendingUp, FileText, Heart, Route, SlidersHorizontal, Languages, Pencil, Save } from 'lucide-react';
+import { Upload, Sparkles, Loader2, MessageSquare, ThumbsUp, ThumbsDown, MapPin, Users as UsersIcon, Search, X, ChevronLeft, ChevronRight, ChevronDown, TrendingUp, FileText, Heart, Route, SlidersHorizontal, Languages, Pencil } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Card';
 import {
   parseReviewsWithMapping,
@@ -47,7 +47,7 @@ interface UserInsightsProps {
   /** 从历史或 IndexedDB 恢复时递增，强制把父级状态灌入本组件 */
   workspaceRestoreKey?: number;
   restorePayload?: UserInsightsWorkspaceState | null;
-  /** 把深度洞察/旅程表同步给 App，由 App 写入 IndexedDB/总保存 */
+  /** 把深度洞察/旅程表同步给 App，由 App 写入 IndexedDB/保存数据 */
   onWorkspaceSync?: (state: UserInsightsWorkspaceState) => void;
 }
 
@@ -460,15 +460,6 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
     setJourneyRows(seed.journeyRows ?? []);
     setJourneyMountId((n) => n + 1);
   }, [restorePayload, workspaceFromParent, workspaceRestoreKey]);
-
-  const handleSaveWorkspace = useCallback(() => {
-    if (!onWorkspaceSync) {
-      toast.success('当前洞察已保留在本页。');
-      return;
-    }
-    onWorkspaceSync(buildWorkspaceState());
-    toast.success('已保存本次用户洞察，下次打开会自动恢复。');
-  }, [buildWorkspaceState, onWorkspaceSync]);
 
   const deepReportHtml = useMemo(
     () => {
@@ -1491,7 +1482,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
             <Card className="rounded-2xl border-indigo-100 shadow-sm overflow-hidden ring-1 ring-indigo-100">
               <CardHeader className="bg-indigo-50/80 border-b border-indigo-100">
                 <CardTitle className="text-sm font-bold text-indigo-900">编辑标签库</CardTitle>
-                <p className="text-xs text-indigo-800/80 mt-1">每类单独填写：可<strong>一行一个标签</strong>，或用<strong>中文/英文逗号、顿号</strong>分隔；<strong>每类最多 {TAG_LIB_MAX_PER_DIM} 个</strong>。保存后直接用下方「Step2: 自动打标」，无需再跑 Step1。</p>
+                <p className="text-xs text-indigo-800/80 mt-1">每类单独填写：可<strong>一行一个标签</strong>，或用<strong>中文/英文逗号、顿号</strong>分隔；<strong>每类最多 {TAG_LIB_MAX_PER_DIM} 个</strong>。应用后直接用下方「Step2: 自动打标」，无需再跑 Step1。</p>
               </CardHeader>
               <CardContent className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className="flex flex-col gap-1">
@@ -1539,7 +1530,7 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
                     取消
                   </button>
                   <button type="button" onClick={applyTagDraft} className="px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700">
-                    保存标签库
+                    应用标签库
                   </button>
                 </div>
               </CardContent>
@@ -1788,16 +1779,6 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {(deepReport || journeyRows.length > 0 || journeyReportRaw) && (
-                      <button
-                        type="button"
-                        onClick={handleSaveWorkspace}
-                        className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-sm font-semibold hover:bg-emerald-100"
-                      >
-                        <Save className="w-4 h-4"/>
-                        保存本次洞察
-                      </button>
-                    )}
                     {deepReport && (
                       <button
                         type="button"

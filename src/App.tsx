@@ -279,11 +279,11 @@ export default function App() {
   const [selectedCompareAsins, setSelectedCompareAsins] = useState<string[]>([]);
   /** 示例竞品快照：游客/示例模式下让竞品分析页直接有结果可看 */
   const [competitorDemo, setCompetitorDemo] = useState<CompetitorDemoSnapshot | null>(null);
-  /** 竞品工作区（由 CompetitorHub 同步上来，供总保存） */
+  /** 竞品工作区（由 CompetitorHub 同步上来，供保存数据） */
   const [competitorWorkspace, setCompetitorWorkspace] = useState<CompetitorWorkspaceState | null>(null);
   const [competitorRestoreKey, setCompetitorRestoreKey] = useState(0);
   const [competitorRestorePayload, setCompetitorRestorePayload] = useState<CompetitorWorkspaceState | null>(null);
-  /** 用户洞察工作区：深度洞察报告 / 5W1H 旅程表，随 IndexedDB 与总保存恢复 */
+  /** 用户洞察工作区：深度洞察报告 / 5W1H 旅程表，随 IndexedDB 与保存数据恢复 */
   const [userInsightsWorkspace, setUserInsightsWorkspace] = useState<UserInsightsWorkspaceState | null>(null);
   const [userInsightsRestoreKey, setUserInsightsRestoreKey] = useState(0);
   const [userInsightsRestorePayload, setUserInsightsRestorePayload] = useState<UserInsightsWorkspaceState | null>(null);
@@ -361,6 +361,38 @@ export default function App() {
       }
       return [...prev, asin];
     });
+  }, []);
+
+  const handleRemoveMarketAsins = useCallback((asins: string[]) => {
+    const normalized = Array.from(new Set(asins.map((a) => a.trim()).filter(Boolean)));
+    if (normalized.length === 0) return;
+    const removeSet = new Set(normalized);
+
+    setProducts((prev) => prev.filter((p) => !removeSet.has(p.asin)));
+    setHistory((prev) => prev.filter((h) => !removeSet.has(h.asin)));
+    setReviews((prev) => prev.filter((r) => !removeSet.has(r.asin) && !removeSet.has(r.childAsin || '') && !removeSet.has(r.parentAsin || '')));
+    setSelectedCompareAsins((prev) => prev.filter((asin) => !removeSet.has(asin)));
+
+    setAsinToSegment((prev) => {
+      const next = { ...prev };
+      normalized.forEach((asin) => delete next[asin]);
+      return next;
+    });
+    setAsinToSubSegment((prev) => {
+      const next = { ...prev };
+      normalized.forEach((asin) => delete next[asin]);
+      return next;
+    });
+    setAsinToLevel3Segment((prev) => {
+      const next = { ...prev };
+      normalized.forEach((asin) => delete next[asin]);
+      return next;
+    });
+
+    setMarketReportCache(null);
+    setIsDemoData(false);
+    void set('isDemoData', false);
+    toast.success(`已剔除 ${normalized.length} 个 ASIN，市场大盘和历史数据已同步更新`);
   }, []);
 
   const applyMarketSnapshotFromHistory = useCallback(async (snap: MarketHistorySnapshot) => {
@@ -453,7 +485,7 @@ export default function App() {
     const name = window.prompt('为这条工作区命名（市场+关键词+VOC+竞品一并保存；可留空用建议名）', suggested);
     if (name === null) return;
     const finalTitle = name.trim() || suggested;
-    toast.info('正在总保存到本机…');
+    toast.info('正在保存数据到本机…');
     const res = await saveMarketSnapshot(currentUser.id, {
       title: finalTitle,
       historySourceLabel: historySourceLabel || undefined,
@@ -490,7 +522,7 @@ export default function App() {
       return;
     }
     const withComp = competitorWorkspace?.hasResult ? '（含竞品分析）' : '';
-    toast.success(`已总保存到本机历史${withComp}`);
+    toast.success(`已保存数据到本机历史${withComp}`);
   }, [
     isRegisteredUser,
     currentUser,
@@ -1309,7 +1341,7 @@ export default function App() {
             <div className="flex items-stretch gap-1.5 px-2">
               <button
                 type="button"
-                title="我的工作区历史（总保存的版本）"
+                title="我的工作区历史（保存数据生成的版本）"
                 aria-label="我的工作区历史"
                 onClick={() => setIsMarketHistoryOpen(true)}
                 className="shrink-0 w-10 flex items-center justify-center rounded-xl border border-black/5 bg-[#f5f5f7] text-[#86868b] hover:bg-white hover:text-indigo-600 hover:border-indigo-100 transition-colors"
@@ -1318,12 +1350,12 @@ export default function App() {
               </button>
               <button
                 type="button"
-                title="总保存：市场/关键词/VOC/竞品一并存成一个历史版本"
+                title="保存数据：市场/关键词/VOC/竞品一并存成一个历史版本"
                 onClick={() => void handleSaveMarketToHistory()}
                 disabled={!isDataLoaded}
                 className="flex-1 min-w-0 py-2 px-2 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-colors disabled:opacity-40 disabled:pointer-events-none"
               >
-                总保存
+                保存数据
               </button>
             </div>
           )}
@@ -1691,7 +1723,7 @@ export default function App() {
               </div>
               }
 
-              {/* 有市场数据时保持挂载，切 Tab 不丢竞品结果，也便于总保存 */}
+              {/* 有市场数据时保持挂载，切 Tab 不丢竞品结果，也便于保存数据 */}
               {(isDataLoaded || activeView === 'competitors') && (
                 <div
                   className={activeView === 'competitors' ? 'max-w-7xl mx-auto' : 'hidden'}
@@ -1787,6 +1819,8 @@ export default function App() {
         <div className={isSegmentationOpen ? '' : 'hidden'}>
           <SegmentationManager 
             products={products}
+            history={history}
+            months={months}
             segments={segments}
             asinToSegment={asinToSegment}
             segmentChildren={segmentChildren}
@@ -1809,6 +1843,7 @@ export default function App() {
             onUpdateAsinToLevel3Segment={setAsinToLevel3Segment}
             onUpdateSegmentLevel3Descriptions={setSegmentLevel3Descriptions}
             onGenerateReport={openMarketReport}
+            onRemoveSelectedAsins={handleRemoveMarketAsins}
             onAiRunningChange={setIsSegAiRunning}
             onClose={handleCloseSegmentation}
           />

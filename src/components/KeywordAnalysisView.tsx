@@ -5,7 +5,6 @@ import {
   Upload, FileSpreadsheet, Brain, Trash2, Edit2, Check, X, Filter, ExternalLink, Zap, Search,
   Target, Lightbulb, Sparkles, TrendingUp, Tag, Download, ArrowUpDown, ChevronDown, ChevronUp,
   Users, Map as MapIcon, Route, HeartHandshake, ChevronLeft, ChevronRight, Info, MousePointerClick, HelpCircle,
-  Save,
 } from 'lucide-react';
 import { Keyword } from '../utils/parser';
 import {
@@ -260,7 +259,7 @@ export function KwView(p: KwViewProps) {
     isAI, prog, tab, setTab, seg, setSeg, ins, genIns, showT, setShowT,
     q, setQ, cat, setCat, eid, etags, seedHint,
     onUpload, onRunAI, onStop, onGenAI, onClear, onExport,
-    onSaveInsight, onStartEdit, onSaveEdit, onCancelEdit, onTogTag, headerExtra } = p;
+    onStartEdit, onSaveEdit, onCancelEdit, onTogTag, headerExtra } = p;
   return (
     <div className="space-y-6">
       <div><div className="flex items-center gap-2 mb-3"><Zap className="w-4 h-4 text-indigo-500" /><span className="text-sm font-semibold text-[#1d1d1f]">选词工具快捷入口</span><span className="text-xs text-[#86868b]">— 新标签页，浏览器可记住密码</span></div><TB /></div>
@@ -302,7 +301,7 @@ export function KwView(p: KwViewProps) {
         {tab === 'intent' && <IntentTab hasInsight={hasInsight} intentStats={intentStats} tStat={tStat} keywords={keywords} />}
         {tab === 'jtbd' && hasInsight && <JtbdTab jtbdStats={jtbdStats} keywords={keywords} seg={seg} setSeg={setSeg} />}
         {tab === 'scenario' && hasInsight && <ScenarioTab insights={scenarioInsights} keywords={keywords} seg={seg} setSeg={setSeg} />}
-        {tab === 'report' && <ReportTab ins={ins} hasInsight={hasInsight} genIns={genIns} onGenAI={onGenAI} onSaveInsight={onSaveInsight} />}
+        {tab === 'report' && <ReportTab ins={ins} hasInsight={hasInsight} genIns={genIns} onGenAI={onGenAI} />}
         <div><button type="button" onClick={() => setShowT(!showT)} className="flex items-center gap-2 text-sm text-[#86868b] hover:text-[#1d1d1f] font-medium"><Filter className="w-4 h-4" />{showT ? '收起' : '展开'}原始关键词表<span className="text-xs bg-[#f5f5f7] px-2 py-0.5 rounded-full border border-black/5">{keywords.length} 个词</span></button></div>
         {showT && <RawTable filt={filt} eid={eid} etags={etags} q={q} setQ={setQ} cat={cat} setCat={setCat} onStartEdit={onStartEdit} onSaveEdit={onSaveEdit} onCancelEdit={onCancelEdit} onTogTag={onTogTag} />}
       </>)}
@@ -837,20 +836,12 @@ function ScenarioTab({ insights, keywords, seg, setSeg }: { insights: ScenarioIn
 }
 
 /* ─── ReportTab ─── */
-function ReportTab({ ins, hasInsight, genIns, onGenAI, onSaveInsight }: { ins: AiInsight | null; hasInsight: boolean; genIns: boolean; onGenAI: () => void; onSaveInsight?: () => void }) {
+function ReportTab({ ins, hasInsight, genIns, onGenAI }: { ins: AiInsight | null; hasInsight: boolean; genIns: boolean; onGenAI: () => void }) {
   if (!ins) return (<div className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 rounded-[24px] p-10 flex flex-col items-center text-center gap-4"><div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-md"><Lightbulb className="w-8 h-8 text-indigo-500" /></div><div><h3 className="text-xl font-bold text-[#1d1d1f] mb-2">AI 用户洞察报告</h3><p className="text-sm text-[#86868b] max-w-md">{hasInsight ? '基于意图分层、JTBD 任务与场景洞察，生成完整报告。' : '请先点击「AI 用户洞察」。'}</p></div><button onClick={onGenAI} disabled={genIns || !hasInsight} className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-semibold transition-all disabled:opacity-50 shadow-lg"><Sparkles className={`w-4 h-4 ${genIns ? 'animate-spin' : ''}`} />{genIns ? '生成中...' : '生成报告'}</button></div>);
 
   return (
     <div className="space-y-6">
       <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onSaveInsight}
-          className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-sm font-semibold hover:bg-emerald-100"
-        >
-          <Save className="w-4 h-4" />
-          保存报告
-        </button>
         <FeishuPushButton
           compact
           title="AI 用户洞察报告"

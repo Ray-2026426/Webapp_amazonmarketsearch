@@ -103,7 +103,7 @@ export function AnnotationsDrawer({ open, onClose, annotations, onChange, onJump
                                   className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
                                   onClick={saveEdit}
                                 >
-                                  保存
+                                  完成
                                 </button>
                               </div>
                             </div>

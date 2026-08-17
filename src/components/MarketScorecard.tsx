@@ -281,7 +281,7 @@ const RulesModal: React.FC<{
                 ))}
               </div>
               <div className="flex items-center gap-2 pt-3">
-                <button onClick={handleSave} className="flex-1 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-xl hover:bg-indigo-700 transition-colors">保存设置</button>
+                <button onClick={handleSave} className="flex-1 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-xl hover:bg-indigo-700 transition-colors">应用设置</button>
                 <button onClick={handleReset} className="flex items-center gap-1 px-3 py-2 border border-slate-200 text-slate-500 text-xs font-medium rounded-xl hover:bg-slate-50 transition-colors"><RotateCcw className="w-3 h-3" /> 恢复默认</button>
               </div>
             </div>
@@ -344,7 +344,7 @@ const RulesModal: React.FC<{
               <RuleRow label="中费率上限（≤此值黄灯）" value={draft.fbaRatioMaxMid} onChange={v => update('fbaRatioMaxMid', v)} unit="%" />
 
               <div className="flex items-center gap-2 pt-3">
-                <button onClick={handleSave} className="flex-1 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-xl hover:bg-indigo-700 transition-colors">保存设置</button>
+                <button onClick={handleSave} className="flex-1 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-xl hover:bg-indigo-700 transition-colors">应用设置</button>
                 <button onClick={handleReset} className="flex items-center gap-1 px-3 py-2 border border-slate-200 text-slate-500 text-xs font-medium rounded-xl hover:bg-slate-50 transition-colors"><RotateCcw className="w-3 h-3" /> 恢复默认</button>
               </div>
             </div>

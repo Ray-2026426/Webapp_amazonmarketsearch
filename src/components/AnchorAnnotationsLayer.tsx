@@ -357,7 +357,7 @@ export function AnchorAnnotationsLayer({
               取消
             </button>
             <button type="button" className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700" onClick={saveDraft}>
-              保存
+              完成
             </button>
           </div>
         </div>

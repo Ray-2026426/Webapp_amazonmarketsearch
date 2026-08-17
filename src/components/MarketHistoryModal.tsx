@@ -52,7 +52,7 @@ export const MarketHistoryModal: React.FC<MarketHistoryModalProps> = ({
             <div>
               <h2 className="text-lg font-bold text-[#1d1d1f]">我的工作区历史</h2>
               <p className="text-xs text-[#86868b]">
-                点左侧「总保存」写入；打开后市场 / 关键词 / VOC / 竞品一并恢复。本机最多{' '}
+                点左侧「保存数据」写入；打开后市场 / 关键词 / VOC / 竞品一并恢复。本机最多{' '}
                 {MAX_MARKET_SNAPSHOTS_PER_USER} 条。
               </p>
             </div>
@@ -69,7 +69,7 @@ export const MarketHistoryModal: React.FC<MarketHistoryModalProps> = ({
               <span className="text-sm">加载列表…</span>
             </div>
           ) : items.length === 0 ? (
-            <p className="text-sm text-[#86868b] text-center py-12">暂无历史。有数据后点侧边栏「总保存」即可。</p>
+            <p className="text-sm text-[#86868b] text-center py-12">暂无历史。有数据后点侧边栏「保存数据」即可。</p>
           ) : (
             <ul className="space-y-2">
               {items.map((it) => (

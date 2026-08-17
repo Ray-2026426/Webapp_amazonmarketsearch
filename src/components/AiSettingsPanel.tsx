@@ -239,7 +239,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     }
 
     if (!apiKey.trim()) {
-      toast.error('请填写 AI API Key，或切换到「背景信息 / MCP 数据」页单独保存');
+      toast.error('请填写 AI API Key，或切换到「背景信息 / MCP 数据」页单独应用');
       return;
     }
     onSave({
@@ -534,7 +534,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                 type="button"
                 onClick={() => {
                   setUserBackground({ ...EMPTY_USER_BACKGROUND });
-                  toast.info('已清空表单，点「保存设置」后才会真正清除');
+                  toast.info('已清空表单，点「应用设置」后才会真正清除');
                 }}
                 className="text-xs text-[#86868b] hover:text-rose-600"
               >
@@ -795,7 +795,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
             onClick={handleSave}
             className="px-6 py-2 bg-indigo-600 text-white rounded-full text-sm font-semibold hover:bg-indigo-700 transition-all shadow-md"
           >
-            保存设置
+            应用设置
           </button>
         </div>
       </div>

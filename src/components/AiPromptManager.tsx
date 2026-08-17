@@ -248,7 +248,7 @@ export const AiPromptManager: React.FC<AiPromptManagerProps> = ({ onClose, embed
               </button>
               <div className="flex items-center gap-2 ml-3">
                 {editingId === p.id
-                  ? <button type="button" onClick={() => handleSave(p.id)} className="flex items-center gap-1 px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-semibold"><Save className="w-3 h-3"/> 保存</button>
+                  ? <button type="button" onClick={() => handleSave(p.id)} className="flex items-center gap-1 px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-semibold"><Save className="w-3 h-3"/> 应用</button>
                   : <button type="button" onClick={() => handleEdit(p)} className="flex items-center gap-1 px-3 py-1 bg-[#f5f5f7] text-[#1d1d1f] rounded-lg text-xs font-medium"><Edit3 className="w-3 h-3"/> 编辑</button>}
                 <button type="button" onClick={() => handleReset(p)} className="flex items-center gap-1 px-3 py-1 bg-[#f5f5f7] text-[#86868b] rounded-lg text-xs font-medium hover:bg-rose-50 hover:text-rose-600"><RotateCcw className="w-3 h-3"/> 重置</button>
               </div>
@@ -264,7 +264,7 @@ export const AiPromptManager: React.FC<AiPromptManagerProps> = ({ onClose, embed
         ))}
       </div>
       <div className={`shrink-0 p-4 border-t border-black/5 bg-[#fafafa] ${embedded ? 'rounded-b-xl' : 'rounded-b-[24px]'}`}>
-        <p className="text-xs text-[#86868b] text-center">单条 Prompt 点「保存」后写入本地。点「重置」恢复该条默认文案。</p>
+        <p className="text-xs text-[#86868b] text-center">单条 Prompt 点「应用」后写入本地。点「重置」恢复该条默认文案。</p>
       </div>
     </>
   );

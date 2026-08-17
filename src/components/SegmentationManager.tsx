@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Plus, Trash2, Sparkles, Loader2, ChevronLeft, ChevronRight, Search, Check, ExternalLink, Users, Cloud, Ban, Download, Layers } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/Card';
-import { Product } from '../utils/parser';
+import { HistoryRecord, Product } from '../utils/parser';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
@@ -34,6 +34,8 @@ function isUncategorizedAsin(asin: string, mapping: Record<string, string>): boo
 
 interface SegmentationManagerProps {
   products: Product[];
+  history: HistoryRecord[];
+  months: string[];
   segments: string[];
   asinToSegment: Record<string, string>;
   segmentChildren: Record<string, string[]>;
@@ -56,6 +58,7 @@ interface SegmentationManagerProps {
   onUpdateAsinToLevel3Segment: (mapping: Record<string, string>) => void;
   onUpdateSegmentLevel3Descriptions: (descriptions: Record<string, SegmentDescription>) => void;
   onGenerateReport: () => void;
+  onRemoveSelectedAsins?: (asins: string[]) => void;
   onAiRunningChange?: (running: boolean) => void;
   onClose: () => void;
 }
@@ -68,6 +71,8 @@ interface SegmentDescription {
 
 export const SegmentationManager = React.memo(function SegmentationManager({ 
   products, 
+  history,
+  months,
   segments, 
   asinToSegment,
   segmentChildren,
@@ -90,6 +95,7 @@ export const SegmentationManager = React.memo(function SegmentationManager({
   onUpdateAsinToLevel3Segment,
   onUpdateSegmentLevel3Descriptions,
   onGenerateReport,
+  onRemoveSelectedAsins,
   onAiRunningChange,
   onClose 
 }: SegmentationManagerProps) {
@@ -724,6 +730,75 @@ export const SegmentationManager = React.memo(function SegmentationManager({
     const d = String(date.getDate()).padStart(2, '0');
     XLSX.writeFile(workbook, `市场细分导出_${y}${m}${d}.xlsx`);
     toast.success(`导出成功，共 ${rows.length} 条 ASIN`);
+  };
+
+  const dateStamp = () => {
+    const date = new Date();
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}${m}${d}`;
+  };
+
+  const handleRemoveSelectedFromMarket = () => {
+    if (!onRemoveSelectedAsins || selectedAsins.size === 0) return;
+    const asins = Array.from(selectedAsins);
+    const ok = window.confirm(
+      `确定剔除 ${asins.length} 个 ASIN？\n\n它们会从当前商品明细、历史表现、细分标签和竞品对比选择中移除。此操作不会直接改写你上传的原 Excel；需要源表时请使用“导出清洗后源表”。`
+    );
+    if (!ok) return;
+    onRemoveSelectedAsins(asins);
+    setSelectedAsins(new Set());
+    setCurrentPage(1);
+  };
+
+  const handleExportCleanedSource = () => {
+    if (products.length === 0) {
+      toast.error('当前没有可导出的清洗后数据');
+      return;
+    }
+
+    const productRows = products.map((p) => ({
+      ASIN: p.asin,
+      SKU: p.sku,
+      品牌: p.brand,
+      标题: p.title,
+      主图链接: p.image,
+      月销量: p.monthlySales,
+      月销售额: p.monthlyRevenue,
+      价格: p.price,
+      评分: p.rating,
+      评论数: p.reviewCount,
+      月新增评论: p.reviewGrowth,
+      卖家数: p.sellerCount,
+      包装重量kg: p.weight,
+      包装体积cm3: p.volume,
+      上架时间: p.launchDate,
+      上架天数: p.daysSinceLaunch,
+      BuyBox类型: p.buyBoxType,
+      卖家所在地: p.sellerLocation,
+      FBA费用: p.fbaFee,
+      小类BSR: p.subBsr,
+      小类目: p.subCategory,
+      细分市场: getProductTagLabel(p.asin),
+    }));
+
+    const historyRows = history.map((h) => {
+      const row: Record<string, string | number> = { ASIN: h.asin };
+      months.forEach((month) => {
+        const d = h.history[month];
+        row[`${month} 销量`] = d?.sales ?? 0;
+        row[`${month} 销售额`] = d?.revenue ?? 0;
+        row[`${month} 价格`] = d?.price ?? 0;
+      });
+      return row;
+    });
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(productRows), '商品明细_清洗后');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(historyRows), '历史表现_清洗后');
+    XLSX.writeFile(workbook, `清洗后源表_${dateStamp()}.xlsx`);
+    toast.success(`已导出清洗后源表：${productRows.length} 个 ASIN，${historyRows.length} 条历史记录`);
   };
 
   const runAiCategorization = async () => {
@@ -1457,6 +1532,26 @@ ${batchInfo}`;
                         aria-label="批量打层级3"
                       />
                     )}
+                    {onRemoveSelectedAsins && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveSelectedFromMarket}
+                        className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 shadow-sm flex items-center gap-1.5"
+                        title="从当前市场数据、历史数据和细分标签中剔除选中 ASIN"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        剔除选中
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleExportCleanedSource}
+                      className="px-3 py-1.5 rounded-lg bg-white border border-black/10 text-xs font-semibold text-[#424245] hover:text-emerald-700 hover:border-emerald-200 hover:bg-emerald-50 flex items-center gap-1.5"
+                      title="导出当前剔除后的商品明细和历史表现源表"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      导出清洗后源表
+                    </button>
                     <button 
                       onClick={() => setSelectedAsins(new Set())}
                       className="p-2 text-[#86868b] hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"

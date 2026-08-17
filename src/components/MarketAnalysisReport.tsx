@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Sparkles, Loader2, FileText, TrendingUp, Users, Info, ShieldAlert, Edit3, Save, RotateCcw, EyeOff } from 'lucide-react';
+import { X, Sparkles, Loader2, FileText, TrendingUp, Users, Info, ShieldAlert, Edit3, Check, RotateCcw, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
@@ -327,12 +327,12 @@ ${products.slice(0, 20).map(p => `- ${p.title} (价格: $${p.price}, 评分: ${p
                       setReport(editedReport);
                       onPersistReport(editedReport);
                       setIsEditing(false);
-                      toast.success('报告已保存');
+                      toast.success('报告修改已应用');
                     }}
                     className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg flex items-center gap-2"
                   >
-                    <Save className="w-5 h-5" />
-                    保存修改
+                    <Check className="w-5 h-5" />
+                    应用修改
                   </button>
                 ) : (
                   <>

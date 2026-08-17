@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Crosshair, Loader2, Image as ImageIcon, Activity, Grid3X3, Plus, X, Upload,
   ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Star, Package, ExternalLink, RefreshCw, Sparkles, HelpCircle, Trash2,
-  History, Save,
+  History,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { SecondaryReportPage } from './SecondaryReportPage';
@@ -29,10 +29,8 @@ import { toast } from 'sonner';
 import { Select } from './ui/Select';
 import {
   listCompetitorHistoryMeta,
-  saveCompetitorSnapshot,
   loadCompetitorSnapshot,
   deleteCompetitorSnapshot,
-  suggestCompetitorSnapshotTitle,
   sanitizePacksForPersist,
   type CompetitorHistoryMeta,
   type CompetitorWorkspaceState,
@@ -52,7 +50,7 @@ interface CompetitorHubProps {
   demoSnapshot?: CompetitorDemoSnapshot | null;
   /** 登录用户 id；游客用 guest，用于本机历史隔离 */
   userId?: string;
-  /** 父级持有的工作区（总保存用）；切 Tab 不丢 */
+  /** 父级持有的工作区（保存数据用）；切 Tab 不丢 */
   workspaceFromParent?: CompetitorWorkspaceState | null;
   /** 递增时从 workspaceFromParent / restorePayload 强制灌入 */
   workspaceRestoreKey?: number;
@@ -318,10 +316,9 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyList, setHistoryList] = useState<CompetitorHistoryMeta[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [savingHistory, setSavingHistory] = useState(false);
   const lastRestoreKey = useRef(0);
 
-  // 总保存：把当前竞品状态同步给父级
+  // 保存数据：把当前竞品状态同步给父级
   useEffect(() => {
     if (!onWorkspaceSync) return;
     const ws: CompetitorWorkspaceState = {
@@ -380,35 +377,6 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   useEffect(() => {
     void refreshHistoryList();
   }, [historyUserId]);
-
-  const handleSaveHistory = async () => {
-    if (!hasResult || !details.length) {
-      toast.error('请先完成对比分析再保存');
-      return;
-    }
-    setSavingHistory(true);
-    try {
-      const res = await saveCompetitorSnapshot(historyUserId, {
-        title: suggestCompetitorSnapshotTitle(marketplace, selected),
-        marketplace,
-        selected,
-        details,
-        trafficStats,
-        topKeywords,
-        matrices,
-        aiReportHtml,
-        packs,
-      });
-      if (res.ok === false) {
-        toast.error(res.error || '保存失败');
-        return;
-      }
-      toast.success(`已保存：${res.meta.title}`);
-      await refreshHistoryList();
-    } finally {
-      setSavingHistory(false);
-    }
-  };
 
   const handleLoadHistory = async (id: string) => {
     setHistoryLoading(true);
@@ -770,7 +738,7 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
               {historyLoading ? (
                 <div className="px-3 py-6 text-center text-xs text-[#86868b]">加载中…</div>
               ) : historyList.length === 0 ? (
-                <div className="px-3 py-6 text-center text-xs text-[#86868b]">暂无历史。完成对比后点「保存本次分析」。</div>
+                <div className="px-3 py-6 text-center text-xs text-[#86868b]">暂无历史。完成对比后点左侧「保存数据」。</div>
               ) : (
                 historyList.map((item) => (
                   <div
@@ -995,18 +963,6 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
                   ))}
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => void handleSaveHistory()}
-                    disabled={savingHistory || !hasResult}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm font-semibold disabled:opacity-50 hover:bg-emerald-100"
-                  >
-                    {savingHistory ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    保存本次分析
-                  </button>
-                  <span className="text-[11px] text-[#86868b] self-center">
-                    也可在左侧点「总保存」，和全站一起存进工作区历史
-                  </span>
                   <button
                     type="button"
                     onClick={() => void runFullAiReport()}
