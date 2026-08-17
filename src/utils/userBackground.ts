@@ -1,6 +1,9 @@
-/** 使用者背景信息：让 AI 更懂「谁在用这个 App」 */
+import { getCurrentUser, isAdminSession, type SessionUser } from './auth';
 
-const PROFILE_KEY = 'amzdev_user_background';
+/** 使用者背景信息：让 AI 更懂「谁在用这个 App」。 */
+
+const LEGACY_PROFILE_KEY = 'amzdev_user_background';
+const PROFILE_KEY_PREFIX = 'amzdev_user_background:';
 
 export interface UserBackgroundProfile {
   /** 怎么称呼你 */
@@ -41,19 +44,80 @@ export const EMPTY_USER_BACKGROUND: UserBackgroundProfile = {
   extraNotes: '',
 };
 
-export function loadUserBackground(): UserBackgroundProfile {
+export const ADMIN_DEFAULT_USER_BACKGROUND: UserBackgroundProfile = {
+  displayName: 'Ray',
+  role: '项目负责人 / 亚马逊市场调研与选品决策负责人',
+  company: 'OG 项目组 / 跨境电商团队',
+  brands: 'OG 项目组、Kairo 市场调研工具',
+  categories: '亚马逊新品选品、用户洞察、关键词分析、评论洞察、竞品分析、Listing 优化',
+  marketplaces: 'US、UK、DE 为主，兼顾其他亚马逊站点',
+  experience: '持续搭建亚马逊市场调研 Web App，关注选品判断、用户洞察、竞品拆解、数据抓取与 AI 报告质量。',
+  goals:
+    '把 Kairo 打造成更好用、更准确的亚马逊市场调研和选品决策工作台；提升交互体验、数据洞察准确性、报告可审计性，并支持新品机会判断、老品改版、关键词机会和评论洞察。',
+  constraints:
+    '结论必须有数据证据和置信度说明；避免空泛建议；优先复用现有供应链与可执行动作；关注 MOQ、利润空间、FBA 成本、广告预算、合规风险和团队执行成本。',
+  analysisStyle:
+    '结论先行，直接务实；先讲判断和必要性，再给证据、风险和行动清单；用中文输出，明确样本口径、数据不足和优先级。',
+  extraNotes:
+    '用户重视深入审查和讲清楚优化必要性；不满意时需要可回退。AI 不要复述整段背景，只把这些信息用于更贴近业务场景的判断。',
+};
+
+function readProfile(key: string): Partial<UserBackgroundProfile> | null {
   try {
-    const raw = localStorage.getItem(PROFILE_KEY);
-    if (!raw) return { ...EMPTY_USER_BACKGROUND };
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<UserBackgroundProfile>;
-    return { ...EMPTY_USER_BACKGROUND, ...parsed };
+    return parsed && typeof parsed === 'object' ? parsed : null;
   } catch {
-    return { ...EMPTY_USER_BACKGROUND };
+    return null;
   }
 }
 
-export function saveUserBackground(profile: UserBackgroundProfile): void {
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+function profileStorageKey(user?: SessionUser | null): string {
+  const u = user ?? getCurrentUser();
+  return u?.id ? `${PROFILE_KEY_PREFIX}${u.id}` : LEGACY_PROFILE_KEY;
+}
+
+function defaultProfileFor(user?: SessionUser | null): UserBackgroundProfile {
+  return isAdminSession(user ?? getCurrentUser())
+    ? { ...ADMIN_DEFAULT_USER_BACKGROUND }
+    : { ...EMPTY_USER_BACKGROUND };
+}
+
+function normalizeProfile(
+  profile: Partial<UserBackgroundProfile> | null | undefined,
+  defaults: UserBackgroundProfile
+): UserBackgroundProfile {
+  return { ...defaults, ...(profile ?? {}) };
+}
+
+export function loadUserBackground(user?: SessionUser | null): UserBackgroundProfile {
+  const defaults = defaultProfileFor(user);
+  try {
+    const key = profileStorageKey(user);
+    const accountProfile = readProfile(key);
+    if (accountProfile) return normalizeProfile(accountProfile, defaults);
+
+    const legacyProfile = readProfile(LEGACY_PROFILE_KEY);
+    if (legacyProfile) {
+      const migrated = normalizeProfile(legacyProfile, defaults);
+      if (key !== LEGACY_PROFILE_KEY) {
+        localStorage.setItem(key, JSON.stringify(migrated));
+      }
+      return migrated;
+    }
+
+    return defaults;
+  } catch {
+    return defaults;
+  }
+}
+
+export function saveUserBackground(
+  profile: UserBackgroundProfile,
+  user?: SessionUser | null
+): void {
+  localStorage.setItem(profileStorageKey(user), JSON.stringify(profile));
 }
 
 export function hasUserBackground(profile?: UserBackgroundProfile | null): boolean {
@@ -61,7 +125,7 @@ export function hasUserBackground(profile?: UserBackgroundProfile | null): boole
   return Object.values(p).some((v) => String(v || '').trim().length > 0);
 }
 
-/** 拼成给 AI 的系统提示片段（无内容则返回空串） */
+/** 拼成给 AI 的系统提示片段（无内容则返回空串）。 */
 export function buildUserBackgroundSystemPrompt(profile?: UserBackgroundProfile | null): string {
   const p = profile ?? loadUserBackground();
   if (!hasUserBackground(p)) return '';
