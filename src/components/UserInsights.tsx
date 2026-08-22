@@ -12,8 +12,7 @@ import { fetchReviewsFromMcp } from '../utils/sellerspriteApi';
 import { McpFetchPanel } from './McpFetchPanel';
 import { getPrompt } from './AiPromptManager';
 import { toast } from 'sonner';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { MarkdownReport } from './MarkdownReport';
 import { SecondaryReportPage } from './SecondaryReportPage';
 import { InsightReportPanels, tryParseAiInsight } from './InsightReportPanels';
 import type { AiInsight } from './KeywordAnalysis';
@@ -1787,8 +1786,8 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
                     dangerouslySetInnerHTML={{ __html: deepReportHtml }}
                   />
                 ) : (
-                  <div className="prose prose-base max-w-none text-[#3f3f46] leading-relaxed prose-headings:font-semibold prose-headings:text-indigo-950 prose-p:my-3">
-                    <Markdown remarkPlugins={[remarkGfm]}>{deepReportMarkdown}</Markdown>
+                  <div className="text-[#3f3f46] leading-relaxed">
+                    <MarkdownReport>{deepReportMarkdown}</MarkdownReport>
                   </div>
                 )}
               </SecondaryReportPage>

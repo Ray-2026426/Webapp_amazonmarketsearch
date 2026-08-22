@@ -6,8 +6,7 @@ import {
 import { loadAiSettings, generateWithImages, generateText, type ImageInput, type AiSettings } from '../utils/aiConfig';
 import { parseSingleCompetitorZip } from '../utils/competitorArchiveParser';
 import { toast } from 'sonner';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { MarkdownReport } from './MarkdownReport';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -557,8 +556,8 @@ function VisualReportTab({
       {section.crossComparison && (
         <div className="bg-white rounded-2xl border border-black/5 p-6">
           <h3 className="text-base font-semibold text-[#1d1d1f] mb-4">{title} · 对比结论</h3>
-          <div className="prose prose-sm max-w-none text-[#1d1d1f]">
-            <Markdown remarkPlugins={[remarkGfm]}>{section.crossComparison}</Markdown>
+          <div className="text-[#1d1d1f]">
+            <MarkdownReport>{section.crossComparison}</MarkdownReport>
           </div>
         </div>
       )}
@@ -645,9 +644,7 @@ function BulletReportTab({
       {comparison ? (
         <div className="bg-white rounded-2xl border border-black/5 p-6">
           <h3 className="text-base font-semibold mb-4">五点 · 对比结论</h3>
-          <div className="prose prose-sm max-w-none">
-            <Markdown remarkPlugins={[remarkGfm]}>{comparison}</Markdown>
-          </div>
+          <MarkdownReport>{comparison}</MarkdownReport>
         </div>
       ) : (
         <EmptyTab message="请为两个竞品都填写五点文案后，重新运行分析" />
@@ -685,8 +682,8 @@ function DetailModal({ result, onClose }: { result: ImageAnalysisResult; onClose
         </div>
         <div className="overflow-y-auto flex-1 p-5 flex flex-col md:flex-row gap-6">
           <img src={result.previewUrl} alt="" className="md:w-72 shrink-0 rounded-xl border object-contain bg-[#f5f5f7]" />
-          <div className="prose prose-sm max-w-none flex-1">
-            <Markdown remarkPlugins={[remarkGfm]}>{result.analysis}</Markdown>
+          <div className="flex-1">
+            <MarkdownReport>{result.analysis}</MarkdownReport>
           </div>
         </div>
       </div>
