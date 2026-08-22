@@ -2,6 +2,23 @@
 
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+
+  /* 品牌中性色（Apple 风格，收敛现有散落的硬编码灰阶） */
+  --color-canvas: #f5f5f7;
+  --color-canvas-soft: #fafafa;
+  --color-canvas-inset: #f8f9fb;
+  --color-ink: #1d1d1f;
+  --color-ink-secondary: #424245;
+  --color-ink-tertiary: #86868b;
+  --color-ink-muted: #aeaeb2;
+  --color-ink-faint: #c7c7cc;
+  --color-line: #e5e7eb;
+
+  /* 品牌主色（indigo/violet，收敛现有 837 处品牌色类） */
+  --color-brand: #4f46e5;
+  --color-brand-strong: #4338ca;
+  --color-brand-soft: #eef2ff;
+  --color-accent: #8b5cf6;
 }
 
 body {
