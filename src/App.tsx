@@ -29,7 +29,7 @@ import { clearWorkspaceIndexedDb } from './utils/workspaceIdb';
 import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, formatRevenue, computeMarketReportFingerprint } from './utils/parser';
 import { get, set, del } from 'idb-keyval';
 import { Toaster, toast } from 'sonner';
-import { ensureBuiltinAdmin, getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
+import { getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
 import { ensureAdminMcpDefaults, loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
 import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
@@ -126,7 +126,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 export default function App() {
   // ── Auth & AI Settings ────────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(() => {
-    ensureBuiltinAdmin();
     const user = getCurrentUser();
     if (isAdminSession(user)) {
       try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
@@ -138,9 +137,8 @@ export default function App() {
   const [isAvatarSettingsOpen, setIsAvatarSettingsOpen] = useState(false);
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
 
-  // 每次进入应用：同步内置管理员 + 四家 MCP 默认 Key
+  // 每次进入应用：保证四家内置数据源结构齐全（Key 由管理员在设置页配置并持久化）
   useEffect(() => {
-    ensureBuiltinAdmin();
     if (isAdminSession(currentUser)) {
       try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
     }

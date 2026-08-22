@@ -6,7 +6,7 @@ import {
   TrendingUp, Shield, Zap, Clock, Lightbulb, Package, FlaskConical, RefreshCw, ArrowRight,
   Users, Target, Map, Megaphone, Palette, Quote, Brain,
 } from 'lucide-react';
-import { login, register, saveCreds, loadCreds, clearCreds } from '../utils/auth';
+import { login, register, saveCreds, loadCreds, clearCreds, hasAnyUser } from '../utils/auth';
 import { toast } from 'sonner';
 
 interface LoginPageProps { onLoginSuccess: () => void; }
@@ -615,7 +615,7 @@ const SavingsCalculator: React.FC = () => {
    Main LoginPage
    ═══════════════════════════════════════ */
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register'>(() => (hasAnyUser() ? 'login' : 'register'));
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

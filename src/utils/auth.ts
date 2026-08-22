@@ -24,23 +24,11 @@ const SESSION_KEY = 'amzdev_session';
 const SAVED_CREDS_KEY = 'amzdev_saved_creds';
 
 /**
- * 写死在代码里的管理员：换版本 / 清了普通用户后，打开应用仍会自动补回，密码强制复位。
- * （本应用无云端账号库，持久化靠浏览器本地存储 + 每次启动同步）
+ * 管理员身份完全由账号记录中的 role 字段决定，不再写死任何明文账号或密码。
+ * 首个注册账号会自动成为管理员，实现「一次配置、长期使用」。
  */
-const BUILTIN_ADMIN = {
-  id: 'builtin-admin-15874760218',
-  username: '15874760218',
-  password: 'qianlan1997',
-  role: 'admin' as const,
-};
-
-export function isBuiltinAdminUsername(username: string): boolean {
-  return username.trim().toLowerCase() === BUILTIN_ADMIN.username.toLowerCase();
-}
-
 export function isAdminSession(user: SessionUser | null | undefined): boolean {
-  if (!user) return false;
-  return user.role === 'admin' || isBuiltinAdminUsername(user.username);
+  return Boolean(user) && user?.role === 'admin';
 }
 
 /** 部分内置浏览器/非 HTTPS 环境没有 crypto.randomUUID，会导致注册直接报错 */
@@ -86,68 +74,14 @@ function saveUsers(users: User[]): void {
   }
 }
 
-/**
- * 确保内置管理员始终存在，且密码哈希与代码中的固定密码一致。
- * 版本更新后首次打开、或本地库被改过，都会自动纠正。
- */
-export function ensureBuiltinAdmin(): void {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    const users = readUsersRaw();
-    const expectedHash = hashPassword(BUILTIN_ADMIN.password);
-    const byName = users.findIndex((u) => isBuiltinAdminUsername(u.username));
-    const byId = users.findIndex((u) => u.id === BUILTIN_ADMIN.id);
 
-    if (byName >= 0) {
-      const cur = users[byName];
-      const needsFix =
-        cur.passwordHash !== expectedHash ||
-        cur.role !== 'admin' ||
-        cur.id !== BUILTIN_ADMIN.id ||
-        cur.username !== BUILTIN_ADMIN.username;
-      if (needsFix) {
-        users[byName] = {
-          ...cur,
-          id: BUILTIN_ADMIN.id,
-          username: BUILTIN_ADMIN.username,
-          passwordHash: expectedHash,
-          role: 'admin',
-        };
-        // 若同 id 另有脏记录，去掉重复
-        const cleaned = users.filter((u, i) => i === byName || u.id !== BUILTIN_ADMIN.id);
-        saveUsers(cleaned);
-      }
-      return;
-    }
 
-    if (byId >= 0) {
-      const cur = users[byId];
-      users[byId] = {
-        ...cur,
-        id: BUILTIN_ADMIN.id,
-        username: BUILTIN_ADMIN.username,
-        passwordHash: expectedHash,
-        role: 'admin',
-      };
-      saveUsers(users);
-      return;
-    }
-
-    users.push({
-      id: BUILTIN_ADMIN.id,
-      username: BUILTIN_ADMIN.username,
-      passwordHash: expectedHash,
-      role: 'admin',
-      createdAt: new Date().toISOString(),
-    });
-    saveUsers(users);
-  } catch (e) {
-    console.error('ensureBuiltinAdmin', e);
-  }
+/** 是否已存在任何账号（用于「首次使用创建管理员」的引导） */
+export function hasAnyUser(): boolean {
+  return readUsersRaw().length > 0;
 }
 
 function getUsers(): User[] {
-  ensureBuiltinAdmin();
   return readUsersRaw();
 }
 
@@ -176,11 +110,8 @@ export function register(
     if (password.length < 6) {
       return { success: false, error: '密码至少需要 6 位' };
     }
-    if (isBuiltinAdminUsername(trimmed)) {
-      return { success: false, error: '该账号为系统管理员，请直接登录，不可重新注册' };
-    }
-
     const users = getUsers();
+    const isFirstUser = users.length === 0;
     if (users.find(u => u.username.toLowerCase() === trimmed.toLowerCase())) {
       return { success: false, error: '该用户名已被注册' };
     }
@@ -189,7 +120,7 @@ export function register(
       id: createUserId(),
       username: trimmed,
       passwordHash: hashPassword(password),
-      role: 'user',
+      role: isFirstUser ? 'admin' : 'user',
       createdAt: new Date().toISOString(),
     };
     users.push(newUser);
