@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { X, ExternalLink, Star, TrendingUp, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, Sparkles, Loader2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/Card';
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
@@ -7,11 +7,40 @@ import { formatSegmentLabel } from '../utils/subSegments';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
+import { MarkdownReport } from './MarkdownReport';
 import { toast } from 'sonner';
 import { Select } from './ui/Select';
 
 type SortKey = 'monthlySales' | 'monthlyRevenue' | 'launchDate' | 'fbaFee' | 'subBsr';
 type SortDir = 'asc' | 'desc';
+
+const ASIN_ANALYSIS_CACHE_KEY = 'amzdev_asin_ai_analysis_v1';
+
+function getAsinAnalysisCacheKey(asin: string, months: string[], selectedMonths: string[]): string {
+  const period = selectedMonths.length > 0 ? selectedMonths.join(',') : 'latest';
+  const historySig = months.join(',');
+  return `${asin.toUpperCase()}|${period}|${historySig}`;
+}
+
+function readCachedAsinAnalysis(key: string): string | null {
+  try {
+    const raw = localStorage.getItem(ASIN_ANALYSIS_CACHE_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, string>;
+    return map[key] || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedAsinAnalysis(key: string, value: string): void {
+  try {
+    const raw = localStorage.getItem(ASIN_ANALYSIS_CACHE_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    map[key] = value;
+    localStorage.setItem(ASIN_ANALYSIS_CACHE_KEY, JSON.stringify(map));
+  } catch {}
+}
 
 interface ProductModalProps {
   products: Product[];
@@ -56,6 +85,12 @@ export const ProductModal = React.memo(function ProductModal({
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const pageSize = 20;
+
+  useEffect(() => {
+    if (!selectedAsin) return;
+    const key = getAsinAnalysisCacheKey(selectedAsin, months, selectedMonths);
+    setAiAnalysis(readCachedAsinAnalysis(key));
+  }, [selectedAsin, months, selectedMonths]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -123,7 +158,6 @@ export const ProductModal = React.memo(function ProductModal({
       return;
     }
     setIsAiLoading(true);
-    setAiAnalysis(null);
     try {
       const record = history.find(h => h.asin === selectedAsin);
       const historyLines = record
@@ -164,6 +198,7 @@ ${historyLines}
 
       const result = await generateText(prompt, aiSettings);
       setAiAnalysis(result);
+      writeCachedAsinAnalysis(getAsinAnalysisCacheKey(selectedProduct.asin, months, selectedMonths), result);
     } catch (err: any) {
       toast.error('AI分析失败: ' + (err.message || '请检查API配置'));
     } finally {
@@ -212,7 +247,7 @@ ${historyLines}
                 <td className="px-3 py-2 text-right"><div className="flex items-center justify-end gap-0.5"><span>{p.rating.toFixed(1)}</span><Star className="w-3 h-3 text-amber-500 fill-amber-500"/></div></td>
                 <td className="px-3 py-2 text-right">{p.reviewCount.toLocaleString()}</td>
                 <td className="px-3 py-2 text-center text-xs">{p.launchDate || '-'}</td>
-                {history.length > 0 && <td className="px-3 py-2 text-center"><button onClick={() => { setSelectedAsin(p.asin); setAiAnalysis(null); }} className="text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 p-1.5 rounded-lg transition-colors" title="深度分析"><TrendingUp className="w-4 h-4"/></button></td>}
+                {history.length > 0 && <td className="px-3 py-2 text-center"><button onClick={() => setSelectedAsin(p.asin)} className="text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 p-1.5 rounded-lg transition-colors" title="深度分析"><TrendingUp className="w-4 h-4"/></button></td>}
               </tr>);})} </tbody>
           </table>
         </CardContent>
@@ -242,7 +277,7 @@ ${historyLines}
                   size="sm"
                   aria-label="聚合"
                 />
-                <button onClick={() => { setSelectedAsin(null); setAiAnalysis(null); }} className="p-2 hover:bg-black/5 rounded-full"><X className="w-5 h-5 text-[#86868b]"/></button>
+                <button onClick={() => setSelectedAsin(null)} className="p-2 hover:bg-black/5 rounded-full"><X className="w-5 h-5 text-[#86868b]"/></button>
               </div>
             </div>
             <div className="p-6 overflow-y-auto flex-1">
@@ -263,8 +298,8 @@ ${historyLines}
                   {isAiLoading ? 'AI 分析中...' : 'AI 深度分析'}
                 </button>
                 {aiAnalysis && (
-                  <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 rounded-2xl text-sm text-[#1d1d1f] leading-relaxed whitespace-pre-wrap">
-                    {aiAnalysis}
+                  <div className="mt-4 p-5 bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 rounded-2xl">
+                    <MarkdownReport>{aiAnalysis}</MarkdownReport>
                   </div>
                 )}
               </div>

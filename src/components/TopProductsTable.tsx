@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
+import { MarkdownReport } from './MarkdownReport';
 import { toast } from 'sonner';
 import { DateRangeSelector } from './DateRangeSelector';
 import { Select } from './ui/Select';
@@ -31,6 +32,34 @@ function calcSalesGrowth(asin: string, history: HistoryRecord[], months: string[
   return Math.round(((avgLast - avgFirst) / avgFirst) * 100);
 }
 type SortDir = 'asc' | 'desc';
+
+const ASIN_ANALYSIS_CACHE_KEY = 'amzdev_asin_ai_analysis_v1';
+
+function getAsinAnalysisCacheKey(asin: string, months: string[], selectedMonths: string[]): string {
+  const period = selectedMonths.length > 0 ? selectedMonths.join(',') : 'latest';
+  const historySig = months.join(',');
+  return `${asin.toUpperCase()}|${period}|${historySig}`;
+}
+
+function readCachedAsinAnalysis(key: string): string | null {
+  try {
+    const raw = localStorage.getItem(ASIN_ANALYSIS_CACHE_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, string>;
+    return map[key] || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedAsinAnalysis(key: string, value: string): void {
+  try {
+    const raw = localStorage.getItem(ASIN_ANALYSIS_CACHE_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    map[key] = value;
+    localStorage.setItem(ASIN_ANALYSIS_CACHE_KEY, JSON.stringify(map));
+  } catch {}
+}
 
 function SortBtn({ col, current, dir, onClick }: { col: SortKey; current: SortKey; dir: SortDir; onClick: (k: SortKey) => void }) {
   const active = current === col;
@@ -78,6 +107,12 @@ export const TopProductsTable = React.memo(function TopProductsTable({
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aggregation, setAggregation] = useState<'month' | 'quarter' | 'year'>('month');
   const itemsPerPage = 10;
+
+  useEffect(() => {
+    if (!selectedAsin) return;
+    const key = getAsinAnalysisCacheKey(selectedAsin, months, selectedMonths);
+    setAiAnalysis(readCachedAsinAnalysis(key));
+  }, [selectedAsin, months, selectedMonths]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -146,7 +181,6 @@ export const TopProductsTable = React.memo(function TopProductsTable({
     const aiSettings = loadAiSettings();
     if (!aiSettings?.apiKey) { toast.error('请先在「AI 设置」中配置 API Key'); return; }
     setIsAiLoading(true);
-    setAiAnalysis(null);
     try {
       const record = history.find(h => h.asin === asin);
       const historyLines = record
@@ -159,6 +193,7 @@ export const TopProductsTable = React.memo(function TopProductsTable({
       const prompt = `${basePrompt}\n\n---\n\n## 本次 ASIN 数据（请严格基于以下数据撰写）\n\n## ASIN基本信息\n- ASIN: ${product.asin}\n- 标题: ${product.title || '未知'}\n- 品牌: ${product.brand}\n- 当前价格: ${cur}${product.price.toFixed(2)}\n- 月销量: ${getSales(product).toLocaleString()}\n- 月销售额: ${cur}${Math.round(getRevenue(product)).toLocaleString()}\n- 评分: ${product.rating.toFixed(1)} (${product.reviewCount.toLocaleString()} 条评论)\n- FBA费用: ${product.fbaFee > 0 ? cur + product.fbaFee.toFixed(2) : '未知'}\n- 小类BSR: ${product.subBsr > 0 ? '#' + product.subBsr.toLocaleString() : '未知'}\n- 上架时间: ${product.launchDate || '未知'}\n\n## 历史月度数据\n${historyLines}\n\n请开始撰写分析报告：`;
       const result = await generateText(prompt, aiSettings);
       setAiAnalysis(result);
+      writeCachedAsinAnalysis(getAsinAnalysisCacheKey(asin, months, selectedMonths), result);
     } catch (err: any) {
       toast.error('AI分析失败: ' + (err.message || '请检查API配置'));
     } finally {
@@ -392,7 +427,7 @@ export const TopProductsTable = React.memo(function TopProductsTable({
                       })()}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <button onClick={() => { setSelectedAsin(product.asin); setAiAnalysis(null); }}
+                      <button onClick={() => setSelectedAsin(product.asin)}
                         className="text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 p-1.5 rounded-lg transition-colors" title="深度分析">
                         <TrendingUp className="w-4 h-4" />
                       </button>
@@ -462,7 +497,9 @@ export const TopProductsTable = React.memo(function TopProductsTable({
                   {isAiLoading ? 'AI 分析中...' : 'AI 深度分析'}
                 </button>
                 {aiAnalysis && (
-                  <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 rounded-2xl text-sm text-[#1d1d1f] leading-relaxed whitespace-pre-wrap">{aiAnalysis}</div>
+                  <div className="mt-4 p-5 bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 rounded-2xl">
+                    <MarkdownReport>{aiAnalysis}</MarkdownReport>
+                  </div>
                 )}
               </div>
 

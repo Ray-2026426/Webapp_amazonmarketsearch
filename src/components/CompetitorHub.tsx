@@ -25,6 +25,7 @@ import type { Product } from '../utils/parser';
 import type { CompetitorDemoSnapshot } from '../utils/demoData';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
+import { MarkdownReport } from './MarkdownReport';
 import { toast } from 'sonner';
 import { Select } from './ui/Select';
 import {
@@ -90,6 +91,7 @@ interface BrandSiblingRow {
 }
 
 const MAX_ASINS = 5;
+const ASIN_ANALYSIS_CACHE_KEY = 'amzdev_asin_ai_analysis_v1';
 
 function fmtNum(n: number, digits = 0): string {
   if (!Number.isFinite(n) || n === 0) return '-';
@@ -108,6 +110,30 @@ function badgeYes(v: string | undefined): boolean {
 function starsLabel(rating: number): string {
   if (!rating) return '暂无评分';
   return `${rating.toFixed(1)} ★`;
+}
+
+function getAsinAnalysisCacheKey(asin: string, scope: string): string {
+  return `${asin.toUpperCase()}|${scope}`;
+}
+
+function readCachedAsinAnalysis(key: string): string | null {
+  try {
+    const raw = localStorage.getItem(ASIN_ANALYSIS_CACHE_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, string>;
+    return map[key] || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedAsinAnalysis(key: string, value: string): void {
+  try {
+    const raw = localStorage.getItem(ASIN_ANALYSIS_CACHE_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    map[key] = value;
+    localStorage.setItem(ASIN_ANALYSIS_CACHE_KEY, JSON.stringify(map));
+  } catch {}
 }
 
 /** 用 fixed + portal，避免表格 overflow 把气泡裁掉 */
@@ -1174,11 +1200,105 @@ function ListingBuyerView({
 }) {
   const [showSecondary, setShowSecondary] = useState(false);
   const [showAplus, setShowAplus] = useState(false);
+  const [analysisAsin, setAnalysisAsin] = useState<string | null>(null);
+  const [analysisText, setAnalysisText] = useState<string | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
 
   if (!details.length) return <EmptyHint text="暂无 Listing 数据。请检查 MCP 密钥后重新对比。" />;
 
   const secondaryTotal = details.reduce((n, d) => n + (packs[d.asin]?.secondaryPreviewUrls?.length || 0), 0);
   const aplusTotal = details.reduce((n, d) => n + (packs[d.asin]?.aplusPreviewUrls?.length || 0), 0);
+  const analysisDetail = details.find((d) => d.asin === analysisAsin) || null;
+
+  const buildAsinPrompt = (d: AsinDetailSnapshot): string => {
+    const basePrompt = getPrompt('asin_analysis') || '你是一位资深亚马逊运营专家，请对单个ASIN进行深度分析。';
+    const raw = d.raw || {};
+    const rawNumber = (key: string) => Number(raw[key]) || 0;
+    const rawString = (key: string) => String(raw[key] || '');
+    const rawTimestampDate = (key: string) => {
+      const ts = rawNumber(key);
+      return ts ? new Date(ts).toISOString().slice(0, 10) : '未知';
+    };
+    const rawReviews = rawNumber('reviews') || rawNumber('variantReviews');
+    const rawSubcategories = Array.isArray(raw.subcategories)
+      ? raw.subcategories as Array<{ label?: string; rank?: number }>
+      : [];
+    const overview = typeof raw.overviews === 'string' ? raw.overviews : JSON.stringify(raw.overviews || {});
+    const variations = d.variationList.length
+      ? d.variationList.map((v) => `${v.asin}: ${v.attribute || '-'}`).join('\n')
+      : '数据缺失';
+    const bullets = d.features.length ? d.features.map((f, i) => `${i + 1}. ${f}`).join('\n') : '数据缺失';
+    return `${basePrompt}
+
+---
+
+## 本次 ASIN 数据（请严格基于以下数据撰写）
+
+## 数据口径
+- 来源: 竞品分析模块中的卖家精灵 MCP Listing 详情数据
+- 站点: ${marketplace}
+- 历史月度销量/销售额: 当前竞品卡片未提供
+- Keepa 原始库存/Offer/Buy Box 历史: 当前未提供
+
+## ASIN基本信息
+- ASIN: ${d.asin}
+- 标题: ${d.title || '未知'}
+- 品牌: ${d.brand || '未知'}
+- 当前价格: ${d.price ? `$${d.price.toFixed(2)}` : '未知'}
+- 评分: ${d.rating ? d.rating.toFixed(1) : '未知'} (${fmtNum(d.ratings)} 条评分)
+- 评论数: ${fmtNum(rawReviews)}
+- 大类BSR: ${d.bsrRank ? `#${fmtNum(d.bsrRank)} ${d.bsrLabel || ''}` : '未知'}
+- 小类排名: ${rawSubcategories.length ? rawSubcategories.map((s) => `${s.label || '未知'} #${fmtNum(Number(s.rank) || 0)}`).join('；') : '未知'}
+- 上架时间: ${rawTimestampDate('availableDate')}
+- 首评时间: ${rawTimestampDate('firstRatingDate')}
+- 卖家: ${d.sellerName || '未知'} (${rawString('sellerId') || '未知'})
+- 配送: ${d.fulfillment || '未知'}
+- 卖家数: ${d.sellers || '未知'}
+- LQS: ${d.lqs || '未知'}
+- 父ASIN: ${d.parentAsin || '未知'}
+- 变体数: ${d.variationCount || d.variationList.length || '未知'}
+- 规格: ${d.skuList.join(' / ') || '未知'}
+- 类目路径: ${d.categoryPath || '未知'}
+- 尺寸: ${d.dimensions || '未知'}
+- 重量: ${d.weight || '未知'}
+- 徽章: BestSeller=${d.badge.bestSeller}, AmazonChoice=${d.badge.amazonChoice}, A+=${d.badge.ebc}, Video=${d.badge.video}
+
+## 产品属性
+${overview || '数据缺失'}
+
+## 五点卖点
+${bullets}
+
+## 变体结构
+${variations}
+
+请开始撰写分析报告：`;
+  };
+
+  const openAsinAnalysis = async (d: AsinDetailSnapshot, force = false) => {
+    const updatedTime = Number(d.raw?.updatedTime) || '';
+    const cacheKey = getAsinAnalysisCacheKey(d.asin, `competitor-${marketplace}-${updatedTime}`);
+    setAnalysisAsin(d.asin);
+    const cached = readCachedAsinAnalysis(cacheKey);
+    setAnalysisText(cached);
+    if (cached && !force) return;
+
+    const cfg = loadAiSettings();
+    if (!cfg?.apiKey) {
+      toast.error('请先在「AI 设置」中配置 API Key');
+      return;
+    }
+    setAnalysisLoading(true);
+    try {
+      const result = await generateText(buildAsinPrompt(d), cfg);
+      setAnalysisText(result);
+      writeCachedAsinAnalysis(cacheKey, result);
+    } catch (e) {
+      toast.error(`ASIN 分析失败：${e instanceof Error ? e.message : '请检查 API 配置'}`);
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -1208,6 +1328,15 @@ function ListingBuyerView({
                   <span className="px-2 py-0.5 rounded-full bg-white border border-black/5">附图 {(pack?.secondaryPreviewUrls.length || 0)} 张</span>
                   <span className="px-2 py-0.5 rounded-full bg-white border border-black/5">A+ {(pack?.aplusPreviewUrls.length || 0)} 张</span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => void openAsinAnalysis(d)}
+                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                  disabled={analysisLoading && analysisAsin === d.asin}
+                >
+                  {analysisLoading && analysisAsin === d.asin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  {readCachedAsinAnalysis(getAsinAnalysisCacheKey(d.asin, `competitor-${marketplace}-${Number(d.raw?.updatedTime) || ''}`)) ? '查看 ASIN 分析' : 'ASIN 深度分析'}
+                </button>
               </div>
               <div className="p-4 space-y-3 flex-1">
                 <div>
@@ -1363,6 +1492,66 @@ function ListingBuyerView({
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {analysisDetail && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-[24px] bg-white shadow-2xl flex flex-col">
+            <div className="p-5 border-b border-black/5 flex items-center justify-between gap-4 bg-[#f5f5f7]/70">
+              <div className="flex items-center gap-3 min-w-0">
+                {(analysisDetail.zoomImageUrl || analysisDetail.imageUrl) && (
+                  <img
+                    src={analysisDetail.zoomImageUrl || analysisDetail.imageUrl}
+                    alt={analysisDetail.title}
+                    className="w-12 h-12 rounded-xl object-contain bg-white border border-black/5 shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
+                )}
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-[#1d1d1f]">
+                    ASIN 深度分析：<span className="font-mono text-indigo-600">{analysisDetail.asin}</span>
+                  </h3>
+                  <p className="text-xs text-[#86868b] truncate max-w-2xl">{analysisDetail.title}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => void openAsinAnalysis(analysisDetail, true)}
+                  disabled={analysisLoading}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold disabled:opacity-60"
+                >
+                  {analysisLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  重新生成
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAnalysisAsin(null);
+                    setAnalysisText(null);
+                  }}
+                  className="p-2 rounded-full text-[#86868b] hover:text-[#1d1d1f] hover:bg-black/5"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {analysisLoading && !analysisText ? (
+                <div className="flex items-center justify-center h-64 text-sm text-indigo-700">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                  AI 正在生成 ASIN 深度分析…
+                </div>
+              ) : analysisText ? (
+                <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-violet-50 p-5">
+                  <MarkdownReport>{analysisText}</MarkdownReport>
+                </div>
+              ) : (
+                <EmptyHint text="暂无分析结果。请检查 AI 设置后重新生成。" />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
