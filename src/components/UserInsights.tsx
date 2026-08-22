@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Upload, Sparkles, Loader2, MessageSquare, ThumbsUp, ThumbsDown, MapPin, Users as UsersIcon, Search, X, ChevronLeft, ChevronRight, ChevronDown, TrendingUp, FileText, Heart, Route, SlidersHorizontal, Languages, Pencil } from 'lucide-react';
+import { Upload, Sparkles, Loader2, MessageSquare, ThumbsUp, ThumbsDown, MapPin, Users as UsersIcon, Search, X, ChevronLeft, ChevronRight, ChevronDown, TrendingUp, FileText, Heart, Route, SlidersHorizontal, Languages } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Card';
 import {
   parseReviewsWithMapping,
@@ -1119,17 +1119,6 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
               {step === 'step1' ? stepProgress : 'Step1: AI智能分类'}
             </button>
           )}
-          {reviews.length > 0 && (
-            <button
-              type="button"
-              onClick={() => openTagEditor(tagLib)}
-              disabled={isRunning}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-black/10 text-[#1d1d1f] rounded-xl text-sm font-semibold hover:bg-[#f5f5f7] disabled:opacity-60 shadow-sm"
-            >
-              <Pencil className="w-4 h-4 text-[#86868b]" />
-              {tagLib ? '编辑 / 手动标签库' : '手动标签库（跳过 AI）'}
-            </button>
-          )}
           {tagLib && (
             <button onClick={() => runStep2(tagLib)} disabled={isRunning} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-sm font-semibold hover:from-indigo-700 hover:to-violet-700 disabled:opacity-60 shadow-md">
               {step === 'step2' ? <Loader2 className="w-4 h-4 animate-spin"/> : <Sparkles className="w-4 h-4"/>}
@@ -1446,16 +1435,8 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
 
           {tagLib && (
             <Card className="rounded-2xl border-black/5 shadow-sm overflow-hidden">
-              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 bg-[#f5f5f7]/60 border-b border-black/5">
-                <CardTitle className="text-sm font-bold">当前标签库（可编辑）</CardTitle>
-                <button
-                  type="button"
-                  onClick={() => openTagEditor(tagLib)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-black/5 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  修改标签
-                </button>
+              <CardHeader className="bg-[#f5f5f7]/60 border-b border-black/5">
+                <CardTitle className="text-sm font-bold">当前标签库（AI 生成）</CardTitle>
               </CardHeader>
               <CardContent className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -1477,65 +1458,6 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
               </CardContent>
             </Card>
           )}
-
-          {tagEditorOpen ? (
-            <Card className="rounded-2xl border-indigo-100 shadow-sm overflow-hidden ring-1 ring-indigo-100">
-              <CardHeader className="bg-indigo-50/80 border-b border-indigo-100">
-                <CardTitle className="text-sm font-bold text-indigo-900">编辑标签库</CardTitle>
-                <p className="text-xs text-indigo-800/80 mt-1">每类单独填写：可<strong>一行一个标签</strong>，或用<strong>中文/英文逗号、顿号</strong>分隔；<strong>每类最多 {TAG_LIB_MAX_PER_DIM} 个</strong>。应用后直接用下方「Step2: 自动打标」，无需再跑 Step1。</p>
-              </CardHeader>
-              <CardContent className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold text-emerald-800">好评点</span>
-                  <textarea
-                    value={tagDraft.pos}
-                    onChange={(e) => setTagDraft((d) => ({ ...d, pos: e.target.value }))}
-                    rows={5}
-                    className="rounded-xl border border-black/10 bg-white p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 resize-y"
-                    placeholder="例如：材质好&#10;安装简单"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold text-rose-800">差评点</span>
-                  <textarea
-                    value={tagDraft.neg}
-                    onChange={(e) => setTagDraft((d) => ({ ...d, neg: e.target.value }))}
-                    rows={5}
-                    className="rounded-xl border border-black/10 bg-white p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 resize-y"
-                    placeholder="例如：有异味、尺寸偏小"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold text-indigo-800">使用场景</span>
-                  <textarea
-                    value={tagDraft.sce}
-                    onChange={(e) => setTagDraft((d) => ({ ...d, sce: e.target.value }))}
-                    rows={5}
-                    className="rounded-xl border border-black/10 bg-white p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 resize-y"
-                    placeholder="例如：办公室、车载"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold text-amber-900">目标人群</span>
-                  <textarea
-                    value={tagDraft.aud}
-                    onChange={(e) => setTagDraft((d) => ({ ...d, aud: e.target.value }))}
-                    rows={5}
-                    className="rounded-xl border border-black/10 bg-white p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 resize-y"
-                    placeholder="例如：新手妈妈、健身人群"
-                  />
-                </label>
-                <div className="md:col-span-2 flex flex-wrap gap-2 justify-end">
-                  <button type="button" onClick={() => setTagEditorOpen(false)} className="px-4 py-2 rounded-xl text-sm font-medium text-[#86868b] hover:bg-black/5">
-                    取消
-                  </button>
-                  <button type="button" onClick={applyTagDraft} className="px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700">
-                    应用标签库
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
 
           {/* 模块一：KPI Widget */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

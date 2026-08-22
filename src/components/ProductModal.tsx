@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
 import { buildAsinPeriodStatsMap, getAsinPeriodStats } from '../utils/chartHistory';
 import { formatSegmentLabel } from '../utils/subSegments';
+import { fetchAsinSalesTrendFromMcp, normalizeMarketplaceCode, type AsinSalesTrendSnapshot } from '../utils/sellerspriteApi';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
@@ -40,6 +41,40 @@ function writeCachedAsinAnalysis(key: string, value: string): void {
     map[key] = value;
     localStorage.setItem(ASIN_ANALYSIS_CACHE_KEY, JSON.stringify(map));
   } catch {}
+}
+
+function marketplaceFromDomain(domain: string): string {
+  const d = domain.toLowerCase();
+  if (d.includes('co.uk')) return 'UK';
+  if (d.includes('.de')) return 'DE';
+  if (d.includes('.fr')) return 'FR';
+  if (d.includes('.it')) return 'IT';
+  if (d.includes('.es')) return 'ES';
+  if (d.includes('.co.jp')) return 'JP';
+  if (d.includes('.ca')) return 'CA';
+  if (d.includes('.com.au')) return 'AU';
+  if (d.includes('.com.mx')) return 'MX';
+  return 'US';
+}
+
+function formatTrendLines(trend: AsinSalesTrendSnapshot | null): string {
+  if (!trend?.points?.length) return '';
+  return trend.points.map((p) => {
+    const childSales = p.childUnitSales == null ? '-' : String(p.childUnitSales);
+    const childRevenue = p.childSalesRevenue == null ? '-' : `$${Math.round(p.childSalesRevenue).toLocaleString()}`;
+    return `${p.month}: 父体销量=${p.parentUnitSales}, 子体销量=${childSales}, 父体销售额=$${Math.round(p.parentSalesRevenue).toLocaleString()}, 子体销售额=${childRevenue}, 标价=$${p.price.toFixed(2)}, 均价=$${p.averagePrice.toFixed(2)}`;
+  }).join('\n');
+}
+
+function formatMcpDate(raw: unknown): string {
+  const ts = Number(raw);
+  return Number.isFinite(ts) && ts > 0 ? new Date(ts).toISOString().slice(0, 10) : '';
+}
+
+function formatTrendScope(trend: AsinSalesTrendSnapshot | null): string {
+  if (!trend?.points?.length) return '';
+  const months = trend.points.map((p) => p.month).sort();
+  return `卖家精灵 MCP 趋势数据: ${months.length} 个月（${months[0]} 至 ${months[months.length - 1]}）`;
 }
 
 interface ProductModalProps {
@@ -160,12 +195,34 @@ export const ProductModal = React.memo(function ProductModal({
     setIsAiLoading(true);
     try {
       const record = history.find(h => h.asin === selectedAsin);
+      let trend: AsinSalesTrendSnapshot | null = null;
+      try {
+        trend = await fetchAsinSalesTrendFromMcp(selectedProduct.asin, normalizeMarketplaceCode(marketplaceFromDomain(domain)));
+      } catch (e) {
+        console.warn('fetchAsinSalesTrendFromMcp failed', e);
+      }
       const historyLines = record
         ? months.filter(m => record.history[m]).map(m => {
             const d = record.history[m];
             return `${m}: 销量=${d.sales}, 销售额=${cur}${Math.round(d.revenue)}, 均价=${cur}${d.sales > 0 ? (d.revenue / d.sales).toFixed(2) : (d.price ?? 0).toFixed(2)}`;
           }).join('\n')
-        : '无历史数据';
+        : '';
+      const trendLines = formatTrendLines(trend);
+      const historySection = historyLines ? `## 历史月度数据\n${historyLines}\n\n` : '';
+      const trendSection = trendLines ? `## 卖家精灵 MCP 月度销量 / 销售额 / 价格趋势\n${trendLines}\n\n` : '';
+      const trendAsin = trend?.asin || null;
+      const trendRaw = trendAsin?.raw || {};
+      const trendScope = formatTrendScope(trend);
+      const titleText = selectedProduct.title || trendAsin?.title || '未知';
+      const brandText = selectedProduct.brand || trendAsin?.brand || '未知';
+      const price = selectedProduct.price > 0 ? selectedProduct.price : (trendAsin?.price || 0);
+      const rating = selectedProduct.rating > 0 ? selectedProduct.rating : (trendAsin?.rating || 0);
+      const reviewCount =
+        selectedProduct.reviewCount > 0
+          ? selectedProduct.reviewCount
+          : (Number(trendRaw.reviews) || Number(trendRaw.variantReviews) || trendAsin?.ratings || 0);
+      const bsr = selectedProduct.subBsr > 0 ? selectedProduct.subBsr : (trendAsin?.bsrRank || 0);
+      const launchDate = selectedProduct.launchDate || formatMcpDate(trendRaw.availableDate);
 
       const periodSales = getSales(selectedProduct);
       const periodRevenue = getRevenue(selectedProduct);
@@ -173,27 +230,26 @@ export const ProductModal = React.memo(function ProductModal({
       const revenueLabel = usePeriodStats ? '所选时段销售额' : '月销售额';
 
       const basePrompt = getPrompt('asin_analysis') || '你是一位资深亚马逊运营专家，请对单个ASIN进行深度分析。';
+      const mcpScopeSection = trendScope ? `## 有效数据范围\n- ${trendScope}\n\n` : '';
       const prompt = `${basePrompt}
 
 ---
 
 ## 本次 ASIN 数据（请严格基于以下数据撰写）
 
-## ASIN基本信息
+${mcpScopeSection}## ASIN基本信息
 - ASIN: ${selectedProduct.asin}
-- 标题: ${selectedProduct.title || '未知'}
-- 品牌: ${selectedProduct.brand}
-- 当前价格: ${cur}${selectedProduct.price.toFixed(2)}
+- 标题: ${titleText}
+- 品牌: ${brandText}
+- 当前价格: ${price > 0 ? cur + price.toFixed(2) : '未知'}
 - ${salesLabel}: ${periodSales.toLocaleString()}
 - ${revenueLabel}: ${cur}${Math.round(periodRevenue).toLocaleString()}
-- 评分: ${selectedProduct.rating.toFixed(1)} (${selectedProduct.reviewCount.toLocaleString()} 条评论)
+- 评分: ${rating > 0 ? rating.toFixed(1) : '未知'} (${reviewCount.toLocaleString()} 条评论/评分)
 - FBA费用: ${selectedProduct.fbaFee > 0 ? cur + selectedProduct.fbaFee.toFixed(2) : '未知'}
-- 小类BSR: ${selectedProduct.subBsr > 0 ? '#' + selectedProduct.subBsr.toLocaleString() : '未知'}
-- 上架时间: ${selectedProduct.launchDate || '未知'}
+- 小类BSR: ${bsr > 0 ? '#' + bsr.toLocaleString() : '未知'}${trendAsin?.bsrLabel ? ` ${trendAsin.bsrLabel}` : ''}
+- 上架时间: ${launchDate || '未知'}
 
-## 历史月度数据
-${historyLines}
-
+${historySection}${trendSection}
 请开始撰写分析报告：`;
 
       const result = await generateText(prompt, aiSettings);

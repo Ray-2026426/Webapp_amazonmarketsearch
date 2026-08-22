@@ -1033,6 +1033,63 @@ export async function fetchAsinDetailFromMcp(
   return mapAsinDetail(unwrapData(payload), asin);
 }
 
+export interface AsinSalesTrendPoint {
+  month: string;
+  price: number;
+  averagePrice: number;
+  parentUnitSales: number;
+  childUnitSales: number | null;
+  parentSalesRevenue: number;
+  childSalesRevenue: number | null;
+}
+
+export interface AsinSalesTrendSnapshot {
+  asin: AsinDetailSnapshot | null;
+  points: AsinSalesTrendPoint[];
+  raw: Record<string, unknown>;
+}
+
+function mapSalesTrendPoint(item: unknown): AsinSalesTrendPoint | null {
+  if (!item || typeof item !== 'object') return null;
+  const row = item as Record<string, unknown>;
+  const month = String(row.month || row.date || '');
+  if (!month) return null;
+  const nullableNum = (x: unknown): number | null => {
+    const n = Number(x);
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    month,
+    price: Number(row.price) || 0,
+    averagePrice: Number(row.averagePrice) || Number(row.price) || 0,
+    parentUnitSales: Number(row.parentUnitSales) || 0,
+    childUnitSales: nullableNum(row.childUnitSales),
+    parentSalesRevenue: Number(row.parentSalesRevenue) || 0,
+    childSalesRevenue: nullableNum(row.childSalesRevenue),
+  };
+}
+
+/** ASIN 月度销量/销售额/价格趋势。优先用于单 ASIN 深度分析，避免只凭 Listing 快照下结论。 */
+export async function fetchAsinSalesTrendFromMcp(
+  asin: string,
+  marketplace: string
+): Promise<AsinSalesTrendSnapshot> {
+  const payload = await callSellerSpriteToolBrowser('asin_sales_trend', {
+    asin: asin.trim().toUpperCase(),
+    marketplace: normalizeMarketplaceCode(marketplace),
+  });
+  const data = unwrapData(payload);
+  const asinRaw = data.asin && typeof data.asin === 'object' ? data.asin as Record<string, unknown> : null;
+  const points = asArray<unknown>(data.salesTrendPoints)
+    .map(mapSalesTrendPoint)
+    .filter(Boolean) as AsinSalesTrendPoint[];
+  return {
+    asin: asinRaw ? mapAsinDetail(asinRaw, asin) : null,
+    points,
+    raw: data,
+  };
+}
+
 /** 父体结构：锚点子体 + 父体下全部变体明细 */
 export interface ParentMatrixSnapshot {
   /** 用户选中的对比 ASIN（通常是子体） */

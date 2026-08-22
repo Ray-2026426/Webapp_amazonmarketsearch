@@ -12,10 +12,12 @@ import {
   normalizeMarketplaceCode,
   parseAsinList,
   fetchAsinDetailFromMcp,
+  fetchAsinSalesTrendFromMcp,
   fetchTrafficStatFromMcp,
   fetchTrafficKeywordsDetailedFromMcp,
   fetchParentMatrixFromMcp,
   type AsinDetailSnapshot,
+  type AsinSalesTrendSnapshot,
   type TrafficStatSnapshot,
   type ParentMatrixSnapshot,
   type TrafficKeywordDetail,
@@ -1210,8 +1212,9 @@ function ListingBuyerView({
   const aplusTotal = details.reduce((n, d) => n + (packs[d.asin]?.aplusPreviewUrls?.length || 0), 0);
   const analysisDetail = details.find((d) => d.asin === analysisAsin) || null;
 
-  const buildAsinPrompt = (d: AsinDetailSnapshot): string => {
+  const buildAsinPrompt = (d: AsinDetailSnapshot, trend?: AsinSalesTrendSnapshot | null): string => {
     const basePrompt = getPrompt('asin_analysis') || '你是一位资深亚马逊运营专家，请对单个ASIN进行深度分析。';
+    const enriched = trend?.asin || d;
     const raw = d.raw || {};
     const rawNumber = (key: string) => Number(raw[key]) || 0;
     const rawString = (key: string) => String(raw[key] || '');
@@ -1228,6 +1231,19 @@ function ListingBuyerView({
       ? d.variationList.map((v) => `${v.asin}: ${v.attribute || '-'}`).join('\n')
       : '数据缺失';
     const bullets = d.features.length ? d.features.map((f, i) => `${i + 1}. ${f}`).join('\n') : '数据缺失';
+    const trendLines = trend?.points?.length
+      ? trend.points.map((p) => {
+          const childSales = p.childUnitSales == null ? '-' : String(p.childUnitSales);
+          const childRevenue = p.childSalesRevenue == null ? '-' : `$${Math.round(p.childSalesRevenue).toLocaleString()}`;
+          return `${p.month}: 父体销量=${p.parentUnitSales}, 子体销量=${childSales}, 父体销售额=$${Math.round(p.parentSalesRevenue).toLocaleString()}, 子体销售额=${childRevenue}, 标价=$${p.price.toFixed(2)}, 均价=$${p.averagePrice.toFixed(2)}`;
+        }).join('\n')
+      : '';
+    const trendSection = trendLines ? `\n## 历史月度销量 / 销售额 / 价格趋势\n${trendLines}\n` : '';
+    const dataScopeLines = [
+      '- 来源: 竞品分析模块中的卖家精灵 MCP Listing 详情数据',
+      `- 站点: ${marketplace}`,
+      ...(trendLines ? ['- 历史月度销量/销售额: 已通过卖家精灵 asin_sales_trend 抓取'] : []),
+    ].join('\n');
     return `${basePrompt}
 
 ---
@@ -1235,33 +1251,31 @@ function ListingBuyerView({
 ## 本次 ASIN 数据（请严格基于以下数据撰写）
 
 ## 数据口径
-- 来源: 竞品分析模块中的卖家精灵 MCP Listing 详情数据
-- 站点: ${marketplace}
-- 历史月度销量/销售额: 当前竞品卡片未提供
-- Keepa 原始库存/Offer/Buy Box 历史: 当前未提供
+${dataScopeLines}
 
 ## ASIN基本信息
-- ASIN: ${d.asin}
-- 标题: ${d.title || '未知'}
-- 品牌: ${d.brand || '未知'}
-- 当前价格: ${d.price ? `$${d.price.toFixed(2)}` : '未知'}
-- 评分: ${d.rating ? d.rating.toFixed(1) : '未知'} (${fmtNum(d.ratings)} 条评分)
+- ASIN: ${enriched.asin}
+- 标题: ${enriched.title || '未知'}
+- 品牌: ${enriched.brand || '未知'}
+- 当前价格: ${enriched.price ? `$${enriched.price.toFixed(2)}` : '未知'}
+- 评分: ${enriched.rating ? enriched.rating.toFixed(1) : '未知'} (${fmtNum(enriched.ratings)} 条评分)
 - 评论数: ${fmtNum(rawReviews)}
-- 大类BSR: ${d.bsrRank ? `#${fmtNum(d.bsrRank)} ${d.bsrLabel || ''}` : '未知'}
+- 大类BSR: ${enriched.bsrRank ? `#${fmtNum(enriched.bsrRank)} ${enriched.bsrLabel || ''}` : '未知'}
 - 小类排名: ${rawSubcategories.length ? rawSubcategories.map((s) => `${s.label || '未知'} #${fmtNum(Number(s.rank) || 0)}`).join('；') : '未知'}
 - 上架时间: ${rawTimestampDate('availableDate')}
 - 首评时间: ${rawTimestampDate('firstRatingDate')}
-- 卖家: ${d.sellerName || '未知'} (${rawString('sellerId') || '未知'})
-- 配送: ${d.fulfillment || '未知'}
-- 卖家数: ${d.sellers || '未知'}
-- LQS: ${d.lqs || '未知'}
-- 父ASIN: ${d.parentAsin || '未知'}
-- 变体数: ${d.variationCount || d.variationList.length || '未知'}
-- 规格: ${d.skuList.join(' / ') || '未知'}
-- 类目路径: ${d.categoryPath || '未知'}
-- 尺寸: ${d.dimensions || '未知'}
-- 重量: ${d.weight || '未知'}
-- 徽章: BestSeller=${d.badge.bestSeller}, AmazonChoice=${d.badge.amazonChoice}, A+=${d.badge.ebc}, Video=${d.badge.video}
+- 卖家: ${enriched.sellerName || '未知'} (${rawString('sellerId') || '未知'})
+- 配送: ${enriched.fulfillment || '未知'}
+- 卖家数: ${enriched.sellers || '未知'}
+- LQS: ${enriched.lqs || '未知'}
+- 父ASIN: ${enriched.parentAsin || '未知'}
+- 变体数: ${enriched.variationCount || enriched.variationList.length || '未知'}
+- 规格: ${enriched.skuList.join(' / ') || '未知'}
+- 类目路径: ${enriched.categoryPath || '未知'}
+- 尺寸: ${enriched.dimensions || '未知'}
+- 重量: ${enriched.weight || '未知'}
+- 徽章: BestSeller=${enriched.badge.bestSeller}, AmazonChoice=${enriched.badge.amazonChoice}, A+=${enriched.badge.ebc}, Video=${enriched.badge.video}
+${trendSection}
 
 ## 产品属性
 ${overview || '数据缺失'}
@@ -1290,7 +1304,13 @@ ${variations}
     }
     setAnalysisLoading(true);
     try {
-      const result = await generateText(buildAsinPrompt(d), cfg);
+      let trend: AsinSalesTrendSnapshot | null = null;
+      try {
+        trend = await fetchAsinSalesTrendFromMcp(d.asin, marketplace);
+      } catch (e) {
+        console.warn('fetchAsinSalesTrendFromMcp failed', e);
+      }
+      const result = await generateText(buildAsinPrompt(d, trend), cfg);
       setAnalysisText(result);
       writeCachedAsinAnalysis(cacheKey, result);
     } catch (e) {

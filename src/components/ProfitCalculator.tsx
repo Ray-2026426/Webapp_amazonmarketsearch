@@ -264,7 +264,7 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
   /** 从列表「加载」的方案在存档数组中的下标；用于「更新存档」覆盖原条目，另存为新方案后会指向新条目 */
   const [activeSavedPlanIndex, setActiveSavedPlanIndex] = useState<number | null>(null);
   const [showSavePanel, setShowSavePanel] = useState(false);
-  const [activeTab, setActiveTab] = useState<'input' | 'breakeven'>('input');
+  const [activeTab, setActiveTab] = useState<'input' | 'breakeven' | 'targets' | 'portfolio'>('input');
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
 
   const showNotification = (type: 'success' | 'error' | 'warning', message: string) => {
@@ -435,6 +435,68 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
       const prt = av.reduce((s,v)=>s+v.monthlyProfit,0);
       return { label: `${delta>0?'+':''}${delta}%`, margin: rev>0 ? parseFloat(((prt/rev)*100).toFixed(1)) : 0 };
     });
+    const cpcRange = [50,75,100,125,150,200].map(pct => {
+      const av = variants.map(v => calcVariant({...v, cpc: v.cpc * (pct / 100)}, rmbRate, vatRate));
+      const rev = av.reduce((s,v)=>s+v.monthlyNetRevenue,0);
+      const prt = av.reduce((s,v)=>s+v.monthlyProfit,0);
+      return { label: `${pct}%`, margin: rev>0 ? parseFloat(((prt/rev)*100).toFixed(1)) : 0 };
+    });
+    const targetMarginRows = vr.map((v) => {
+      const vatRateDecimal = Math.max(0, vatRate) / 100;
+      const fixedCost = v.procLocal + v.shippingCost + v.fbaFee + round1(v.storageFee) + v.otherCost;
+      const adShare = Math.max(0, v.adOrderShare) / 100;
+      const cvr = Math.max(0, v.cvr) / 100;
+      const adCostPerItem = v.adCostPerItem;
+      const solvePrice = (targetMargin: number) => {
+        const target = targetMargin / 100;
+        const denom =
+          (1 / (1 + vatRateDecimal)) * (1 - target) -
+          v.commissionRate / 100 -
+          v.refundRate / 100;
+        if (denom <= 0) return 0;
+        return (fixedCost + adCostPerItem) / denom;
+      };
+      const maxCpcFor = (targetMargin: number) => {
+        const targetProfit = v.netPrice * (targetMargin / 100);
+        const nonAdCost = fixedCost + v.commission + v.refundCost;
+        const allowedAdPerItem = v.netPrice - nonAdCost - targetProfit;
+        if (allowedAdPerItem <= 0 || adShare <= 0 || cvr <= 0) return 0;
+        return allowedAdPerItem * cvr / adShare;
+      };
+      return {
+        name: v.name,
+        margin: v.margin,
+        price: v.price,
+        price15: solvePrice(15),
+        price20: solvePrice(20),
+        price25: solvePrice(25),
+        maxCpc15: maxCpcFor(15),
+        maxCpc20: maxCpcFor(20),
+        maxCpc25: maxCpcFor(25),
+      };
+    });
+    const portfolioRows = vr
+      .map((v) => {
+        const revenueShare = totalMonthlyRevenue > 0 ? (v.monthlyRevenue / totalMonthlyRevenue) * 100 : 0;
+        const profitShare = totalMonthlyProfit !== 0 ? (v.monthlyProfit / totalMonthlyProfit) * 100 : 0;
+        const action =
+          v.margin < 8 ? '优先修复/降投放' :
+          v.margin >= parentMargin + 5 ? '加预算/保库存' :
+          v.monthlySales <= Math.max(1, totalSales * 0.08) ? '低量观察' :
+          '维持';
+        return {
+          name: v.name,
+          sales: v.monthlySales,
+          revenueShare,
+          profitShare,
+          margin: v.margin,
+          monthlyProfit: v.monthlyProfit,
+          tacos: v.tacos,
+          safetyMargin: v.safetyMargin,
+          action,
+        };
+      })
+      .sort((a, b) => b.monthlyProfit - a.monthlyProfit);
     const buildParentCostDisplay = () => {
       if (vr.length === 0) return [] as { name: string; value: number; pctOfRevenue: number }[];
       if (vr.length === 1) {
@@ -457,7 +519,7 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
     };
     const parentCostDisplay = buildParentCostDisplay();
 
-    return { vr, totalSales, totalMonthlyProfit, totalMonthlyRevenue, totalMonthlyNetRevenue, totalAdSpend, parentMargin, parentTacos, avgPrice, cvrRange, priceRange, parentCostDisplay };
+    return { vr, totalSales, totalMonthlyProfit, totalMonthlyRevenue, totalMonthlyNetRevenue, totalAdSpend, parentMargin, parentTacos, avgPrice, cvrRange, priceRange, cpcRange, targetMarginRows, portfolioRows, parentCostDisplay };
   }, [variants, rmbRate, vatRate]);
 
   const cur = country.currency;
@@ -575,11 +637,16 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
 
       {/* Tab */}
       <div className="flex gap-1 bg-[#f5f5f7] rounded-xl p-1 w-fit">
-        {(['input','breakeven'] as const).map(tab => (
+        {([
+          ['input','输入参数'],
+          ['breakeven','盈亏敏感性'],
+          ['targets','目标倒推'],
+          ['portfolio','组合诊断'],
+        ] as const).map(([tab, label]) => (
           <button key={tab} onClick={()=>setActiveTab(tab)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               activeTab===tab?'bg-white text-[#1d1d1f] shadow-sm':'text-[#86868b] hover:text-[#1d1d1f]'
-            }`}>{tab==='input'?'输入参数':'盈亏分析'}</button>
+            }`}>{label}</button>
         ))}
       </div>
 
@@ -713,7 +780,118 @@ export const ProfitCalculator = React.memo(function ProfitCalculator() {
                   </div>
                 </CardContent>
               </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-base">CPC 承压测试 → 父体毛利率</CardTitle><CardDescription>看广告点击成本上升时，利润能扛到什么程度。</CardDescription></CardHeader>
+                <CardContent>
+                  <div className="h-[200px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={results.cpcRange} margin={{top:10,right:20,left:-20,bottom:0}}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb"/>
+                        <XAxis dataKey="label" stroke="#86868b" fontSize={11} tickLine={false} axisLine={false}/>
+                        <YAxis stroke="#86868b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v:number)=>`${v}%`}/>
+                        <Tooltip formatter={(v:number)=>[`${v}%`,'毛利率']} contentStyle={{borderRadius:'12px',border:'none',boxShadow:'0 4px 12px rgba(0,0,0,0.1)'}}/>
+                        <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 3"/>
+                        <Bar dataKey="margin" radius={[4,4,0,0]} barSize={24}>
+                          {results.cpcRange.map((d,i)=><Cell key={i} fill={d.margin>=0?'#10b981':'#ef4444'}/>)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
+          )}
+
+          {activeTab==='targets' && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">目标毛利倒推</CardTitle>
+                  <CardDescription>按当前成本、广告 CVR、广告订单占比，倒推达到目标毛利所需售价和 CPC 上限。</CardDescription>
+                </CardHeader>
+                <CardContent className="overflow-x-auto">
+                  <table className="w-full text-xs min-w-[880px]">
+                    <thead>
+                      <tr className="text-left text-[#86868b] border-b border-black/5">
+                        <th className="py-2 pr-3">变体</th>
+                        <th className="py-2 pr-3">当前毛利</th>
+                        <th className="py-2 pr-3">15%售价</th>
+                        <th className="py-2 pr-3">20%售价</th>
+                        <th className="py-2 pr-3">25%售价</th>
+                        <th className="py-2 pr-3">15%CPC上限</th>
+                        <th className="py-2 pr-3">20%CPC上限</th>
+                        <th className="py-2">25%CPC上限</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {results.targetMarginRows.map((r) => (
+                        <tr key={r.name} className="border-b border-black/5">
+                          <td className="py-2 pr-3 font-medium text-[#1d1d1f]">{r.name}</td>
+                          <td className={`py-2 pr-3 font-semibold ${r.margin>=0?'text-emerald-600':'text-rose-600'}`}>{r.margin.toFixed(1)}%</td>
+                          <td className="py-2 pr-3">{r.price15 ? `${cur}${r.price15.toFixed(2)}` : '不可达'}</td>
+                          <td className="py-2 pr-3">{r.price20 ? `${cur}${r.price20.toFixed(2)}` : '不可达'}</td>
+                          <td className="py-2 pr-3">{r.price25 ? `${cur}${r.price25.toFixed(2)}` : '不可达'}</td>
+                          <td className="py-2 pr-3">{r.maxCpc15 ? `${cur}${r.maxCpc15.toFixed(2)}` : '无空间'}</td>
+                          <td className="py-2 pr-3">{r.maxCpc20 ? `${cur}${r.maxCpc20.toFixed(2)}` : '无空间'}</td>
+                          <td className="py-2">{r.maxCpc25 ? `${cur}${r.maxCpc25.toFixed(2)}` : '无空间'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </CardContent>
+              </Card>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {[
+                  { title: '定价动作', text: '若目标售价明显高于当前价，优先检查采购、FBA、广告，而不是直接涨价。' },
+                  { title: '投放动作', text: '当前 CPC 高于 20% 毛利上限的变体，应先降竞价或提高 CVR。' },
+                  { title: '成本动作', text: '售价不可达时，说明成本结构过重，应优先找采购/头程/FBA降本空间。' },
+                ].map((x) => (
+                  <div key={x.title} className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
+                    <div className="text-sm font-semibold text-emerald-900">{x.title}</div>
+                    <p className="text-xs text-emerald-800/80 mt-1 leading-5">{x.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab==='portfolio' && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">变体组合贡献诊断</CardTitle>
+                <CardDescription>把销量份额、利润份额、毛利率和 TACos 放在一起看，判断加码、维持还是修复。</CardDescription>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <table className="w-full text-xs min-w-[760px]">
+                  <thead>
+                    <tr className="text-left text-[#86868b] border-b border-black/5">
+                      <th className="py-2 pr-3">变体</th>
+                      <th className="py-2 pr-3">月销量</th>
+                      <th className="py-2 pr-3">销售额占比</th>
+                      <th className="py-2 pr-3">利润贡献</th>
+                      <th className="py-2 pr-3">毛利率</th>
+                      <th className="py-2 pr-3">TACos</th>
+                      <th className="py-2 pr-3">安全边际</th>
+                      <th className="py-2">建议</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.portfolioRows.map((r) => (
+                      <tr key={r.name} className="border-b border-black/5">
+                        <td className="py-2 pr-3 font-medium text-[#1d1d1f]">{r.name}</td>
+                        <td className="py-2 pr-3">{r.sales.toLocaleString()}</td>
+                        <td className="py-2 pr-3">{r.revenueShare.toFixed(1)}%</td>
+                        <td className={`py-2 pr-3 font-semibold ${r.monthlyProfit>=0?'text-emerald-600':'text-rose-600'}`}>{cur}{Math.round(r.monthlyProfit).toLocaleString()} ({r.profitShare.toFixed(1)}%)</td>
+                        <td className={`py-2 pr-3 font-semibold ${r.margin>=0?'text-emerald-600':'text-rose-600'}`}>{r.margin.toFixed(1)}%</td>
+                        <td className="py-2 pr-3">{r.tacos.toFixed(1)}%</td>
+                        <td className={r.safetyMargin < 10 ? 'py-2 pr-3 text-amber-600 font-semibold' : 'py-2 pr-3 text-[#1d1d1f]'}>{r.safetyMargin.toFixed(1)}%</td>
+                        <td className="py-2">{r.action}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
           )}
         </div>
 
