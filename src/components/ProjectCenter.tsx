@@ -13,11 +13,15 @@ import {
   Target,
   X,
   FolderPlus,
+  Cloud,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { Select } from './ui/Select';
+import { syncProjects } from '../utils/cloudSync';
+import { isCloudConfigured } from '../utils/supabaseClient';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
 import type { CompetitorContext } from '../utils/competitorLook';
@@ -104,6 +108,7 @@ interface ProjectCenterProps {
 export function ProjectCenter({ userId, username, marketContext, userContext, competitorContext, onOpenProject }: ProjectCenterProps) {
   const [projects, setProjects] = useState<ResearchProject[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [marketplace, setMarketplace] = useState('');
   const [status, setStatus] = useState('active');
@@ -121,6 +126,22 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
       setLoading(false);
     }
   }, [userId]);
+
+  const handleSync = async () => {
+    if (!isCloudConfigured()) {
+      toast.info('未配置云端同步');
+      return;
+    }
+    setSyncing(true);
+    const res = await syncProjects(projects);
+    setSyncing(false);
+    if (res.ok) {
+      toast.success(`已同步：上传 ${res.pushed}，拉取 ${res.pulled}`);
+      await refresh();
+    } else {
+      toast.error(res.error || '同步失败');
+    }
+  };
 
   useEffect(() => {
     void refresh();
@@ -151,6 +172,16 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
             用一次市调项目承载「看市场 → 看用户 → 看竞品 → 看自己 → 看/找机会」全流程
           </p>
         </div>
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={syncing}
+          title="同步项目到云端"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-black/8 bg-white text-sm font-semibold text-[#424245] hover:bg-[#f5f5f7] transition-all disabled:opacity-50"
+        >
+          {syncing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Cloud className="w-4 h-4" />}
+          同步
+        </button>
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
