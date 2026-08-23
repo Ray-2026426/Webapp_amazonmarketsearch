@@ -261,7 +261,7 @@ export function ProjectWorkspace({
       ) : tab === 'competitor' ? (
         <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} />
       ) : tab === 'opportunity' ? (
-        <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
+        <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} onNavigateLook={(look) => void switchToLook(look)} />
       ) : (
         <ReportsView userId={userId} project={p} />
       )}

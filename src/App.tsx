@@ -36,6 +36,7 @@ import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
 import type { MarketContext } from './utils/marketLook';
 import { saveReport } from './utils/reportStore';
+import { aiInsightToMarkdown, vocReportToMarkdown, competitorReportToMarkdown } from './utils/reportToMarkdown';
 import type { ResearchProject } from './types/researchProject';
 import type { UserContext } from './utils/userLook';
 import type { CompetitorContext } from './utils/competitorLook';
@@ -261,6 +262,23 @@ export default function App() {
     }
   }, [reportDataFingerprint, activeProject, currentUser, marketplace.code, aiSettings]);
 
+  const archiveProjectReport = useCallback(
+    (reportType: 'user' | 'competitor', subjectId: string, title: string, markdown: string, dataFingerprint: string) => {
+      if (!activeProject || !markdown.trim()) return;
+      const uid = currentUser?.id ?? '';
+      void saveReport(uid, activeProject.id, {
+        reportType,
+        subjectId,
+        title,
+        markdown,
+        dataFingerprint,
+        promptVersion: 'v1',
+        modelName: aiSettings?.model ?? '',
+      }).catch(() => {});
+    },
+    [activeProject, currentUser, aiSettings]
+  );
+
   const openMarketReport = useCallback(() => {
     setIsReportOpen(true);
     setIsReportHidden(false);
@@ -286,7 +304,10 @@ export default function App() {
   const handleKeywordInsightSync = useCallback((state: AiInsight | null) => {
     setKeywordInsight(state);
     void set('keywordInsight', state);
-  }, []);
+    if (state) {
+      archiveProjectReport('user', 'keyword', '看用户报告 · 关键词', aiInsightToMarkdown(state, '看用户报告 · 关键词'), `kw:${keywords.length}:${reviews.length}`);
+    }
+  }, [archiveProjectReport, keywords.length, reviews.length]);
 
   /** 主内容滚动区 ref，供锚点批注绑定滚动与点击捕获 */
   const scrollMainRef = useRef<HTMLDivElement>(null);
@@ -308,7 +329,16 @@ export default function App() {
   const handleUserInsightsWorkspaceSync = useCallback((state: UserInsightsWorkspaceState) => {
     setUserInsightsWorkspace(state);
     void set('userInsightsWorkspace', state);
-  }, []);
+    const md = vocReportToMarkdown({ insight: state.deepInsight, markdown: state.deepReport, title: '看用户报告 · VOC' });
+    if (md) archiveProjectReport('user', 'voc', '看用户报告 · VOC', md, `voc:${reviews.length}`);
+  }, [archiveProjectReport, reviews.length]);
+
+  const handleCompetitorWorkspaceSync = useCallback((state: CompetitorWorkspaceState) => {
+    setCompetitorWorkspace(state);
+    if (state?.aiReportHtml) {
+      archiveProjectReport('competitor', state.selected.join(','), '看竞品报告', competitorReportToMarkdown(state.aiReportHtml, '看竞品报告'), `comp:${state.selected.length}`);
+    }
+  }, [archiveProjectReport]);
 
   const isRegisteredUser = Boolean(currentUser && currentUser.id !== 'guest');
 
@@ -1781,7 +1811,7 @@ export default function App() {
                     workspaceFromParent={competitorWorkspace}
                     workspaceRestoreKey={competitorRestoreKey}
                     restorePayload={competitorRestorePayload}
-                    onWorkspaceSync={setCompetitorWorkspace}
+                    onWorkspaceSync={handleCompetitorWorkspaceSync}
                   />
                 </div>
               )}

@@ -28,6 +28,7 @@ import {
   LOOK_STATUS_LABELS,
   type OpportunityCard,
   type OpportunityDecision,
+  type FiveLookId,
   type ResearchProject,
 } from '../types/researchProject';
 
@@ -47,10 +48,12 @@ export function OpportunityLookView({
   userId,
   project,
   onProjectChange,
+  onNavigateLook,
 }: {
   userId: string;
   project: ResearchProject;
   onProjectChange: (updated: ResearchProject) => void;
+  onNavigateLook: (look: FiveLookId) => void;
 }) {
   const [cards, setCards] = useState<OpportunityCard[] | null>(null);
   const [userLook, setUserLook] = useState<UserLookData | null>(null);
@@ -243,6 +246,8 @@ export function OpportunityLookView({
             onRemoveAction={(aid) => removeAction(card.id, aid)}
             profitAssumption={card.profitAssumption}
             onProfitChange={(patch) => updateProfit(card.id, patch)}
+            project={project}
+            onNavigateLook={onNavigateLook}
           />
         ))
       )}
@@ -308,6 +313,8 @@ function OpportunityCardEditor({
   onRemoveAction,
   profitAssumption,
   onProfitChange,
+  project,
+  onNavigateLook,
 }: {
   card: OpportunityCard;
   onChange: (patch: Partial<OpportunityCard>) => void;
@@ -320,6 +327,8 @@ function OpportunityCardEditor({
   onRemoveAction: (id: string) => void;
   profitAssumption?: { price: number; cost: number; cpc: number };
   onProfitChange: (patch: Partial<{ price: number; cost: number; cpc: number }>) => void;
+  project: ResearchProject;
+  onNavigateLook: (look: FiveLookId) => void;
 }) {
   return (
     <Card>
@@ -339,6 +348,13 @@ function OpportunityCardEditor({
             <span className="rounded-full bg-[#f5f5f7] text-[#86868b] px-2 py-0.5 text-[11px] font-semibold">覆盖 {Math.round(card.coverage * 100)}%</span>
             <button type="button" onClick={onRemove} className="w-8 h-8 rounded-lg hover:bg-rose-50 flex items-center justify-center text-[#aeaeb2] hover:text-rose-500 transition-colors"><X className="w-4 h-4" /></button>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+          <EvidenceChip label="市场" pct={project.fiveLookProgress.market.completionPercent} onClick={() => onNavigateLook('market')} />
+          <EvidenceChip label="用户" pct={project.fiveLookProgress.user.completionPercent} onClick={() => onNavigateLook('user')} />
+          <EvidenceChip label="竞品" pct={project.fiveLookProgress.competitor.completionPercent} onClick={() => onNavigateLook('competitor')} />
+          <EvidenceChip label="自己" pct={project.fiveLookProgress.self.completionPercent} onClick={() => onNavigateLook('self')} />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
@@ -516,5 +532,12 @@ function PriorityMatrix({ cards }: { cards: OpportunityCard[] }) {
   );
 }
 
+function EvidenceChip({ label, pct, onClick }: { label: string; pct: number; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} title={'定位到看' + label} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-black/8 bg-white text-[10px] text-[#86868b] hover:border-indigo-200 hover:text-indigo-600 transition-colors">
+      {label} {pct}%
+    </button>
+  );
+}
 const inputCls =
   'w-full px-3 py-2.5 rounded-xl border border-black/8 bg-gradient-to-b from-white to-[#f8f9fb] text-sm text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 transition-all';
