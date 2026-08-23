@@ -7,6 +7,7 @@ import { computeUserProgress } from '../src/utils/userLook';
 import { computeCompetitorProgress } from '../src/utils/competitorLook';
 import { computeOpportunityProgress, scoreOpportunity } from '../src/utils/opportunityStore';
 import { migrateProject } from '../src/utils/projectStore';
+import { reportReuseKey, reuseKeyOf, decideReportSave, type ProjectReport } from '../src/utils/reportStore';
 import type { FiveLookProgress, ResearchProject } from '../src/types/researchProject';
 
 let passed = 0;
@@ -182,6 +183,44 @@ test('migrateProject: 缺失部分五看自动补齐', () => {
   assert.ok(p);
   assert.equal(p!.fiveLookProgress.market.status, 'completed');
   assert.equal(p!.fiveLookProgress.user.status, 'not_started');
+});
+
+
+function makeReport(over: Partial<ProjectReport> = {}): ProjectReport {
+  return {
+    id: 'r1', projectId: 'p1', reportType: 'market', subjectId: '', title: 't', markdown: 'm',
+    dataFingerprint: 'fp1', promptVersion: 'v1', modelName: 'gpt', version: 1, isFinalized: false,
+    createdAt: '', updatedAt: '', ...over,
+  };
+}
+
+console.log('report store');
+
+test('reportReuseKey: 同参数一致，prompt 版本不同则不同', () => {
+  const a = reportReuseKey('p1', 'market', '', 'fp1', 'v1', 'gpt');
+  const b = reportReuseKey('p1', 'market', '', 'fp1', 'v1', 'gpt');
+  const c2 = reportReuseKey('p1', 'market', '', 'fp1', 'v2', 'gpt');
+  assert.equal(a, b);
+  assert.notEqual(a, c2);
+});
+
+test('decideReportSave: 同键未定稿 -> update', () => {
+  const r = makeReport();
+  const d = decideReportSave([r], reuseKeyOf(r), [r]);
+  assert.equal(d.action, 'update');
+});
+
+test('decideReportSave: 同键已定稿 -> skip', () => {
+  const r = makeReport({ isFinalized: true });
+  const d = decideReportSave([r], reuseKeyOf(r), [r]);
+  assert.equal(d.action, 'skip');
+});
+
+test('decideReportSave: 不同键 -> new + 版本递增', () => {
+  const existing = [makeReport({ version: 2 }), makeReport({ id: 'r2', dataFingerprint: 'fp2', version: 1 })];
+  const d = decideReportSave(existing, reportReuseKey('p1', 'market', '', 'fp3', 'v1', 'gpt'), existing);
+  assert.equal(d.action, 'new');
+  if (d.action === 'new') assert.equal(d.nextVersion, 3);
 });
 
 console.log('');

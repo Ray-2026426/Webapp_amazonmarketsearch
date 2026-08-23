@@ -304,6 +304,7 @@ const LOOK_DATA_KEY_PREFIXES = [
   'amzdev_user:',
   'amzdev_competitor:',
   'amzdev_opp:',
+  'amzdev_reports:',
 ];
 
 async function clearLookData(userId: string, projectId: string): Promise<void> {
