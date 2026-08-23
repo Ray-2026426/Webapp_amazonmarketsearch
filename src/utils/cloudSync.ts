@@ -1,5 +1,5 @@
-﻿// 云端同步层（Phase 3）：匿名登录 + 项目 push/pull/merge。
-import { supabase } from './supabaseClient';
+// 云端同步层（Phase 3）：匿名登录 + 项目 push/pull/merge。
+import { getSupabase } from './supabaseClient';
 import type { ResearchProject } from '../types/researchProject';
 
 export interface SyncResult {
@@ -11,10 +11,11 @@ export interface SyncResult {
 
 /** 建立匿名云会话（需要 Supabase 项目开启匿名登录）。 */
 export async function ensureCloudSession(): Promise<boolean> {
-  if (!supabase) return false;
-  const { data } = await supabase.auth.getSession();
+  const s = getSupabase();
+  if (!s) return false;
+  const { data } = await s.auth.getSession();
   if (data.session) return true;
-  const { error } = await supabase.auth.signInAnonymously();
+  const { error } = await s.auth.signInAnonymously();
   if (error) {
     console.error('anonymous sign-in failed:', error.message);
     return false;
@@ -30,10 +31,11 @@ interface ProjectRow {
 }
 
 export async function pushProjects(projects: ResearchProject[]): Promise<number> {
-  if (!supabase || projects.length === 0) return 0;
+  const s = getSupabase();
+  if (!s || projects.length === 0) return 0;
   const ok = await ensureCloudSession();
   if (!ok) throw new Error('云会话建立失败（请确认 Supabase 已开启匿名登录）');
-  const { data } = await supabase.auth.getUser();
+  const { data } = await s.auth.getUser();
   if (!data.user) throw new Error('未获取到云用户');
   const rows: ProjectRow[] = projects.map((p) => ({
     id: p.id,
@@ -41,16 +43,17 @@ export async function pushProjects(projects: ResearchProject[]): Promise<number>
     data: p,
     updated_at: p.updatedAt,
   }));
-  const { error } = await supabase.from('projects').upsert(rows, { onConflict: 'id' });
+  const { error } = await s.from('projects').upsert(rows, { onConflict: 'id' });
   if (error) throw new Error(error.message);
   return rows.length;
 }
 
 export async function pullProjects(): Promise<ResearchProject[]> {
-  if (!supabase) return [];
+  const s = getSupabase();
+  if (!s) return [];
   const ok = await ensureCloudSession();
   if (!ok) throw new Error('云会话建立失败');
-  const { data, error } = await supabase
+  const { data, error } = await s
     .from('projects')
     .select('data')
     .order('updated_at', { ascending: false });
@@ -60,7 +63,7 @@ export async function pullProjects(): Promise<ResearchProject[]> {
 
 /** 本地与云端按 id 合并，updatedAt 更新者优先。 */
 export async function syncProjects(local: ResearchProject[]): Promise<SyncResult> {
-  if (!supabase) return { ok: false, pushed: 0, pulled: 0, error: '未配置云端' };
+  if (!getSupabase()) return { ok: false, pushed: 0, pulled: 0, error: '未配置云端' };
   try {
     const cloud = await pullProjects();
     const merged = new Map<string, ResearchProject>();
