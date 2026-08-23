@@ -137,6 +137,53 @@ test('migrateProject: 最小对象补齐五看', () => {
   assert.equal(p!.fiveLookProgress.market.status, 'not_started');
 });
 
+
+test('scoreOpportunity: 利润假设低毛利 -> 商业分低', () => {
+  const done = makeProgress('completed', 100);
+  const project = makeProject({ market: done, user: done, competitor: done, self: done });
+  const userLook = {
+    projectId: 'p1', targetUser: 'u', scenario: 's', jobToBeDone: 'j', satisfiedNeeds: [],
+    unmetNeedCandidates: [{ id: 'n1', targetUser: 'u', scenario: 's', jobToBeDone: 'j', needStatement: 'n', currentAlternative: 'c', evidenceStrength: 'high' as const }],
+    evidence: null, updatedAt: '',
+  };
+  const self = { projectId: 'p1', items: [], updatedAt: '' };
+  const card = { id: 'o1', projectId: 'p1', unmetNeedId: 'n1', decision: 'undecided' as const, profitAssumption: { price: 30, cost: 28, cpc: 1 } };
+  const r = scoreOpportunity(card as any, project, userLook, self);
+  // 需求30 + 市场20 + 竞品20 + 自身15 + 商业5 = 90
+  assert.equal(r.score, 90);
+});
+
+test('scoreOpportunity: 无利润假设、无边界 -> 商业分 0', () => {
+  const done = makeProgress('completed', 100);
+  const project = makeProject({ market: done, user: done, competitor: done, self: done });
+  const userLook = {
+    projectId: 'p1', targetUser: 'u', scenario: 's', jobToBeDone: 'j', satisfiedNeeds: [],
+    unmetNeedCandidates: [{ id: 'n1', targetUser: 'u', scenario: 's', jobToBeDone: 'j', needStatement: 'n', currentAlternative: 'c', evidenceStrength: 'low' as const }],
+    evidence: null, updatedAt: '',
+  };
+  const self = { projectId: 'p1', items: [], updatedAt: '' };
+  const card = { id: 'o1', projectId: 'p1', unmetNeedId: 'n1', decision: 'undecided' as const };
+  const r = scoreOpportunity(card as any, project, userLook, self);
+  // 需求10 + 市场20 + 竞品20 + 自身15 + 商业0 = 65
+  assert.equal(r.score, 65);
+});
+
+test('computeOpportunityProgress: 有卡但未决策、四看完成 -> 进行中 67%', () => {
+  const done = makeProgress('completed', 100);
+  const project = makeProject({ market: done, user: done, competitor: done, self: done });
+  const card = { id: 'o1', projectId: 'p1', unmetNeedId: 'n1', decision: 'undecided' as const };
+  const r = computeOpportunityProgress([card] as any, project);
+  assert.equal(r.status, 'in_progress');
+  assert.equal(r.completionPercent, 67);
+});
+
+test('migrateProject: 缺失部分五看自动补齐', () => {
+  const p = migrateProject({ id: 'p1', fiveLookProgress: { market: { status: 'completed', completionPercent: 100 } } });
+  assert.ok(p);
+  assert.equal(p!.fiveLookProgress.market.status, 'completed');
+  assert.equal(p!.fiveLookProgress.user.status, 'not_started');
+});
+
 console.log('');
 console.log('result: ' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);
