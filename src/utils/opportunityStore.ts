@@ -1,4 +1,4 @@
-﻿// 看/找机会（FR-07）：机会卡存储 + 从「看用户」未满足需求生成机会 + 确定性评分。
+// 看/找机会（FR-07）：机会卡存储 + 从「看用户」未满足需求生成机会 + 确定性评分。
 import { get, set } from 'idb-keyval';
 import type {
   OpportunityCard,
@@ -82,10 +82,20 @@ export function scoreOpportunity(
   const competitor = Math.round((project.fiveLookProgress.competitor.completionPercent / 100) * 20);
   const selfFit = Math.round((project.fiveLookProgress.self.completionPercent / 100) * 15);
 
-  const boundaryItems = self?.items.filter((i) => i.category === 'boundary') ?? [];
-  const boundaryAnswered = boundaryItems.filter((i) => i.status !== 'unknown').length;
-  const boundaryTotal = boundaryItems.length || 1;
-  const commercial = Math.round((boundaryAnswered / boundaryTotal) * 15);
+  const pa = card.profitAssumption;
+  let commercial = 0;
+  let commercialCovered = false;
+  if (pa && pa.price > 0) {
+    const margin = (pa.price - (pa.cost || 0) - (pa.cpc || 0)) / pa.price;
+    commercial = margin >= 0.2 ? 15 : margin >= 0.1 ? 10 : margin > 0 ? 5 : 0;
+    commercialCovered = true;
+  } else {
+    const boundaryItems = self?.items.filter((i) => i.category === 'boundary') ?? [];
+    const boundaryAnswered = boundaryItems.filter((i) => i.status !== 'unknown').length;
+    const boundaryTotal = boundaryItems.length || 1;
+    commercial = Math.round((boundaryAnswered / boundaryTotal) * 15);
+    commercialCovered = boundaryAnswered > 0;
+  }
 
   const score = Math.min(100, needStrength + market + competitor + selfFit + commercial);
 
@@ -94,7 +104,7 @@ export function scoreOpportunity(
   if (project.fiveLookProgress.market.completionPercent > 0) covered++;
   if (project.fiveLookProgress.competitor.completionPercent > 0) covered++;
   if (project.fiveLookProgress.self.completionPercent > 0) covered++;
-  if (boundaryAnswered > 0) covered++;
+  if (commercialCovered) covered++;
   const coverage = Math.round((covered / 5) * 100) / 100;
 
   return { score, coverage };

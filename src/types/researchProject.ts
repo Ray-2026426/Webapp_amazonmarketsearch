@@ -1,4 +1,4 @@
-﻿// 亚马逊市场调研「项目化」核心数据模型
+// 亚马逊市场调研「项目化」核心数据模型
 // 依据 docs/amazon-market-research-prd.md 第 13 节，并补充 FR-01 / FR-07 所需字段。
 // 这里的类型是 Phase 1 本地项目化 MVP 的唯一真源；新增页面不得另建一套项目模型。
 
@@ -121,6 +121,13 @@ export interface ProfitScenarioRef {
   unitProfit?: number;
 }
 
+/** 机会卡内的轻量利润假设（售价/采购成本/CPC），用于商业可行性测算 */
+export interface ProfitAssumption {
+  price: number;
+  cost: number;
+  cpc: number;
+}
+
 export interface OpportunityCard {
   id: string;
   projectId: string;
@@ -138,6 +145,7 @@ export interface OpportunityCard {
   competitorEvidenceIds: string[];
   selfAssessmentId: string;
   profitScenarioIds: string[];
+  profitAssumption?: ProfitAssumption;
   risks: RiskItem[];
   validationActions: ValidationAction[];
   /** 确定性公式计算的基础分，0-100；AI 只解释，不修改 */

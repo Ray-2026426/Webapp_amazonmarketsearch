@@ -170,6 +170,12 @@ export function OpportunityLookView({
     if (!card) return;
     updateCard(cardId, { validationActions: card.validationActions.filter((a) => a.id !== actionId) });
   };
+  const updateProfit = (cardId: string, patch: Partial<{ price: number; cost: number; cpc: number }>) => {
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) return;
+    const cur = card.profitAssumption ?? { price: 0, cost: 0, cpc: 0 };
+    updateCard(cardId, { profitAssumption: { ...cur, ...patch } });
+  };
 
   const generateFromCandidate = (candidate: UnmetNeedCandidate) => {
     const card = createOpportunityFromUnmetNeed(project.id, candidate);
@@ -229,6 +235,9 @@ export function OpportunityLookView({
         </div>
       </Card>
 
+      <DecisionSummary cards={sortedCards} />
+      <PriorityMatrix cards={sortedCards} />
+
       {/* 机会卡列表 */}
       {sortedCards.length === 0 ? (
         <Card className="py-12 text-center">
@@ -248,6 +257,8 @@ export function OpportunityLookView({
             onAddAction={() => addAction(card.id)}
             onUpdateAction={(aid, v) => updateAction(card.id, aid, v)}
             onRemoveAction={(aid) => removeAction(card.id, aid)}
+            profitAssumption={card.profitAssumption}
+            onProfitChange={(patch) => updateProfit(card.id, patch)}
           />
         ))
       )}
@@ -292,6 +303,8 @@ function OpportunityCardEditor({
   onAddAction,
   onUpdateAction,
   onRemoveAction,
+  profitAssumption,
+  onProfitChange,
 }: {
   card: OpportunityCard;
   onChange: (patch: Partial<OpportunityCard>) => void;
@@ -302,6 +315,8 @@ function OpportunityCardEditor({
   onAddAction: () => void;
   onUpdateAction: (id: string, action: string) => void;
   onRemoveAction: (id: string) => void;
+  profitAssumption?: { price: number; cost: number; cpc: number };
+  onProfitChange: (patch: Partial<{ price: number; cost: number; cpc: number }>) => void;
 }) {
   return (
     <Card>
@@ -332,6 +347,16 @@ function OpportunityCardEditor({
             <p className="text-xs font-semibold text-[#424245] mb-1.5">产品假设（如何更好地满足需求）</p>
             <textarea value={card.solutionHypothesis} onChange={(e) => onChange({ solutionHypothesis: e.target.value })} rows={2} placeholder="准备如何更好满足这个需求…" className={inputCls} />
           </div>
+        </div>
+
+        <div className="rounded-xl border border-black/5 bg-[#fafafa] p-3 mb-3">
+          <p className="text-xs font-semibold text-[#424245] mb-2">商业可行性 · 利润假设</p>
+          <div className="grid grid-cols-3 gap-3 mb-2">
+            <ProfitField label="售价" value={profitAssumption?.price} onChange={(v) => onProfitChange({ price: v })} />
+            <ProfitField label="采购成本" value={profitAssumption?.cost} onChange={(v) => onProfitChange({ cost: v })} />
+            <ProfitField label="CPC" value={profitAssumption?.cpc} onChange={(v) => onProfitChange({ cpc: v })} />
+          </div>
+          <ProfitHint price={profitAssumption?.price} cost={profitAssumption?.cost} cpc={profitAssumption?.cpc} />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -386,6 +411,105 @@ function SaveBadge({ state }: { state: SaveState }) {
       <Icon className={cn('w-3.5 h-3.5', state === 'saving' && 'animate-spin')} />
       {m.text}
     </span>
+  );
+}
+
+function ProfitField({ label, value, onChange }: { label: string; value?: number; onChange: (v: number) => void }) {
+  return (
+    <label className="block">
+      <span className="block text-[11px] font-medium text-[#86868b] mb-1">{label}</span>
+      <input
+        type="number"
+        value={value === undefined || value === 0 ? '' : value}
+        onChange={(e) => onChange(Number(e.target.value) || 0)}
+        placeholder="0"
+        className="w-full px-2.5 py-1.5 rounded-lg border border-black/8 bg-white text-sm text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 transition-all"
+      />
+    </label>
+  );
+}
+
+function ProfitHint({ price, cost, cpc }: { price?: number; cost?: number; cpc?: number }) {
+  const p = Number(price) || 0;
+  const cst = Number(cost) || 0;
+  const cp = Number(cpc) || 0;
+  const profit = p - cst - cp;
+  const margin = p > 0 ? profit / p : 0;
+  if (p <= 0) return <p className="text-[11px] text-[#c7c7cc]">填写售价后可计算毛利</p>;
+  return (
+    <p className={cn('text-[11px] font-medium', margin >= 0.2 ? 'text-emerald-600' : margin >= 0.1 ? 'text-amber-600' : 'text-rose-600')}>
+      预估单件利润 {profit.toFixed(2)} · 毛利率 {Math.round(margin * 100)}%
+    </p>
+  );
+}
+
+function DecisionSummary({ cards }: { cards: OpportunityCard[] }) {
+  if (cards.length === 0) return null;
+  const decided = cards.filter((c) => c.decision !== 'undecided');
+  const avgScore = Math.round(cards.reduce((s, c) => s + c.score, 0) / cards.length);
+  const avgCov = Math.round((cards.reduce((s, c) => s + c.coverage, 0) / cards.length) * 100);
+  const top = cards[0];
+  return (
+    <Card className="border-indigo-100 bg-gradient-to-r from-indigo-50/50 to-violet-50/50">
+      <div className="p-5">
+        <p className="text-sm font-semibold text-[#1d1d1f] mb-2">决策摘要</p>
+        <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-xs text-[#424245]">
+          <span>机会 {cards.length}</span>
+          <span>已决策 {decided.length}</span>
+          <span>平均评分 {avgScore}</span>
+          <span>平均覆盖 {avgCov}%</span>
+        </div>
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {DECISIONS.filter((d) => d.value !== 'undecided').map((d) => {
+            const n = cards.filter((c) => c.decision === d.value).length;
+            return n > 0 ? (
+              <span key={d.value} className="rounded-full bg-white border border-black/8 px-2 py-0.5 text-[11px] text-[#424245]">
+                {d.label} {n}
+              </span>
+            ) : null;
+          })}
+        </div>
+        {top && <p className="text-xs text-[#86868b] mt-2">最高分：{top.title}（{top.score} 分）</p>}
+      </div>
+    </Card>
+  );
+}
+
+function PriorityMatrix({ cards }: { cards: OpportunityCard[] }) {
+  if (cards.length === 0) return null;
+  const buckets: Record<'hh' | 'hl' | 'lh' | 'll', OpportunityCard[]> = { hh: [], hl: [], lh: [], ll: [] };
+  for (const c of cards) {
+    const highValue = c.score >= 50;
+    const highCover = c.coverage >= 0.5;
+    const k = highValue ? (highCover ? 'hh' : 'hl') : highCover ? 'lh' : 'll';
+    buckets[k].push(c);
+  }
+  const cells: { k: 'hh' | 'hl' | 'lh' | 'll'; label: string; cls: string }[] = [
+    { k: 'hh', label: '高价值 · 高覆盖（优先）', cls: 'bg-emerald-50 border-emerald-200' },
+    { k: 'hl', label: '高价值 · 低覆盖（需补证据）', cls: 'bg-amber-50 border-amber-200' },
+    { k: 'lh', label: '低价值 · 高覆盖（谨慎）', cls: 'bg-sky-50 border-sky-200' },
+    { k: 'll', label: '低价值 · 低覆盖（待完善）', cls: 'bg-[#f5f5f7] border-black/10' },
+  ];
+  return (
+    <Card>
+      <div className="p-5">
+        <p className="text-sm font-semibold text-[#1d1d1f] mb-3">机会优先级矩阵</p>
+        <div className="grid grid-cols-2 gap-2">
+          {cells.map((cell) => (
+            <div key={cell.k} className={cn('rounded-2xl border p-3', cell.cls)}>
+              <p className="text-[11px] font-semibold text-[#424245] mb-1.5">{cell.label}</p>
+              {buckets[cell.k].length === 0 ? (
+                <p className="text-xs text-[#c7c7cc]">无</p>
+              ) : (
+                buckets[cell.k].map((c) => (
+                  <p key={c.id} className="text-xs text-[#424245] truncate">{c.title}（{c.score}）</p>
+                ))
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
   );
 }
 
