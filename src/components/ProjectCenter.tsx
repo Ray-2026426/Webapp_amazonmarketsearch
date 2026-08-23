@@ -20,6 +20,8 @@ import { Card } from './ui/Card';
 import { Select } from './ui/Select';
 import { ProjectWorkspace } from './ProjectWorkspace';
 import type { MarketContext } from '../utils/marketLook';
+import type { UserContext } from '../utils/userLook';
+import type { CompetitorContext } from '../utils/competitorLook';
 import {
   archiveProject,
   createProject,
@@ -95,9 +97,11 @@ interface ProjectCenterProps {
   userId: string;
   username: string;
   marketContext: MarketContext;
+  userContext: UserContext;
+  competitorContext: CompetitorContext;
 }
 
-export function ProjectCenter({ userId, username, marketContext }: ProjectCenterProps) {
+export function ProjectCenter({ userId, username, marketContext, userContext, competitorContext }: ProjectCenterProps) {
   const [projects, setProjects] = useState<ResearchProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState('');
@@ -145,6 +149,8 @@ export function ProjectCenter({ userId, username, marketContext }: ProjectCenter
         project={opened}
         username={username}
         marketContext={marketContext}
+        userContext={userContext}
+        competitorContext={competitorContext}
         onBack={() => {
           setOpened(null);
           void refresh();

@@ -18,8 +18,12 @@ import { Card } from './ui/Card';
 import { ProjectOverviewContent } from './ProjectOverview';
 import { SelfAssessmentView } from './SelfAssessmentView';
 import { MarketLookView } from './MarketLookView';
+import { UserLookView } from './UserLookView';
+import { CompetitorLookView } from './CompetitorLookView';
 import { setActiveLook } from '../utils/projectStore';
 import type { MarketContext } from '../utils/marketLook';
+import type { UserContext } from '../utils/userLook';
+import type { CompetitorContext } from '../utils/competitorLook';
 import {
   FIVE_LOOK_LABELS,
   FIVE_LOOKS,
@@ -95,6 +99,8 @@ export function ProjectWorkspace({
   project,
   username,
   marketContext,
+  userContext,
+  competitorContext,
   onBack,
   onProjectChange,
 }: {
@@ -102,6 +108,8 @@ export function ProjectWorkspace({
   project: ResearchProject;
   username: string;
   marketContext: MarketContext;
+  userContext: UserContext;
+  competitorContext: CompetitorContext;
   onBack: () => void;
   onProjectChange: (updated: ResearchProject) => void;
 }) {
@@ -206,6 +214,10 @@ export function ProjectWorkspace({
         <SelfAssessmentView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
       ) : tab === 'market' ? (
         <MarketLookView userId={userId} project={p} marketContext={marketContext} onProjectChange={applyProjectUpdate} />
+      ) : tab === 'user' ? (
+        <UserLookView userId={userId} project={p} userContext={userContext} onProjectChange={applyProjectUpdate} />
+      ) : tab === 'competitor' ? (
+        <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} />
       ) : (
         <LookWorkspacePlaceholder project={p} look={tab as FiveLookId} />
       )}

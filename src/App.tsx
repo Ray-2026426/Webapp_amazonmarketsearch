@@ -35,6 +35,8 @@ import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
 import type { MarketContext } from './utils/marketLook';
+import type { UserContext } from './utils/userLook';
+import type { CompetitorContext } from './utils/competitorLook';
 import { LoginPage } from './components/LoginPage';
 import { ProjectCenter } from './components/ProjectCenter';
 import { AiSettingsPanel } from './components/AiSettingsPanel';
@@ -1231,6 +1233,20 @@ export default function App() {
     isDemo: isDemoData,
   }), [isDataLoaded, marketplace.code, products.length, months, historySourceLabel, isDemoData]);
 
+  const userContext = useMemo<UserContext>(() => ({
+    keywordsCount: keywords.length,
+    reviewsCount: reviews.length,
+    sourceLabel: historySourceLabel,
+    isDemo: isDemoData,
+  }), [keywords.length, reviews.length, historySourceLabel, isDemoData]);
+
+  const competitorContext = useMemo<CompetitorContext>(() => ({
+    loaded: competitorWorkspace?.hasResult ?? false,
+    asinCount: competitorWorkspace?.selected?.length ?? 0,
+    marketplace: competitorWorkspace?.marketplace ?? '',
+    isDemo: isDemoData,
+  }), [competitorWorkspace, isDemoData]);
+
   /** 侧栏「定位」：切到批注所在 Tab 并滚动、高亮锚点模块 */
   const jumpToAnnotation = useCallback((a: AnchorAnnotation) => {
     setActiveView(a.view);
@@ -1530,7 +1546,7 @@ export default function App() {
             </div>
           )}
           {activeView === 'projects' && (
-            <ProjectCenter userId={currentUser?.id ?? ''} username={currentUser?.username ?? ''} marketContext={marketContext} />
+            <ProjectCenter userId={currentUser?.id ?? ''} username={currentUser?.username ?? ''} marketContext={marketContext} userContext={userContext} competitorContext={competitorContext} />
           )}
           {!isDataLoaded && activeView === 'market' ? (
             <div className="h-full flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-700">
