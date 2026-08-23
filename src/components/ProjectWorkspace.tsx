@@ -164,8 +164,6 @@ export function ProjectWorkspace({
     }
   };
 
-  const activeStatus = tab === 'overview' ? null : p.fiveLookProgress[tab as FiveLookId].status;
-
   const toolButtons: { label: string; view: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit' }[] =
     tab === 'market'
       ? [{ label: '打开市场大盘工具', view: 'market' }]
