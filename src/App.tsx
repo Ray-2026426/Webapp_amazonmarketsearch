@@ -35,6 +35,7 @@ import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
 import type { MarketContext } from './utils/marketLook';
+import { saveReport } from './utils/reportStore';
 import type { ResearchProject } from './types/researchProject';
 import type { UserContext } from './utils/userLook';
 import type { CompetitorContext } from './utils/competitorLook';
@@ -246,7 +247,19 @@ export default function App() {
 
   const handlePersistMarketReport = useCallback((body: string) => {
     setMarketReportCache({ fingerprint: reportDataFingerprint, body });
-  }, [reportDataFingerprint]);
+    if (activeProject) {
+      const uid = currentUser?.id ?? '';
+      void saveReport(uid, activeProject.id, {
+        reportType: 'market',
+        subjectId: marketplace.code,
+        title: `看市场报告 · ${marketplace.code}`,
+        markdown: body,
+        dataFingerprint: reportDataFingerprint,
+        promptVersion: 'market-v1',
+        modelName: aiSettings?.model ?? '',
+      }).catch(() => {});
+    }
+  }, [reportDataFingerprint, activeProject, currentUser, marketplace.code, aiSettings]);
 
   const openMarketReport = useCallback(() => {
     setIsReportOpen(true);
