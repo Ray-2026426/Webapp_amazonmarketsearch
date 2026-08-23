@@ -1,4 +1,6 @@
-﻿import { Globe, Target, User, Clock, Sparkles, ArrowRight } from 'lucide-react';
+﻿import { useEffect, useState } from 'react';
+import { Globe, Target, User, Clock, Sparkles, ArrowRight, Database, Download } from 'lucide-react';
+import { listLegacyData, buildLegacyBackup, type LegacyDataSummary } from '../utils/legacyData';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import {
@@ -62,10 +64,12 @@ function recommendNextLook(project: ResearchProject): { look: FiveLookId; reason
 export function ProjectOverviewContent({
   project,
   username,
+  userId,
   onNavigateLook,
 }: {
   project: ResearchProject;
   username: string;
+  userId: string;
   onNavigateLook: (look: FiveLookId) => void;
 }) {
   const next = recommendNextLook(project);
@@ -171,6 +175,70 @@ export function ProjectOverviewContent({
           </div>
         </Card>
       )}
+      <LegacyMigrationCard userId={userId} />
     </div>
+  );
+}
+
+function LegacyMigrationCard({ userId }: { userId: string }) {
+  const [summary, setSummary] = useState<LegacyDataSummary | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listLegacyData(userId).then((s) => { if (!cancelled) setSummary(s); });
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const json = await buildLegacyBackup(userId);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'amzdev-legacy-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  if (!summary) return null;
+
+  return (
+    <Card>
+      <div className="p-5">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-indigo-600" />
+            <p className="text-sm font-semibold text-[#1d1d1f]">旧数据迁移</p>
+          </div>
+          <button type="button" onClick={doExport} disabled={exporting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/8 bg-white text-xs font-semibold text-[#424245] hover:bg-[#f5f5f7] transition-all disabled:opacity-40">
+            <Download className="w-3.5 h-3.5" /> {exporting ? '导出中…' : '备份导出'}
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <Chip label={'市场快照 ' + summary.marketSnapshots} active={summary.marketSnapshots > 0} />
+          <Chip label={'竞品快照 ' + summary.competitorSnapshots} active={summary.competitorSnapshots > 0} />
+          <Chip label="关键词洞察" active={summary.keywordInsight} />
+          <Chip label="用户洞察" active={summary.userInsights} />
+          <Chip label="市场报告缓存" active={summary.marketReportCache} />
+        </div>
+        <p className="text-xs text-[#aeaeb2] mt-2 leading-relaxed">
+          旧数据保留可读、不会被删除；「挂到项目 / 待关联研究」将在后续「数据与证据」页面提供。
+        </p>
+      </div>
+    </Card>
+  );
+}
+
+function Chip({ label, active }: { label: string; active: boolean }) {
+  return (
+    <span className={cn('rounded-full border px-2.5 py-0.5 text-[11px] font-medium', active ? 'bg-indigo-50 border-indigo-100 text-indigo-700' : 'bg-[#f5f5f7] border-black/5 text-[#aeaeb2]')}>
+      {label}
+    </span>
   );
 }

@@ -17,8 +17,8 @@ import {
   loadOpportunities,
   saveOpportunities,
   createOpportunityFromUnmetNeed,
-  createOpportunityId,
   scoreOpportunity,
+  computeOpportunityProgress,
 } from '../utils/opportunityStore';
 import { loadUserLook, type UserLookData, type UnmetNeedCandidate } from '../utils/userLook';
 import { loadSelfAssessment, type SelfAssessment } from '../utils/selfAssessment';
@@ -41,23 +41,7 @@ const DECISIONS: { value: OpportunityDecision; label: string }[] = [
   { value: 'undecided', label: '未决定' },
 ];
 
-function computeOpportunityProgress(cards: OpportunityCard[], project: ResearchProject) {
-  const fourLooksComplete = ['market', 'user', 'competitor', 'self'].every(
-    (l) => project.fiveLookProgress[l as keyof ResearchProject['fiveLookProgress']].status === 'completed'
-  );
-  const hasCards = cards.length > 0;
-  const hasDecided = cards.some((c) => c.decision !== 'undecided');
-  const filled = (hasCards ? 1 : 0) + (hasDecided ? 1 : 0) + (fourLooksComplete ? 1 : 0);
-  const completionPercent = Math.round((filled / 3) * 100);
-  let status: 'not_started' | 'in_progress' | 'completed' | 'stale' = 'not_started';
-  if (filled > 0 && filled < 3) status = 'in_progress';
-  else if (filled === 3) status = 'completed';
-  const missing: string[] = [];
-  if (!hasCards) missing.push('缺少「机会卡」');
-  if (!hasDecided) missing.push('机会卡尚未给出决策');
-  if (!fourLooksComplete) missing.push('前四看尚未全部完成');
-  return { status, completionPercent, missingRequirements: missing };
-}
+
 
 export function OpportunityLookView({
   userId,

@@ -1,6 +1,7 @@
 // 看/找机会（FR-07）：机会卡存储 + 从「看用户」未满足需求生成机会 + 确定性评分。
 import { get, set } from 'idb-keyval';
 import type {
+  FiveLookProgress,
   OpportunityCard,
   ResearchProject,
 } from '../types/researchProject';
@@ -46,6 +47,28 @@ export function createOpportunityFromUnmetNeed(
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/** 确定性计算「看/找机会」进度。 */
+export function computeOpportunityProgress(
+  cards: OpportunityCard[],
+  project: ResearchProject
+): Pick<FiveLookProgress, 'status' | 'completionPercent' | 'missingRequirements'> {
+  const fourLooksComplete = ['market', 'user', 'competitor', 'self'].every(
+    (l) => project.fiveLookProgress[l as 'market' | 'user' | 'competitor' | 'self'].status === 'completed'
+  );
+  const hasCards = cards.length > 0;
+  const hasDecided = cards.some((c) => c.decision !== 'undecided');
+  const filled = (hasCards ? 1 : 0) + (hasDecided ? 1 : 0) + (fourLooksComplete ? 1 : 0);
+  const completionPercent = Math.round((filled / 3) * 100);
+  let status: FiveLookProgress['status'] = 'not_started';
+  if (filled > 0 && filled < 3) status = 'in_progress';
+  else if (filled === 3) status = 'completed';
+  const missing: string[] = [];
+  if (!hasCards) missing.push('缺少「机会卡」');
+  if (!hasDecided) missing.push('机会卡尚未给出决策');
+  if (!fourLooksComplete) missing.push('前四看尚未全部完成');
+  return { status, completionPercent, missingRequirements: missing };
 }
 
 export async function loadOpportunities(userId: string, projectId: string): Promise<OpportunityCard[]> {

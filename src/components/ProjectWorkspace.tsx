@@ -11,6 +11,7 @@ import {
   Crosshair,
   UserCog,
   Sparkles,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
@@ -21,6 +22,7 @@ import { MarketLookView } from './MarketLookView';
 import { UserLookView } from './UserLookView';
 import { CompetitorLookView } from './CompetitorLookView';
 import { OpportunityLookView } from './OpportunityLookView';
+import { EditProjectModal } from './EditProjectModal';
 import { setActiveLook } from '../utils/projectStore';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
@@ -119,6 +121,7 @@ export function ProjectWorkspace({
   const [p, setP] = useState<ResearchProject>(project);
   const [tab, setTab] = useState<Tab>(project.activeLook);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [editOpen, setEditOpen] = useState(false);
 
   const applyProjectUpdate = (updated: ResearchProject) => {
     setP(updated);
@@ -188,7 +191,12 @@ export function ProjectWorkspace({
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="min-w-0">
-            <h2 className="text-2xl font-bold text-[#1d1d1f] truncate">{p.name}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-bold text-[#1d1d1f] truncate">{p.name}</h2>
+              <button type="button" onClick={() => setEditOpen(true)} title="编辑项目" className="shrink-0 w-7 h-7 rounded-lg hover:bg-[#f5f5f7] flex items-center justify-center text-[#aeaeb2] hover:text-indigo-600 transition-colors">
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </div>
             <p className="text-sm text-[#86868b] mt-0.5">{p.marketplace} · {p.objective || '未设置目标'}</p>
           </div>
         </div>
@@ -240,7 +248,7 @@ export function ProjectWorkspace({
 
       {/* 内容区 */}
       {tab === 'overview' ? (
-        <ProjectOverviewContent project={p} username={username} onNavigateLook={(look) => void switchToLook(look)} />
+        <ProjectOverviewContent project={p} username={username} userId={userId} onNavigateLook={(look) => void switchToLook(look)} />
       ) : tab === 'self' ? (
         <SelfAssessmentView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
       ) : tab === 'market' ? (
@@ -251,6 +259,17 @@ export function ProjectWorkspace({
         <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} />
       ) : (
         <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
+      )}
+      {editOpen && (
+        <EditProjectModal
+          userId={userId}
+          project={p}
+          onClose={() => setEditOpen(false)}
+          onSaved={(updated) => {
+            setEditOpen(false);
+            applyProjectUpdate(updated);
+          }}
+        />
       )}
     </div>
   );
