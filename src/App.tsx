@@ -34,6 +34,7 @@ import { ensureAdminMcpDefaults, loadFeatureFlags, type AppFeatureFlags } from '
 import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
+import type { MarketContext } from './utils/marketLook';
 import { LoginPage } from './components/LoginPage';
 import { ProjectCenter } from './components/ProjectCenter';
 import { AiSettingsPanel } from './components/AiSettingsPanel';
@@ -1221,6 +1222,15 @@ export default function App() {
     setLastYearKpiMonths(lastYear);
   }, []);
 
+  const marketContext = useMemo<MarketContext>(() => ({
+    loaded: isDataLoaded,
+    marketplace: marketplace.code,
+    sampleSize: products.length,
+    months,
+    sourceLabel: historySourceLabel,
+    isDemo: isDemoData,
+  }), [isDataLoaded, marketplace.code, products.length, months, historySourceLabel, isDemoData]);
+
   /** 侧栏「定位」：切到批注所在 Tab 并滚动、高亮锚点模块 */
   const jumpToAnnotation = useCallback((a: AnchorAnnotation) => {
     setActiveView(a.view);
@@ -1520,7 +1530,7 @@ export default function App() {
             </div>
           )}
           {activeView === 'projects' && (
-            <ProjectCenter userId={currentUser?.id ?? ''} username={currentUser?.username ?? ''} />
+            <ProjectCenter userId={currentUser?.id ?? ''} username={currentUser?.username ?? ''} marketContext={marketContext} />
           )}
           {!isDataLoaded && activeView === 'market' ? (
             <div className="h-full flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-700">

@@ -19,6 +19,7 @@ import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { Select } from './ui/Select';
 import { ProjectWorkspace } from './ProjectWorkspace';
+import type { MarketContext } from '../utils/marketLook';
 import {
   archiveProject,
   createProject,
@@ -93,9 +94,10 @@ function marketplaceLabel(code: string): string {
 interface ProjectCenterProps {
   userId: string;
   username: string;
+  marketContext: MarketContext;
 }
 
-export function ProjectCenter({ userId, username }: ProjectCenterProps) {
+export function ProjectCenter({ userId, username, marketContext }: ProjectCenterProps) {
   const [projects, setProjects] = useState<ResearchProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState('');
@@ -142,6 +144,7 @@ export function ProjectCenter({ userId, username }: ProjectCenterProps) {
         userId={userId}
         project={opened}
         username={username}
+        marketContext={marketContext}
         onBack={() => {
           setOpened(null);
           void refresh();

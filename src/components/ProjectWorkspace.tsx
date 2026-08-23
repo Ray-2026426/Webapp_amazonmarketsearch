@@ -17,7 +17,9 @@ import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { ProjectOverviewContent } from './ProjectOverview';
 import { SelfAssessmentView } from './SelfAssessmentView';
+import { MarketLookView } from './MarketLookView';
 import { setActiveLook } from '../utils/projectStore';
+import type { MarketContext } from '../utils/marketLook';
 import {
   FIVE_LOOK_LABELS,
   FIVE_LOOKS,
@@ -92,12 +94,14 @@ export function ProjectWorkspace({
   userId,
   project,
   username,
+  marketContext,
   onBack,
   onProjectChange,
 }: {
   userId: string;
   project: ResearchProject;
   username: string;
+  marketContext: MarketContext;
   onBack: () => void;
   onProjectChange: (updated: ResearchProject) => void;
 }) {
@@ -200,6 +204,8 @@ export function ProjectWorkspace({
         <ProjectOverviewContent project={p} username={username} onNavigateLook={(look) => void switchToLook(look)} />
       ) : tab === 'self' ? (
         <SelfAssessmentView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
+      ) : tab === 'market' ? (
+        <MarketLookView userId={userId} project={p} marketContext={marketContext} onProjectChange={applyProjectUpdate} />
       ) : (
         <LookWorkspacePlaceholder project={p} look={tab as FiveLookId} />
       )}
