@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, FolderKanban, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer, CheckSquare, Crosshair } from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, FolderKanban, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer, CheckSquare, Crosshair } from 'lucide-react';
 import { MetricCard } from './components/MetricCard';
 import { MarketTrendChart } from './components/MarketTrendChart';
 import { PriceDistributionChart } from './components/PriceDistributionChart';
@@ -35,10 +35,12 @@ import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
 import type { MarketContext } from './utils/marketLook';
+import type { ResearchProject } from './types/researchProject';
 import type { UserContext } from './utils/userLook';
 import type { CompetitorContext } from './utils/competitorLook';
 import { LoginPage } from './components/LoginPage';
 import { ProjectCenter } from './components/ProjectCenter';
+import { ProjectWorkspace } from './components/ProjectWorkspace';
 import { AiSettingsPanel } from './components/AiSettingsPanel';
 import { savePromptItem, resetPromptToDefault } from './components/AiPromptManager';
 import { OpportunityScanner } from './components/OpportunityScanner';
@@ -140,6 +142,7 @@ export default function App() {
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
   const [isAvatarSettingsOpen, setIsAvatarSettingsOpen] = useState(false);
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
+  const [activeProject, setActiveProject] = useState<ResearchProject | null>(null);
 
   // 每次进入应用：保证四家内置数据源结构齐全（Key 由管理员在设置页配置并持久化）
   useEffect(() => {
@@ -1326,48 +1329,13 @@ export default function App() {
         </div>
         <nav className="flex-1 p-4 space-y-1">
           <button 
-            onClick={() => setActiveView('projects')}
+            onClick={() => { setActiveProject(null); setActiveView('projects'); }}
             className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'projects' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
           >
             <FolderKanban className="w-5 h-5" />
             <span>项目中心</span>
           </button>
-          <button 
-            onClick={() => setActiveView('market')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'market' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <LayoutDashboard className="w-5 h-5" />
-            <span>市场大盘</span>
-          </button>
-          <button 
-            onClick={() => setActiveView('competitors')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'competitors' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <Crosshair className="w-5 h-5" />
-            <span>竞品分析</span>
-          </button>
-          <button 
-            onClick={() => setActiveView('insights')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'insights' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <Users className="w-5 h-5" />
-            <span>用户洞察</span>
-          </button>
-          <button 
-            onClick={() => setActiveView('keywords')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'keywords' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <TrendingUp className="w-5 h-5" />
-            <span>关键词分析</span>
-          </button>
-          <button 
-            onClick={() => setActiveView('profit')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'profit' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <Calculator className="w-5 h-5" />
-            <span>利润计算器</span>
-          </button>
-        </nav>
+</nav>
         <div className="p-4 border-t border-black/5 space-y-2">
           {isRegisteredUser && (
             <div className="flex items-stretch gap-1.5 px-2">
@@ -1439,6 +1407,16 @@ export default function App() {
         {/* Header */}
         <header className="bg-white/80 backdrop-blur-md border-b border-black/5 px-8 py-4 flex items-center justify-between z-10 sticky top-0">
           <div className="flex items-center space-x-4">
+            {activeProject && activeView !== 'projects' && (
+              <button
+                type="button"
+                onClick={() => setActiveView('projects')}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-all"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                返回项目
+              </button>
+            )}
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight text-[#1d1d1f]">
                 {activeView === 'projects' ? '项目中心' : activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品分析' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
@@ -1545,9 +1523,21 @@ export default function App() {
               </div>
             </div>
           )}
-          {activeView === 'projects' && (
-            <ProjectCenter userId={currentUser?.id ?? ''} username={currentUser?.username ?? ''} marketContext={marketContext} userContext={userContext} competitorContext={competitorContext} />
-          )}
+          {activeView === 'projects' && (activeProject ? (
+            <ProjectWorkspace
+              userId={currentUser?.id ?? ''}
+              project={activeProject}
+              username={currentUser?.username ?? ''}
+              marketContext={marketContext}
+              userContext={userContext}
+              competitorContext={competitorContext}
+              onBack={() => setActiveProject(null)}
+              onOpenTool={(view) => setActiveView(view)}
+              onProjectChange={(updated) => setActiveProject(updated)}
+            />
+          ) : (
+            <ProjectCenter userId={currentUser?.id ?? ''} username={currentUser?.username ?? ''} marketContext={marketContext} userContext={userContext} competitorContext={competitorContext} onOpenProject={setActiveProject} />
+          ))}
           {!isDataLoaded && activeView === 'market' ? (
             <div className="h-full flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-700">
               <div className="text-center space-y-2">

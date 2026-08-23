@@ -103,6 +103,7 @@ export function ProjectWorkspace({
   userContext,
   competitorContext,
   onBack,
+  onOpenTool,
   onProjectChange,
 }: {
   userId: string;
@@ -112,6 +113,7 @@ export function ProjectWorkspace({
   userContext: UserContext;
   competitorContext: CompetitorContext;
   onBack: () => void;
+  onOpenTool: (view: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit') => void;
   onProjectChange: (updated: ResearchProject) => void;
 }) {
   const [p, setP] = useState<ResearchProject>(project);
@@ -158,6 +160,17 @@ export function ProjectWorkspace({
   };
 
   const activeStatus = tab === 'overview' ? null : p.fiveLookProgress[tab as FiveLookId].status;
+
+  const toolButtons: { label: string; view: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit' }[] =
+    tab === 'market'
+      ? [{ label: '打开市场大盘工具', view: 'market' }]
+      : tab === 'user'
+        ? [{ label: '打开关键词工具', view: 'keywords' }, { label: '打开评论 / VOC 工具', view: 'insights' }]
+        : tab === 'competitor'
+          ? [{ label: '打开竞品对比工具', view: 'competitors' }]
+          : tab === 'self'
+            ? [{ label: '打开利润计算器', view: 'profit' }]
+            : [];
   const hint = SAVE_HINT[saveState];
   const HintIcon = hint.icon;
 
@@ -188,6 +201,23 @@ export function ProjectWorkspace({
           {hint.text}
         </button>
       </div>
+
+      {/* 打开对应的分析工具（工具仍在全局工作区，通过项目入口进入） */}
+      {toolButtons.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {toolButtons.map((b) => (
+            <button
+              key={b.view}
+              type="button"
+              onClick={() => onOpenTool(b.view)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-all active:scale-[0.98]"
+            >
+              <Wrench className="w-3.5 h-3.5" />
+              {b.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 非线性五看 Tab（任意顺序进入） */}
       <div className="flex flex-wrap items-center gap-1.5 mb-5 border-b border-black/5 pb-3">

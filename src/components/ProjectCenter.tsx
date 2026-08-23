@@ -18,7 +18,6 @@ import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { Select } from './ui/Select';
-import { ProjectWorkspace } from './ProjectWorkspace';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
 import type { CompetitorContext } from '../utils/competitorLook';
@@ -99,9 +98,10 @@ interface ProjectCenterProps {
   marketContext: MarketContext;
   userContext: UserContext;
   competitorContext: CompetitorContext;
+  onOpenProject: (project: ResearchProject) => void;
 }
 
-export function ProjectCenter({ userId, username, marketContext, userContext, competitorContext }: ProjectCenterProps) {
+export function ProjectCenter({ userId, username, marketContext, userContext, competitorContext, onOpenProject }: ProjectCenterProps) {
   const [projects, setProjects] = useState<ResearchProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState('');
@@ -109,7 +109,6 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   const [status, setStatus] = useState('active');
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ResearchProject | null>(null);
-  const [opened, setOpened] = useState<ResearchProject | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -141,27 +140,6 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
     }
     return counts;
   }, [projects]);
-
-  if (opened) {
-    return (
-      <ProjectWorkspace
-        userId={userId}
-        project={opened}
-        username={username}
-        marketContext={marketContext}
-        userContext={userContext}
-        competitorContext={competitorContext}
-        onBack={() => {
-          setOpened(null);
-          void refresh();
-        }}
-        onProjectChange={(updated) => {
-          setOpened(updated);
-          setProjects((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
-        }}
-      />
-    );
-  }
 
   return (
     <div className="max-w-6xl mx-auto w-full">
@@ -240,7 +218,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
               key={p.id}
               project={p}
               username={username}
-              onOpen={() => setOpened(p)}
+              onOpen={() => onOpenProject(p)}
               onDuplicate={() => handleDuplicate(p)}
               onArchive={() => handleArchive(p)}
               onDelete={() => setDeleteTarget(p)}
@@ -270,10 +248,9 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
           userId={userId}
           username={username}
           onClose={() => setCreateOpen(false)}
-          onCreated={async (p) => {
+          onCreated={(p) => {
             setCreateOpen(false);
-            await refresh();
-            setOpened(p);
+            onOpenProject(p);
           }}
         />
       )}
