@@ -22,7 +22,7 @@ import {
 } from '../utils/opportunityStore';
 import { loadUserLook, type UserLookData, type UnmetNeedCandidate } from '../utils/userLook';
 import { loadSelfAssessment, type SelfAssessment } from '../utils/selfAssessment';
-import { updateLookProgress } from '../utils/projectStore';
+import { updateLookProgress, setProjectStatus } from '../utils/projectStore';
 import {
   FIVE_LOOK_LABELS,
   LOOK_STATUS_LABELS,
@@ -187,7 +187,7 @@ export function OpportunityLookView({
             </p>
           </div>
         </div>
-        <SubmitReview project={project} />
+        <SubmitReview userId={userId} project={project} cards={cards} onProjectChange={onProjectChange} />
       </div>
 
       {/* 从未满足需求生成 */}
@@ -252,27 +252,46 @@ export function OpportunityLookView({
   );
 }
 
-function SubmitReview({ project }: { project: ResearchProject }) {
+function SubmitReview({ userId, project, cards, onProjectChange }: { userId: string; project: ResearchProject; cards: OpportunityCard[]; onProjectChange: (u: ResearchProject) => void }) {
   const fourLooks = ['market', 'user', 'competitor', 'self'] as const;
   const allDone = fourLooks.every((l) => project.fiveLookProgress[l].status === 'completed');
   const doneCount = fourLooks.filter((l) => project.fiveLookProgress[l].status === 'completed').length;
+  const decidedCount = cards.filter((c) => c.decision !== 'undecided').length;
+  const canSubmit = allDone && decidedCount > 0;
+  const submitted = project.status === 'ready_for_review';
+  const submit = async () => {
+    if (!canSubmit) return;
+    const updated = await setProjectStatus(userId, project.id, 'ready_for_review');
+    if (updated) {
+      onProjectChange(updated);
+      toast.success('已提交评审');
+    } else {
+      toast.error('提交失败');
+    }
+  };
   return (
     <div className="flex flex-col items-end gap-1 shrink-0">
-      <button
-        type="button"
-        disabled={!allDone}
-        onClick={() => toast.info('已具备提交条件（评审与决策流将在 Phase 2 完善）')}
-        className={cn(
-          'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all',
-          allDone
-            ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white border-transparent hover:from-indigo-600 hover:to-violet-600 active:scale-[0.98]'
-            : 'bg-white text-[#aeaeb2] border-black/8 cursor-not-allowed'
-        )}
-      >
-        <ClipboardCheck className="w-3.5 h-3.5" />
-        提交评审
-      </button>
-      <span className="text-[11px] text-[#aeaeb2]">前四看完成 {doneCount}/4</span>
+      {submitted ? (
+        <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+          <CheckCircle2 className="w-3.5 h-3.5" /> 已提交评审
+        </span>
+      ) : (
+        <button
+          type="button"
+          disabled={!canSubmit}
+          onClick={submit}
+          className={cn(
+            'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all',
+            canSubmit
+              ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white border-transparent hover:from-indigo-600 hover:to-violet-600 active:scale-[0.98]'
+              : 'bg-white text-[#aeaeb2] border-black/8 cursor-not-allowed'
+          )}
+        >
+          <ClipboardCheck className="w-3.5 h-3.5" />
+          提交评审
+        </button>
+      )}
+      <span className="text-[11px] text-[#aeaeb2]">前四看 {doneCount}/4 · 已决策 {decidedCount}</span>
     </div>
   );
 }
