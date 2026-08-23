@@ -12,7 +12,7 @@ import {
   type SelfAssessment,
   type SelfStatus,
 } from '../utils/selfAssessment';
-import { updateProject } from '../utils/projectStore';
+import { updateLookProgress } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
 
 const STATUS_ORDER: SelfStatus[] = ['have', 'partial', 'lack', 'unknown'];
@@ -55,17 +55,13 @@ export function SelfAssessmentView({
       try {
         await saveSelfAssessment(userId, project.id, a);
         const progress = computeSelfProgress(a);
-        const nextProgress = {
-          ...project.fiveLookProgress,
-          self: {
-            ...project.fiveLookProgress.self,
-            status: progress.status,
-            completionPercent: progress.completionPercent,
-            missingRequirements: progress.missingRequirements,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-        const updated = await updateProject(userId, project.id, { fiveLookProgress: nextProgress });
+        const updated = await updateLookProgress(userId, project.id, 'self', {
+          ...project.fiveLookProgress.self,
+          status: progress.status,
+          completionPercent: progress.completionPercent,
+          missingRequirements: progress.missingRequirements,
+          updatedAt: new Date().toISOString(),
+        });
         if (updated) onProjectChange(updated);
         setSaveState('saved');
       } catch {

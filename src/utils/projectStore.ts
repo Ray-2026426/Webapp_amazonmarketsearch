@@ -1,4 +1,4 @@
-﻿// 项目持久化层（本地版，IndexedDB via idb-keyval）
+// 项目持久化层（本地版，IndexedDB via idb-keyval）
 // - 数据按登录用户分区，避免多人共用浏览器时项目串号。
 // - 项目是 Phase 1 的一等公民：五看、机会卡、报告都挂在 projectId 下。
 // - 旧数据迁移在本文件内以 normalize + migrate 形式集中处理，不散落在业务页面。
@@ -239,6 +239,28 @@ export async function setActiveLook(
   return updateProject(userId, projectId, { activeLook });
 }
 
+/** 原子更新单个视角进度，避免用陈旧五看快照覆盖其它视角。 */
+export async function updateLookProgress(
+  userId: string,
+  projectId: string,
+  look: FiveLookId,
+  progress: FiveLookProgress
+): Promise<ResearchProject | null> {
+  const list = await loadProjects(userId);
+  const idx = list.findIndex((p) => p.id === projectId);
+  if (idx < 0) return null;
+  const prev = list[idx];
+  const next: ResearchProject = {
+    ...prev,
+    fiveLookProgress: { ...prev.fiveLookProgress, [look]: progress },
+    updatedAt: nowIso(),
+    version: prev.version + 1,
+  };
+  list[idx] = next;
+  await persistProjects(userId, list);
+  return next;
+}
+
 export async function archiveProject(
   userId: string,
   projectId: string
@@ -276,11 +298,23 @@ export async function duplicateProject(
   return copy;
 }
 
+const LOOK_DATA_KEY_PREFIXES = [
+  'amzdev_self:',
+  'amzdev_market:',
+  'amzdev_user:',
+  'amzdev_competitor:',
+];
+
+async function clearLookData(userId: string, projectId: string): Promise<void> {
+  await Promise.all(LOOK_DATA_KEY_PREFIXES.map((prefix) => del(`${prefix}${userId}:${projectId}`)));
+}
+
 export async function deleteProject(userId: string, projectId: string): Promise<boolean> {
   const list = await loadProjects(userId);
   const next = list.filter((p) => p.id !== projectId);
   if (next.length === list.length) return false;
   await persistProjects(userId, next);
+  await clearLookData(userId, projectId);
   return true;
 }
 

@@ -22,7 +22,7 @@ import {
   type MarketEvidence,
   type MarketLookData,
 } from '../utils/marketLook';
-import { updateProject } from '../utils/projectStore';
+import { updateLookProgress } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -66,17 +66,13 @@ export function MarketLookView({
       try {
         await saveMarketLook(userId, project.id, d);
         const progress = computeMarketProgress(d);
-        const nextProgress = {
-          ...project.fiveLookProgress,
-          market: {
-            ...project.fiveLookProgress.market,
-            status: progress.status,
-            completionPercent: progress.completionPercent,
-            missingRequirements: progress.missingRequirements,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-        const updated = await updateProject(userId, project.id, { fiveLookProgress: nextProgress });
+        const updated = await updateLookProgress(userId, project.id, 'market', {
+          ...project.fiveLookProgress.market,
+          status: progress.status,
+          completionPercent: progress.completionPercent,
+          missingRequirements: progress.missingRequirements,
+          updatedAt: new Date().toISOString(),
+        });
         if (updated) onProjectChange(updated);
         setSaveState('saved');
       } catch {

@@ -20,7 +20,7 @@ import {
   type CompetitorEvidence,
   type CompetitorLookData,
 } from '../utils/competitorLook';
-import { updateProject } from '../utils/projectStore';
+import { updateLookProgress } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -56,17 +56,13 @@ export function CompetitorLookView({
       try {
         await saveCompetitorLook(userId, project.id, d);
         const progress = computeCompetitorProgress(d);
-        const nextProgress = {
-          ...project.fiveLookProgress,
-          competitor: {
-            ...project.fiveLookProgress.competitor,
-            status: progress.status,
-            completionPercent: progress.completionPercent,
-            missingRequirements: progress.missingRequirements,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-        const updated = await updateProject(userId, project.id, { fiveLookProgress: nextProgress });
+        const updated = await updateLookProgress(userId, project.id, 'competitor', {
+          ...project.fiveLookProgress.competitor,
+          status: progress.status,
+          completionPercent: progress.completionPercent,
+          missingRequirements: progress.missingRequirements,
+          updatedAt: new Date().toISOString(),
+        });
         if (updated) onProjectChange(updated);
         setSaveState('saved');
       } catch {
