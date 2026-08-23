@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { ProjectOverviewContent } from './ProjectOverview';
+import { SelfAssessmentView } from './SelfAssessmentView';
 import { setActiveLook } from '../utils/projectStore';
 import {
   FIVE_LOOK_LABELS,
@@ -104,6 +105,11 @@ export function ProjectWorkspace({
   const [tab, setTab] = useState<Tab>(project.activeLook);
   const [saveState, setSaveState] = useState<SaveState>('idle');
 
+  const applyProjectUpdate = (updated: ResearchProject) => {
+    setP(updated);
+    onProjectChange(updated);
+  };
+
   const switchToLook = async (look: FiveLookId) => {
     setTab(look);
     if (p.activeLook === look) return;
@@ -111,8 +117,7 @@ export function ProjectWorkspace({
     try {
       const updated = await setActiveLook(userId, p.id, look);
       if (updated) {
-        setP(updated);
-        onProjectChange(updated);
+        applyProjectUpdate(updated);
         setSaveState('saved');
       } else {
         setSaveState('error');
@@ -129,8 +134,7 @@ export function ProjectWorkspace({
     try {
       const updated = await setActiveLook(userId, p.id, tab as FiveLookId);
       if (updated) {
-        setP(updated);
-        onProjectChange(updated);
+        applyProjectUpdate(updated);
         setSaveState('saved');
       } else {
         setSaveState('error');
@@ -194,6 +198,8 @@ export function ProjectWorkspace({
       {/* 内容区 */}
       {tab === 'overview' ? (
         <ProjectOverviewContent project={p} username={username} onNavigateLook={(look) => void switchToLook(look)} />
+      ) : tab === 'self' ? (
+        <SelfAssessmentView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
       ) : (
         <LookWorkspacePlaceholder project={p} look={tab as FiveLookId} />
       )}
