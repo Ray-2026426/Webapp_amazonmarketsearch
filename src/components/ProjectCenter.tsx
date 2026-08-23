@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Plus,
   Search,
@@ -18,7 +18,7 @@ import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { Select } from './ui/Select';
-import { ProjectOverview } from './ProjectOverview';
+import { ProjectWorkspace } from './ProjectWorkspace';
 import {
   archiveProject,
   createProject,
@@ -137,7 +137,21 @@ export function ProjectCenter({ userId, username }: ProjectCenterProps) {
   }, [projects]);
 
   if (opened) {
-    return <ProjectOverview project={opened} username={username} onBack={() => setOpened(null)} />;
+    return (
+      <ProjectWorkspace
+        userId={userId}
+        project={opened}
+        username={username}
+        onBack={() => {
+          setOpened(null);
+          void refresh();
+        }}
+        onProjectChange={(updated) => {
+          setOpened(updated);
+          setProjects((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+        }}
+      />
+    );
   }
 
   return (

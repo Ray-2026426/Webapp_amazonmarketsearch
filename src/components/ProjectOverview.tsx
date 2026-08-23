@@ -1,4 +1,4 @@
-﻿import { ArrowLeft, Globe, Target, User, Clock, Sparkles, ArrowRight, FileText } from 'lucide-react';
+﻿import { Globe, Target, User, Clock, Sparkles, ArrowRight } from 'lucide-react';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import {
@@ -59,54 +59,41 @@ function recommendNextLook(project: ResearchProject): { look: FiveLookId; reason
   return null;
 }
 
-export function ProjectOverview({
+export function ProjectOverviewContent({
   project,
   username,
-  onBack,
+  onNavigateLook,
 }: {
   project: ResearchProject;
   username: string;
-  onBack: () => void;
+  onNavigateLook: (look: FiveLookId) => void;
 }) {
   const next = recommendNextLook(project);
 
   return (
-    <div className="max-w-6xl mx-auto w-full">
-      <button
-        type="button"
-        onClick={onBack}
-        className="inline-flex items-center gap-1.5 text-sm text-[#86868b] hover:text-indigo-600 transition-colors mb-4"
-      >
-        <ArrowLeft className="w-4 h-4" /> 返回项目中心
-      </button>
-
-      {/* 项目头 */}
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold text-[#1d1d1f]">{project.name}</h2>
-            <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold border bg-indigo-50 text-indigo-700 border-indigo-100">
-              {STATUS_LABELS[project.status]}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-[#86868b]">
-            <span className="inline-flex items-center gap-1"><Globe className="w-3.5 h-3.5" /> {project.marketplace}</span>
-            <span className="inline-flex items-center gap-1"><Target className="w-3.5 h-3.5" /> {project.objective || '未设置目标'}</span>
-            <span className="inline-flex items-center gap-1"><User className="w-3.5 h-3.5" /> {username}</span>
-            <span className="inline-flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> 更新于 {formatDate(project.updatedAt)}</span>
-          </div>
-        </div>
+    <div className="space-y-5">
+      {/* 项目头元信息 */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#86868b]">
+        <span className="inline-flex items-center gap-1"><Globe className="w-3.5 h-3.5" /> {project.marketplace}</span>
+        <span className="inline-flex items-center gap-1"><Target className="w-3.5 h-3.5" /> {project.objective || '未设置目标'}</span>
+        <span className="inline-flex items-center gap-1"><User className="w-3.5 h-3.5" /> {username}</span>
+        <span className="inline-flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> 更新于 {formatDate(project.updatedAt)}</span>
       </div>
 
       {/* 五看进度 */}
-      <Card className="mb-5">
+      <Card>
         <div className="p-5">
           <p className="text-sm font-semibold text-[#1d1d1f] mb-4">五看进度</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {FIVE_LOOKS.map((look) => {
               const p = project.fiveLookProgress[look];
               return (
-                <div key={look} className="rounded-2xl border border-black/5 bg-[#fafafa] p-4">
+                <button
+                  key={look}
+                  type="button"
+                  onClick={() => onNavigateLook(look)}
+                  className="rounded-2xl border border-black/5 bg-[#fafafa] p-4 text-left hover:border-indigo-200 hover:bg-indigo-50/40 transition-all"
+                >
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-semibold text-[#1d1d1f]">{FIVE_LOOK_LABELS[look]}</span>
                     <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold border', LOOK_STATUS_BADGE[p.status])}>
@@ -124,7 +111,7 @@ export function ProjectOverview({
                       ))}
                     </ul>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -133,20 +120,22 @@ export function ProjectOverview({
 
       {/* 推荐下一步 */}
       {next && (
-        <Card className="mb-5 border-indigo-100 bg-gradient-to-r from-indigo-50/60 to-violet-50/60">
-          <div className="p-5 flex items-center gap-3">
-            <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center border border-indigo-100 shrink-0">
-              <Sparkles className="w-4 h-4 text-indigo-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-[#1d1d1f]">推荐下一步：{FIVE_LOOK_LABELS[next.look]}</p>
-              <p className="text-xs text-[#86868b] mt-0.5">{next.reason}</p>
-            </div>
-            <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 shrink-0">
-              进入 <ArrowRight className="w-3.5 h-3.5" />
-            </span>
+        <button
+          type="button"
+          onClick={() => onNavigateLook(next.look)}
+          className="w-full rounded-[20px] border border-indigo-100 bg-gradient-to-r from-indigo-50/60 to-violet-50/60 p-5 flex items-center gap-3 text-left hover:from-indigo-50 hover:to-violet-50 transition-all"
+        >
+          <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center border border-indigo-100 shrink-0">
+            <Sparkles className="w-4 h-4 text-indigo-600" />
           </div>
-        </Card>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f]">推荐下一步：{FIVE_LOOK_LABELS[next.look]}</p>
+            <p className="text-xs text-[#86868b] mt-0.5">{next.reason}</p>
+          </div>
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 shrink-0">
+            进入 <ArrowRight className="w-3.5 h-3.5" />
+          </span>
+        </button>
       )}
 
       {/* 项目说明 / 种子信息 */}
@@ -182,14 +171,6 @@ export function ProjectOverview({
           </div>
         </Card>
       )}
-
-      {/* 工作台占位（M2 接入） */}
-      <Card className="mt-5 border-dashed">
-        <div className="p-6 text-center">
-          <FileText className="w-5 h-5 text-[#c7c7cc] mx-auto mb-2" />
-          <p className="text-sm text-[#86868b]">五看工作台骨架（非线性进入各视角）将在 Phase 1 M2 接入，当前先以项目概览呈现进度。</p>
-        </div>
-      </Card>
     </div>
   );
 }
