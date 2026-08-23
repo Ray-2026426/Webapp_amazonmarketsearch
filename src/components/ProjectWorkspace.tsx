@@ -12,6 +12,7 @@ import {
   UserCog,
   Sparkles,
   Pencil,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
@@ -23,6 +24,7 @@ import { UserLookView } from './UserLookView';
 import { CompetitorLookView } from './CompetitorLookView';
 import { OpportunityLookView } from './OpportunityLookView';
 import { EditProjectModal } from './EditProjectModal';
+import { ReportsView } from './ReportsView';
 import { setActiveLook } from '../utils/projectStore';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
@@ -36,7 +38,7 @@ import {
   type ResearchProject,
 } from '../types/researchProject';
 
-type Tab = 'overview' | FiveLookId;
+type Tab = 'overview' | FiveLookId | 'reports';
 
 const LOOK_ICONS: Record<FiveLookId, typeof Target> = {
   market: Target,
@@ -244,6 +246,7 @@ export function ProjectWorkspace({
             />
           );
         })}
+        <TabButton active={tab === 'reports'} onClick={() => setTab('reports')} label="报告" icon={<FileText className="w-3.5 h-3.5" />} />
       </div>
 
       {/* 内容区 */}
@@ -257,8 +260,10 @@ export function ProjectWorkspace({
         <UserLookView userId={userId} project={p} userContext={userContext} onProjectChange={applyProjectUpdate} />
       ) : tab === 'competitor' ? (
         <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} />
-      ) : (
+      ) : tab === 'opportunity' ? (
         <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
+      ) : (
+        <ReportsView userId={userId} project={p} />
       )}
       {editOpen && (
         <EditProjectModal
