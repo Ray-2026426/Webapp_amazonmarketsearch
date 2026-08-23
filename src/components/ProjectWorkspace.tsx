@@ -20,6 +20,7 @@ import { SelfAssessmentView } from './SelfAssessmentView';
 import { MarketLookView } from './MarketLookView';
 import { UserLookView } from './UserLookView';
 import { CompetitorLookView } from './CompetitorLookView';
+import { OpportunityLookView } from './OpportunityLookView';
 import { setActiveLook } from '../utils/projectStore';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
@@ -219,7 +220,7 @@ export function ProjectWorkspace({
       ) : tab === 'competitor' ? (
         <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} />
       ) : (
-        <LookWorkspacePlaceholder project={p} look={tab as FiveLookId} />
+        <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
       )}
     </div>
   );
