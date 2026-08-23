@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer, CheckSquare, Crosshair } from 'lucide-react';
+import { BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, FolderKanban, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer, CheckSquare, Crosshair } from 'lucide-react';
 import { MetricCard } from './components/MetricCard';
 import { MarketTrendChart } from './components/MarketTrendChart';
 import { PriceDistributionChart } from './components/PriceDistributionChart';
@@ -35,6 +35,7 @@ import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
 import { LoginPage } from './components/LoginPage';
+import { ProjectCenter } from './components/ProjectCenter';
 import { AiSettingsPanel } from './components/AiSettingsPanel';
 import { savePromptItem, resetPromptToDefault } from './components/AiPromptManager';
 import { OpportunityScanner } from './components/OpportunityScanner';
@@ -212,7 +213,7 @@ export default function App() {
     setIsSegmentationOpen(false);
   }, []);
 
-  const [activeView, setActiveView] = useState<'market' | 'competitors' | 'insights' | 'keywords' | 'profit'>('market');
+  const [activeView, setActiveView] = useState<'projects' | 'market' | 'competitors' | 'insights' | 'keywords' | 'profit'>('projects');
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isReportHidden, setIsReportHidden] = useState(false);
   const [isMarketHistoryOpen, setIsMarketHistoryOpen] = useState(false);
@@ -1299,6 +1300,13 @@ export default function App() {
         </div>
         <nav className="flex-1 p-4 space-y-1">
           <button 
+            onClick={() => setActiveView('projects')}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'projects' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+          >
+            <FolderKanban className="w-5 h-5" />
+            <span>项目中心</span>
+          </button>
+          <button 
             onClick={() => setActiveView('market')}
             className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'market' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
           >
@@ -1407,10 +1415,12 @@ export default function App() {
           <div className="flex items-center space-x-4">
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight text-[#1d1d1f]">
-                {activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品分析' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
+                {activeView === 'projects' ? '项目中心' : activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品分析' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
               </h1>
               <p className="text-[15px] text-[#86868b] mt-1">
-                {activeView === 'market' 
+                {activeView === 'projects'
+                  ? '创建并继续市调项目，跟踪五看进度与下一步。'
+                  : activeView === 'market' 
                   ? '分析市场趋势、竞争对手及产品机会。' 
                   : activeView === 'competitors'
                   ? '选定竞品 ASIN，从 Listing、流量、产品矩阵三视角全盘对比。'
@@ -1430,6 +1440,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3 shrink-0" data-print-hidden>
+            {activeView !== 'projects' && (
             <button
               type="button"
               onClick={handleExportPdf}
@@ -1438,6 +1449,7 @@ export default function App() {
               <Printer className="w-4 h-4 text-indigo-600" />
               存为 PDF
             </button>
+            )}
             {activeView === 'market' && isDataLoaded && (
             <div className="flex items-center space-x-4">
               {/* Market Segmentation Button */}
@@ -1506,6 +1518,9 @@ export default function App() {
                 </button>
               </div>
             </div>
+          )}
+          {activeView === 'projects' && (
+            <ProjectCenter userId={currentUser?.id ?? ''} username={currentUser?.username ?? ''} />
           )}
           {!isDataLoaded && activeView === 'market' ? (
             <div className="h-full flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-700">

@@ -54,7 +54,7 @@ export interface MarketHistorySnapshot {
   keywords: Keyword[];
   keywordInsight?: AiInsight | null;
   marketReportCache: { fingerprint: string; body: string } | null;
-  activeView: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit';
+  activeView: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit' | 'projects';
   /** 上传「历史表现」文件时的文件名（无扩展名），用于默认命名 US-xxx */
   historySourceLabel?: string;
   /** 锚点批注（旧快照可能无此字段） */

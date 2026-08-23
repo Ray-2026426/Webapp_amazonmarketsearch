@@ -1,5 +1,5 @@
 /** 与 App 里的 activeView 对齐 */
-export type AnnotationView = 'market' | 'competitors' | 'insights' | 'keywords' | 'profit';
+export type AnnotationView = 'market' | 'competitors' | 'insights' | 'keywords' | 'profit' | 'projects';
 
 /** 锚点批注结构：在某个锚点区域内按相对坐标记录 */
 export interface AnchorAnnotation {
