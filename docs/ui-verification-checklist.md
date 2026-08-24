@@ -32,10 +32,11 @@
 - [ ] 空态：灰字居中 + 一句可行动提示
 - [ ] 无乱码、无 Markdown 源码泄漏、表格不破裂、文字不遮挡
 
-## 4. 已知待清理（低优先级，非功能性）
+## 4. 已清理项
 
-- `MarkdownReport.tsx` 外层仍有 `prose prose-sm` 死类（组件内已用显式样式覆盖，无功能影响，但不符合「禁用 prose」约定）
-- `MarketAnalysisReport.tsx` 仍直接 import `react-markdown`（应逐步改为走 `MarkdownReport`）
+- [x] `MarkdownReport.tsx` 已移除 `prose prose-sm` 死类。
+- [x] `MarketAnalysisReport.tsx` 已统一使用 `MarkdownReport`。
+- [x] 来源视角数据更新后，已有机会结论会自动标记为「需复核」。
 
 ## 5. 自动化测试
 

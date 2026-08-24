@@ -6,7 +6,7 @@ import { computeMarketProgress } from '../src/utils/marketLook';
 import { computeUserProgress } from '../src/utils/userLook';
 import { computeCompetitorProgress } from '../src/utils/competitorLook';
 import { computeOpportunityProgress, scoreOpportunity } from '../src/utils/opportunityStore';
-import { migrateProject } from '../src/utils/projectStore';
+import { applyLookProgressUpdate, migrateProject } from '../src/utils/projectStore';
 import { reportReuseKey, reuseKeyOf, decideReportSave, type ProjectReport } from '../src/utils/reportStore';
 import type { FiveLookProgress, ResearchProject } from '../src/types/researchProject';
 
@@ -183,6 +183,39 @@ test('migrateProject: 缺失部分五看自动补齐', () => {
   assert.ok(p);
   assert.equal(p!.fiveLookProgress.market.status, 'completed');
   assert.equal(p!.fiveLookProgress.user.status, 'not_started');
+});
+
+test('applyLookProgressUpdate: 来源数据更新后机会变为需复核', () => {
+  const done = makeProgress('completed', 100);
+  const project = makeProject({ market: done, opportunity: done });
+  const result = applyLookProgressUpdate(project, 'market', {
+    ...done,
+    look: 'market',
+    staleReasons: ['旧原因应从当前视角清除'],
+  });
+  assert.equal(result.fiveLookProgress.market.status, 'completed');
+  assert.deepEqual(result.fiveLookProgress.market.staleReasons, []);
+  assert.equal(result.fiveLookProgress.opportunity.status, 'stale');
+  assert.equal(result.fiveLookProgress.opportunity.staleReasons.length, 1);
+});
+
+test('applyLookProgressUpdate: 待评审项目在来源变化后退回研究中', () => {
+  const done = makeProgress('completed', 100);
+  const project = makeProject({ user: done, opportunity: done });
+  project.status = 'ready_for_review';
+  const result = applyLookProgressUpdate(project, 'user', { ...done, look: 'user' });
+  assert.equal(result.status, 'researching');
+  assert.equal(result.fiveLookProgress.opportunity.status, 'stale');
+});
+
+test('applyLookProgressUpdate: 未开始的机会不会被无意义标记为需复核', () => {
+  const project = makeProject();
+  const result = applyLookProgressUpdate(project, 'self', {
+    ...makeProgress('in_progress', 50),
+    look: 'self',
+  });
+  assert.equal(result.fiveLookProgress.opportunity.status, 'not_started');
+  assert.deepEqual(result.fiveLookProgress.opportunity.staleReasons, []);
 });
 
 

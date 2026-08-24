@@ -6,6 +6,7 @@
 import { get, set, del } from 'idb-keyval';
 import {
   FIVE_LOOKS,
+  FIVE_LOOK_LABELS,
   type CreateProjectInput,
   type FiveLookId,
   type FiveLookProgress,
@@ -250,15 +251,49 @@ export async function updateLookProgress(
   const idx = list.findIndex((p) => p.id === projectId);
   if (idx < 0) return null;
   const prev = list[idx];
+  const progressUpdate = applyLookProgressUpdate(prev, look, progress);
   const next: ResearchProject = {
     ...prev,
-    fiveLookProgress: { ...prev.fiveLookProgress, [look]: progress },
+    ...progressUpdate,
     updatedAt: nowIso(),
     version: prev.version + 1,
   };
   list[idx] = next;
   await persistProjects(userId, list);
   return next;
+}
+
+/**
+ * Apply a look progress update and invalidate an existing opportunity conclusion
+ * when any of its four source looks changes. Kept pure so the review rule can be
+ * covered without IndexedDB.
+ */
+export function applyLookProgressUpdate(
+  project: ResearchProject,
+  look: FiveLookId,
+  progress: FiveLookProgress
+): Pick<ResearchProject, 'fiveLookProgress' | 'status'> {
+  const fiveLookProgress = {
+    ...project.fiveLookProgress,
+    [look]: { ...progress, staleReasons: [] },
+  };
+  let status = project.status;
+
+  if (look !== 'opportunity') {
+    const opportunity = fiveLookProgress.opportunity;
+    if (opportunity.status !== 'not_started') {
+      const reason = `${FIVE_LOOK_LABELS[look]}数据已更新，请复核机会结论`;
+      fiveLookProgress.opportunity = {
+        ...opportunity,
+        status: 'stale',
+        staleReasons: [...new Set([...opportunity.staleReasons, reason])],
+        updatedAt: nowIso(),
+      };
+      if (status === 'ready_for_review') status = 'researching';
+    }
+  }
+
+  return { fiveLookProgress, status };
 }
 
 export async function archiveProject(
