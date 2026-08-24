@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
-import { loadSupabaseConfig, saveSupabaseConfig } from '../utils/supabaseConfig';
+import { loadSupabaseConfig, saveSupabaseConfig, validateSupabaseConfig } from '../utils/supabaseConfig';
 import { resetSupabaseClient } from '../utils/supabaseClient';
 
 export function CloudSettingsModal({ onClose }: { onClose: () => void }) {
@@ -15,8 +15,14 @@ export function CloudSettingsModal({ onClose }: { onClose: () => void }) {
 
   const submit = () => {
     if (!canSave) return;
+    const config = { url: url.trim(), key: key.trim() };
+    const validationError = validateSupabaseConfig(config);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
     setSaving(true);
-    saveSupabaseConfig({ url: url.trim(), key: key.trim() });
+    saveSupabaseConfig(config);
     resetSupabaseClient();
     toast.success('云端配置已保存');
     onClose();
@@ -36,7 +42,7 @@ export function CloudSettingsModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-xl font-bold text-[#1d1d1f]">云端同步设置</h3>
-            <p className="text-sm text-[#86868b] mt-0.5">填一次即可，之后刷新/换设备也生效</p>
+            <p className="text-sm text-[#86868b] mt-0.5">配置保存在当前浏览器；匿名模式暂不支持跨设备身份同步</p>
           </div>
           <button type="button" onClick={onClose} className="w-8 h-8 rounded-full hover:bg-[#f5f5f7] flex items-center justify-center text-[#86868b]"><X className="w-4 h-4" /></button>
         </div>

@@ -21,6 +21,11 @@ import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { Select } from './ui/Select';
 import { syncProjects } from '../utils/cloudSync';
+import {
+  clearPendingCloudDeletions,
+  loadPendingCloudDeletions,
+  recordPendingCloudDeletion,
+} from '../utils/cloudDeletionStore';
 import { isCloudConfigured } from '../utils/supabaseClient';
 import { CloudSettingsModal } from './CloudSettingsModal';
 import type { MarketContext } from '../utils/marketLook';
@@ -32,6 +37,7 @@ import {
   deleteProject,
   duplicateProject,
   loadProjects,
+  persistProjects,
   restoreProject,
 } from '../utils/projectStore';
 import {
@@ -135,13 +141,20 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
       return;
     }
     setSyncing(true);
-    const res = await syncProjects(projects);
-    setSyncing(false);
-    if (res.ok) {
-      toast.success(`已同步：上传 ${res.pushed}，拉取 ${res.pulled}`);
-      await refresh();
-    } else {
-      toast.error(res.error || '同步失败');
+    try {
+      const pendingDeletions = await loadPendingCloudDeletions(userId);
+      const res = await syncProjects(projects, pendingDeletions);
+      if (res.ok) {
+        await persistProjects(userId, res.projects);
+        await clearPendingCloudDeletions(userId, pendingDeletions);
+        const conflictHint = res.conflicts > 0 ? `，保留冲突副本 ${res.conflicts}` : '';
+        toast.success(`已同步：上传 ${res.pushed}，拉取 ${res.pulled}，删除 ${res.deleted}${conflictHint}`);
+        await refresh();
+      } else {
+        toast.error(res.error || '同步失败');
+      }
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -304,6 +317,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
             const ok = await deleteProject(userId, deleteTarget.id);
             setDeleteTarget(null);
             if (ok) {
+              await recordPendingCloudDeletion(userId, deleteTarget.id);
               toast.success('项目已删除');
               await refresh();
             } else {
