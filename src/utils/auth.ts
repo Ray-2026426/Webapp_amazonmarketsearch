@@ -39,6 +39,7 @@ function readSession(): SessionUser | null {
     const s = JSON.parse(raw) as SessionUser;
     if (!s?.id || !s?.username) return null;
     if (!s.email) return null;
+    if (!getAuthToken()) return null;
     const avatar = localStorage.getItem(`${AVATAR_KEY_PREFIX}${s.id}`);
     return avatar ? { ...s, avatarDataUrl: avatar } : s;
   } catch {
