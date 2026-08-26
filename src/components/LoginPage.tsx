@@ -648,11 +648,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         const r = await register(email, password);
         if (!r.success) { toast.error(r.error ?? '注册失败'); return; }
         if (rememberMe) saveCreds(email, password); else clearCreds();
-        if (r.requiresEmailConfirmation) {
-          toast.success('注册成功，请前往邮箱完成确认后再登录');
-          setMode('login');
-          return;
-        }
         toast.success('注册成功，正在进入...');
         onLoginSuccess();
       } else {

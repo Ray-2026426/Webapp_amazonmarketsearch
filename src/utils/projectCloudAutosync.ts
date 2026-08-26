@@ -1,12 +1,12 @@
-import { isCloudConfigured } from './supabaseClient';
+import { getAuthToken } from './auth';
 import { loadProjects, persistProjects } from './projectStore';
 import { hydrateProjectsForCloud, restoreCloudDataToLocal } from './projectCloudBundle';
 import { syncProjects } from './cloudSync';
 
 export async function syncUserProjectsToCloud(userId: string): Promise<{ ok: boolean; error?: string }> {
   if (!userId) return { ok: false, error: '缺少用户' };
-  if (!isCloudConfigured()) {
-    return { ok: false, error: '未配置云端' };
+  if (!getAuthToken()) {
+    return { ok: false, error: '未登录' };
   }
   try {
     const local = await loadProjects(userId);

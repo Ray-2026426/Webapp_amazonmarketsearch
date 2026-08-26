@@ -1,6 +1,6 @@
-// 云端同步层（Phase 3）：云身份 + 项目 push/pull/merge。
-import { getSupabase } from './supabaseClient';
+// 云同步层：客户端只和后端 API 通信，后端用 service_role 按 owner_id 隔离数据。
 import { migrateProject } from './projectStore';
+import { getAuthToken } from './auth';
 import type { ResearchProject } from '../types/researchProject';
 
 export interface SyncResult {
@@ -18,125 +18,42 @@ export interface ProjectMergeResult {
   conflicts: number;
 }
 
-const CLOUD_LOGIN_REQUIRED =
-  '请先在「云端设置」登录云账号；如需沿用旧匿名模式，需要在 Supabase Auth 开启 Anonymous sign-ins';
-
-/** 确保存在云会话：优先复用邮箱账号会话，未登录时尝试旧匿名模式作为兼容回退。 */
-export async function ensureCloudSession(): Promise<boolean> {
-  const s = getSupabase();
-  if (!s) return false;
-  const { data } = await s.auth.getSession();
-  if (data.session) return true;
-  const { error } = await s.auth.signInAnonymously();
-  if (error) {
-    console.error('anonymous sign-in failed:', error.message);
-    return false;
+async function postJson<T>(path: string, payload: Record<string, unknown>): Promise<T> {
+  const token = getAuthToken();
+  if (!token) throw new Error('未登录');
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, token }),
+  });
+  const body = (await res.json().catch(() => ({}))) as T;
+  if (!res.ok) {
+    const err = (body as { error?: string }).error;
+    throw new Error(err || '请求失败');
   }
-  return true;
-}
-
-interface ProjectRow {
-  id: string;
-  user_id: string;
-  owner_id: string;
-  data: ResearchProject;
-  updated_at: string;
-}
-
-interface ProjectMemberRow {
-  project_id: string;
-  user_id: string;
-  role: 'owner';
-}
-
-interface LegacyProjectRow {
-  id: string;
-  user_id: string;
-  data: ResearchProject;
-  updated_at: string;
-}
-
-export function buildCloudProjectRows(
-  projects: ResearchProject[],
-  cloudUserId: string
-): { rows: ProjectRow[]; legacyRows: LegacyProjectRow[]; members: ProjectMemberRow[] } {
-  const rows: ProjectRow[] = projects.map((p) => ({
-    id: p.id,
-    user_id: cloudUserId,
-    owner_id: cloudUserId,
-    data: p,
-    updated_at: p.updatedAt,
-  }));
-  return {
-    rows,
-    legacyRows: rows.map(({ owner_id: _ownerId, ...r }) => r),
-    members: rows.map((r) => ({
-      project_id: r.id,
-      user_id: r.owner_id,
-      role: 'owner',
-    })),
-  };
-}
-
-function isMissingCloudPermissionsSchema(message: string): boolean {
-  const text = message.toLowerCase();
-  return (
-    text.includes('owner_id') ||
-    text.includes('project_members') ||
-    text.includes('schema cache') ||
-    text.includes('relation "project_members" does not exist')
-  );
-}
-
-export async function pushProjects(projects: ResearchProject[]): Promise<number> {
-  const s = getSupabase();
-  if (!s || projects.length === 0) return 0;
-  const ok = await ensureCloudSession();
-  if (!ok) throw new Error(CLOUD_LOGIN_REQUIRED);
-  const { data } = await s.auth.getUser();
-  if (!data.user) throw new Error('未获取到云用户');
-  const { rows, legacyRows, members } = buildCloudProjectRows(projects, data.user.id);
-  const { error } = await s.from('projects').upsert(rows, { onConflict: 'id' });
-  if (error) {
-    if (!isMissingCloudPermissionsSchema(error.message)) throw new Error(error.message);
-    const { error: legacyError } = await s.from('projects').upsert(legacyRows, { onConflict: 'id' });
-    if (legacyError) throw new Error(legacyError.message);
-    return legacyRows.length;
-  }
-  const { error: memberError } = await s.from('project_members').upsert(members, { onConflict: 'project_id,user_id' });
-  if (memberError && !isMissingCloudPermissionsSchema(memberError.message)) {
-    throw new Error(memberError.message);
-  }
-  return rows.length;
+  return body;
 }
 
 export async function pullProjects(): Promise<ResearchProject[]> {
-  const s = getSupabase();
-  if (!s) return [];
-  const ok = await ensureCloudSession();
-  if (!ok) throw new Error(CLOUD_LOGIN_REQUIRED);
-  const { data, error } = await s
-    .from('projects')
-    .select('data')
-    .order('updated_at', { ascending: false });
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as { data: unknown }[])
-    .map((r) => migrateProject(r.data))
+  const body = await postJson<{ ok?: boolean; projects?: unknown[] }>('/api/projects/pull', {});
+  if (!body.ok) return [];
+  return ((body.projects ?? []) as unknown[])
+    .map((r) => migrateProject(r))
     .filter((p): p is ResearchProject => p !== null);
+}
+
+export async function pushProjects(projects: ResearchProject[]): Promise<number> {
+  if (projects.length === 0) return 0;
+  const body = await postJson<{ ok?: boolean; pushed?: number }>('/api/projects/push', { projects });
+  return body.ok ? (body.pushed ?? 0) : 0;
 }
 
 export async function deleteCloudProjects(projectIds: string[]): Promise<number> {
   const ids = [...new Set(projectIds.filter(Boolean))];
   if (ids.length === 0) return 0;
-  const s = getSupabase();
-  if (!s) throw new Error('未配置云端');
-  const ok = await ensureCloudSession();
-  if (!ok) throw new Error(CLOUD_LOGIN_REQUIRED);
-  const { error } = await s.from('projects').delete().in('id', ids);
-  if (error) throw new Error(error.message);
-  return ids.length;
+  const body = await postJson<{ ok?: boolean; deleted?: number }>('/api/projects/delete', { ids });
+  return body.ok ? (body.deleted ?? 0) : 0;
 }
-
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === 'object') {
@@ -167,11 +84,6 @@ function conflictCopy(project: ResearchProject, side: 'local' | 'cloud'): Resear
   };
 }
 
-/**
- * Merge whole-project snapshots. A higher version wins. When both sides changed
- * to the same version, keep the newer snapshot as the primary project and save
- * the other side as a deterministic conflict copy instead of silently losing it.
- */
 export function mergeProjectSets(
   local: ResearchProject[],
   cloud: ResearchProject[]
@@ -187,8 +99,6 @@ export function mergeProjectSets(
     }
     if (sameProject(current, remote)) continue;
 
-    // A previous merge already preserved the losing side as a lossless copy.
-    // Never fork copies again, or every later sync will grow nested conflict rows.
     if (isConflictCopyId(remote.id)) {
       const newer = (remote.updatedAt || '') >= (current.updatedAt || '') ? remote : current;
       merged.set(remote.id, newer);
@@ -214,14 +124,13 @@ export function mergeProjectSets(
     conflicts,
   };
 }
-
 /** Pull, merge, preserve conflicts, apply pending deletions, then push. */
 export async function syncProjects(
   local: ResearchProject[],
   pendingDeletionIds: string[] = []
 ): Promise<SyncResult> {
-  if (!getSupabase()) {
-    return { ok: false, pushed: 0, pulled: 0, deleted: 0, conflicts: 0, projects: local, error: '未配置云端' };
+  if (!getAuthToken()) {
+    return { ok: false, pushed: 0, pulled: 0, deleted: 0, conflicts: 0, projects: local, error: '未登录' };
   }
   try {
     const deleted = await deleteCloudProjects(pendingDeletionIds);

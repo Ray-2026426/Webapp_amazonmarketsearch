@@ -26,8 +26,7 @@ import {
   loadPendingCloudDeletions,
   recordPendingCloudDeletion,
 } from '../utils/cloudDeletionStore';
-import { isCloudConfigured } from '../utils/supabaseClient';
-import { CloudSettingsModal } from './CloudSettingsModal';
+import { getAuthToken } from '../utils/auth';
 import { hydrateProjectsForCloud, restoreCloudDataToLocal } from '../utils/projectCloudBundle';
 import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
 import type { MarketContext } from '../utils/marketLook';
@@ -118,7 +117,6 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   const [projects, setProjects] = useState<ResearchProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [cloudSettingsOpen, setCloudSettingsOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [marketplace, setMarketplace] = useState('');
   const [status, setStatus] = useState('active');
@@ -145,7 +143,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   }, [userId]);
 
   const handleSync = async (mode: 'manual' | 'auto' = 'manual') => {
-    if (!isCloudConfigured()) {
+    if (!getAuthToken()) {
       if (mode === 'manual') toast.info('未配置云端同步');
       return;
     }
@@ -177,7 +175,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   }, [refresh]);
 
   useEffect(() => {
-    if (loading || hasAutoSynced || !isCloudConfigured()) return;
+    if (loading || hasAutoSynced || !getAuthToken()) return;
     setHasAutoSynced(true);
     void handleSync('auto');
   }, [loading, hasAutoSynced]);
@@ -216,14 +214,6 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
         >
           {syncing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Cloud className="w-4 h-4" />}
           同步
-        </button>
-        <button
-          type="button"
-          onClick={() => setCloudSettingsOpen(true)}
-          title="云端同步设置"
-          className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-black/8 bg-white text-sm font-medium text-[#424245] hover:bg-[#f5f5f7] transition-all"
-        >
-          云端设置
         </button>
         <button
           type="button"
@@ -349,7 +339,6 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
         />
       )}
 
-      {cloudSettingsOpen && <CloudSettingsModal onClose={() => setCloudSettingsOpen(false)} />}
     </div>
   );
 

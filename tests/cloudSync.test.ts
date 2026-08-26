@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { buildCloudProjectRows, mergeProjectSets } from '../src/utils/cloudSync';
+import { mergeProjectSets } from '../src/utils/cloudSync';
 import { validateSupabaseConfig } from '../src/utils/supabaseConfig';
 import { emptyFiveLookProgress } from '../src/utils/projectStore';
 import type { ResearchProject } from '../src/types/researchProject';
@@ -84,21 +84,6 @@ test('相同快照不会产生冲突副本', () => {
   assert.equal(result.conflicts, 0);
 });
 
-test('云端写入同时准备 owner_id 与成员关系，并保留旧表兼容行', () => {
-  const result = buildCloudProjectRows([project({ id: 'p1' }), project({ id: 'p2' })], 'cloud-user');
-  assert.deepEqual(result.rows.map((r) => [r.id, r.user_id, r.owner_id]), [
-    ['p1', 'cloud-user', 'cloud-user'],
-    ['p2', 'cloud-user', 'cloud-user'],
-  ]);
-  assert.deepEqual(result.legacyRows.map((r) => Object.keys(r).sort()), [
-    ['data', 'id', 'updated_at', 'user_id'],
-    ['data', 'id', 'updated_at', 'user_id'],
-  ]);
-  assert.deepEqual(result.members, [
-    { project_id: 'p1', user_id: 'cloud-user', role: 'owner' },
-    { project_id: 'p2', user_id: 'cloud-user', role: 'owner' },
-  ]);
-});
 
 console.log('cloud config validation');
 

@@ -1,8 +1,5 @@
-// 认证：以 Supabase 邮箱账号作为唯一身份来源。
-// 每个用户拥有独立的 Supabase auth.uid()，RLS 依据该 uid 隔离项目数据。
-// 本地 session 只是该身份的一份缓存，不再维护本地账号密码表。
-
-import { getSupabase } from './supabaseClient';
+// 认证：应用自己的账号体系。注册/登录走后端 API，后端统一用 service_role 访问
+// 同一个 Supabase 数据库，并按 app_users.id 隔离数据。客户端不直接接触 Supabase。
 
 export interface SessionUser {
   id: string;
@@ -13,6 +10,7 @@ export interface SessionUser {
 }
 
 const SESSION_KEY = 'amzdev_session';
+const TOKEN_KEY = 'amzdev_auth_token';
 const SAVED_CREDS_KEY = 'amzdev_saved_creds';
 const AVATAR_KEY_PREFIX = 'amzdev_avatar_';
 
@@ -40,7 +38,6 @@ function readSession(): SessionUser | null {
     if (!raw) return null;
     const s = JSON.parse(raw) as SessionUser;
     if (!s?.id || !s?.username) return null;
-    // 旧版本地账号 session 没有 email；强制重新走 Supabase 登录。
     if (!s.email) return null;
     const avatar = localStorage.getItem(`${AVATAR_KEY_PREFIX}${s.id}`);
     return avatar ? { ...s, avatarDataUrl: avatar } : s;
@@ -59,28 +56,47 @@ function writeSession(user: { id: string; username: string; email?: string }): v
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 }
 
+function writeToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function getAuthToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
 export function getCurrentUser(): SessionUser | null {
   return readSession();
 }
-
 export interface RegisterResult {
   success: boolean;
-  requiresEmailConfirmation?: boolean;
   error?: string;
 }
 
 export async function register(email: string, password: string): Promise<RegisterResult> {
-  const s = getSupabase();
-  if (!s) return { success: false, error: '云端未配置，无法注册' };
-  const trimmed = email.trim();
-  const { data, error } = await s.auth.signUp({ email: trimmed, password });
-  if (error) return { success: false, error: error.message };
-  if (!data.user) return { success: false, error: '注册失败，未返回用户信息' };
-  if (data.session) {
-    writeSession({ id: data.user.id, username: data.user.email ?? trimmed, email: data.user.email ?? trimmed });
-    return { success: true, requiresEmailConfirmation: false };
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; user?: { id: string; email: string } };
+    if (!res.ok || !body.ok || !body.token || !body.user) {
+      return { success: false, error: body.error || '注册失败' };
+    }
+    writeToken(body.token);
+    writeSession({ id: body.user.id, username: body.user.email, email: body.user.email });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : '注册失败' };
   }
-  return { success: true, requiresEmailConfirmation: true };
 }
 export interface LoginResult {
   success: boolean;
@@ -89,20 +105,27 @@ export interface LoginResult {
 }
 
 export async function login(email: string, password: string): Promise<LoginResult> {
-  const s = getSupabase();
-  if (!s) return { success: false, error: '云端未配置，无法登录' };
-  const trimmed = email.trim();
-  const { data, error } = await s.auth.signInWithPassword({ email: trimmed, password });
-  if (error) return { success: false, error: error.message };
-  if (!data.user) return { success: false, error: '登录失败，未返回用户信息' };
-  writeSession({ id: data.user.id, username: data.user.email ?? trimmed, email: data.user.email ?? trimmed });
-  return { success: true, user: getCurrentUser() ?? undefined };
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; user?: { id: string; email: string } };
+    if (!res.ok || !body.ok || !body.token || !body.user) {
+      return { success: false, error: body.error || '登录失败' };
+    }
+    writeToken(body.token);
+    writeSession({ id: body.user.id, username: body.user.email, email: body.user.email });
+    return { success: true, user: getCurrentUser() ?? undefined };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : '登录失败' };
+  }
 }
 
 export function logout(): void {
   localStorage.removeItem(SESSION_KEY);
-  const s = getSupabase();
-  if (s) void s.auth.signOut().catch(() => {});
+  clearToken();
 }
 export interface SavedCredentials {
   email: string;
@@ -126,6 +149,7 @@ export function loadCreds(): SavedCredentials | null {
 export function clearCreds(): void {
   localStorage.removeItem(SAVED_CREDS_KEY);
 }
+
 export function updateUserAvatar(
   userId: string,
   dataUrl: string | null
@@ -143,6 +167,7 @@ export function updateUserAvatar(
     return { ok: false, error: '保存头像失败' };
   }
 }
+
 export function createUserId(): string {
   try {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
