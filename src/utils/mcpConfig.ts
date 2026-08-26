@@ -1,5 +1,6 @@
 /** MCP 数据源配置（可多家）+ 应用功能开关（仅存本机浏览器） */
-import { getCurrentUser, isAdminSession } from './auth';
+import { getAuthToken, getCurrentUser, isAdminSession } from './auth';
+import { getDefaultServerKey, pushServerKeys } from './serverKeys';
 
 const MCP_KEY = 'amzdev_mcp_settings';
 const FEATURES_KEY = 'amzdev_feature_flags';
@@ -56,7 +57,7 @@ function providerKindLabel(kind: McpProviderKind): string {
 
 function envDefaultXydcSecret(): string {
   try {
-    return String(import.meta.env?.VITE_DEFAULT_XYDC_SECRET_KEY ?? '').trim();
+  return getDefaultServerKey('xydc');
   } catch {
     return '';
   }
@@ -64,7 +65,7 @@ function envDefaultXydcSecret(): string {
 
 function envDefaultSellerSpriteSecret(): string {
   try {
-    return String(import.meta.env?.VITE_DEFAULT_SELLERSPRITE_SECRET_KEY ?? '').trim();
+  return getDefaultServerKey('sellersprite');
   } catch {
     return '';
   }
@@ -423,6 +424,15 @@ export function saveMcpSettings(settings: McpSettings): void {
       providers,
     } satisfies McpSettings)
   );
+  // 管理员保存时同步到服务器
+  const token = getAuthToken();
+  if (isAdminSession(getCurrentUser()) && token) {
+    void pushServerKeys(token, {
+      sellersprite: providers.find((p) => p.kind === 'sellersprite')?.secretKey || '',
+      xydc: providers.find((p) => p.kind === 'xydc')?.secretKey || '',
+      lingxing: providers.find((p) => p.kind === 'lingxing')?.secretKey || '',
+    });
+  }
 }
 
 export function loadFeatureFlags(): AppFeatureFlags {

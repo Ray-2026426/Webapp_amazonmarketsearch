@@ -29,9 +29,10 @@ import { clearWorkspaceIndexedDb } from './utils/workspaceIdb';
 import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, formatRevenue, computeMarketReportFingerprint } from './utils/parser';
 import { get, set, del } from 'idb-keyval';
 import { Toaster, toast } from 'sonner';
-import { getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
+import { getAuthToken, getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
 import { ensureAdminMcpDefaults, loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
 import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
+import { fetchServerKeys, saveServerKeys } from './utils/serverKeys';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
 import type { MarketContext } from './utils/marketLook';
@@ -135,11 +136,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 export default function App() {
   // ── Auth & AI Settings ────────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(() => {
-    const user = getCurrentUser();
-    if (isAdminSession(user)) {
-      try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
-    }
-    return user;
+    return getCurrentUser();
   });
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(() => loadAiSettings());
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
@@ -147,11 +144,20 @@ export default function App() {
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
   const [activeProject, setActiveProject] = useState<ResearchProject | null>(null);
 
-  // 每次进入应用：保证四家内置数据源结构齐全（Key 由管理员在设置页配置并持久化）
+  // 管理员登录后：拉取服务器 Key，再初始化 MCP/AI 默认值
   useEffect(() => {
-    if (isAdminSession(currentUser)) {
+    if (!isAdminSession(currentUser)) return;
+    const token = getAuthToken();
+    if (!token) return;
+    let cancelled = false;
+    void (async () => {
+      const keys = await fetchServerKeys(token);
+      if (cancelled) return;
+      saveServerKeys(keys);
       try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
-    }
+      setAiSettings(loadAiSettings());
+    })();
+    return () => { cancelled = true; };
   }, [currentUser]);
 
   // 飞书 OAuth 回跳：把 token 写入本机
@@ -165,9 +171,6 @@ export default function App() {
     const isGuest = sessionStorage.getItem('guest_mode') === '1';
     if (!isGuest) {
       const user = getCurrentUser();
-      if (isAdminSession(user)) {
-        try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
-      }
       setCurrentUser(user);
       setAiSettings(loadAiSettings());
     } else {

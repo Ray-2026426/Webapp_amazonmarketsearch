@@ -64,3 +64,11 @@ export function verifyToken(token: string): { userId: string; email: string } | 
 export function json(res: import('@vercel/node').VercelResponse, status: number, body: unknown): void {
   res.status(status).json(body);
 }
+export function isAdminEmail(email?: string | null): boolean {
+  const raw = env('ADMIN_EMAILS') || env('VITE_ADMIN_EMAILS');
+  const list = raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return Boolean(email) && list.includes(String(email).trim().toLowerCase());
+}

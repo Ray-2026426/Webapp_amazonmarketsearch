@@ -1,5 +1,6 @@
 import { buildUserBackgroundSystemPrompt } from './userBackground';
-import { getCurrentUser, isAdminSession } from './auth';
+import { getAuthToken, getCurrentUser, isAdminSession } from './auth';
+import { getDefaultServerKey, pushServerKeys } from './serverKeys';
 
 // AI Provider Configuration & Unified Call Layer
 
@@ -125,7 +126,7 @@ export function loadAiSettings(): AiSettings | null {
       return JSON.parse(legacyRaw) as AiSettings;
     }
     // \u56de\u9000\u5230 .env.local \u9ed8\u8ba4\u914d\u7f6e\uff0c\u65e0\u9700\u624b\u52a8\u8f93\u5165
-    const defaultKey = canUseDefaultAiKey() ? (import.meta.env.VITE_DEFAULT_AI_KEY as string | undefined) : '';
+    const defaultKey = canUseDefaultAiKey() ? getDefaultServerKey('deepseek') : '';
     const defaultProvider = (import.meta.env.VITE_DEFAULT_AI_PROVIDER ?? 'deepseek') as AiProvider;
     const defaultModel = (import.meta.env.VITE_DEFAULT_AI_MODEL ?? 'deepseek-chat') as string;
     // 无密钥时也返回 DeepSeek 默认项，方便你在「AI 设置」里直接填 Key
