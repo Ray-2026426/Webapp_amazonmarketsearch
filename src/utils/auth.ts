@@ -14,14 +14,11 @@ const TOKEN_KEY = 'amzdev_auth_token';
 const SAVED_CREDS_KEY = 'amzdev_saved_creds';
 const AVATAR_KEY_PREFIX = 'amzdev_avatar_';
 
-const DEFAULT_ADMIN_EMAILS = ['ljh15874760218@gmail.com'];
-
 function adminEmails(): string[] {
   const raw = String(import.meta.env?.VITE_ADMIN_EMAILS ?? '').trim();
-  const extra = raw
+  return raw
     ? raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
     : [];
-  return [...DEFAULT_ADMIN_EMAILS, ...extra];
 }
 
 export function isAdminEmail(email?: string | null): boolean {
