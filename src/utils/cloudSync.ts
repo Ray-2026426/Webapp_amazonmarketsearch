@@ -152,6 +152,10 @@ function sameProject(a: ResearchProject, b: ResearchProject): boolean {
   return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
 }
 
+function isConflictCopyId(id: string): boolean {
+  return id.includes('_conflict_');
+}
+
 function conflictCopy(project: ResearchProject, side: 'local' | 'cloud'): ResearchProject {
   const stamp = (project.updatedAt || 'unknown').replace(/[^0-9A-Za-z]/g, '').slice(0, 20);
   return {
@@ -182,6 +186,14 @@ export function mergeProjectSets(
       continue;
     }
     if (sameProject(current, remote)) continue;
+
+    // A previous merge already preserved the losing side as a lossless copy.
+    // Never fork copies again, or every later sync will grow nested conflict rows.
+    if (isConflictCopyId(remote.id)) {
+      const newer = (remote.updatedAt || '') >= (current.updatedAt || '') ? remote : current;
+      merged.set(remote.id, newer);
+      continue;
+    }
 
     if (current.version !== remote.version) {
       if (remote.version > current.version) merged.set(remote.id, remote);

@@ -177,10 +177,10 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   }, [refresh]);
 
   useEffect(() => {
-    if (loading || hasAutoSynced || projects.length === 0 || !isCloudConfigured()) return;
+    if (loading || hasAutoSynced || !isCloudConfigured()) return;
     setHasAutoSynced(true);
     void handleSync('auto');
-  }, [loading, hasAutoSynced, projects.length]);
+  }, [loading, hasAutoSynced]);
 
   const filtered = useMemo(() => {
     return searchProjectsSync(projects, { keyword, marketplace, status });

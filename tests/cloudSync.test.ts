@@ -64,6 +64,17 @@ test('同版本双端分叉时保留冲突副本', () => {
   assert.equal(result.projects.find((p) => p.id === 'p1')?.name, 'cloud edit');
   assert.ok(result.projects.some((p) => p.id.includes('_conflict_local_') && p.name.includes('冲突副本')));
 });
+test('冲突副本不会再分叉', () => {
+  const copyId = 'p1_conflict_cloud_20260826T075837146Z';
+  const localCopy = project({ id: copyId, name: 'old copy', version: 1, updatedAt: '2026-08-26T07:58:37.000Z' });
+  const remoteCopy = project({ id: copyId, name: 'new copy', version: 1, updatedAt: '2026-08-26T08:00:00.000Z' });
+  const result = mergeProjectSets([localCopy], [remoteCopy]);
+  assert.equal(result.projects.length, 1);
+  assert.equal(result.conflicts, 0);
+  assert.equal(result.projects[0].name, 'new copy');
+  assert.ok(!result.projects.some((p) => p.id.includes(copyId + '_conflict_')));
+});
+
 
 test('相同快照不会产生冲突副本', () => {
   const same = project({ version: 4 });
