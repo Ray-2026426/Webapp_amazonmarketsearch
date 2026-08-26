@@ -6,7 +6,7 @@ import {
   TrendingUp, Shield, Zap, Clock, Lightbulb, Package, FlaskConical, RefreshCw, ArrowRight,
   Users, Target, Map, Megaphone, Palette, Quote, Brain,
 } from 'lucide-react';
-import { login, register, saveCreds, loadCreds, clearCreds, hasAnyUser } from '../utils/auth';
+import { login, register, saveCreds, loadCreds, clearCreds } from '../utils/auth';
 import { toast } from 'sonner';
 
 interface LoginPageProps { onLoginSuccess: () => void; }
@@ -615,8 +615,8 @@ const SavingsCalculator: React.FC = () => {
    Main LoginPage
    ═══════════════════════════════════════ */
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  const [mode, setMode] = useState<'login' | 'register'>(() => (hasAnyUser() ? 'login' : 'register'));
-  const [username, setUsername] = useState('');
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -626,7 +626,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
   useEffect(() => {
     const c = loadCreds();
-    if (c) { setUsername(c.username); setPassword(c.password); setRememberMe(true); }
+    if (c) { setEmail(c.email); setPassword(c.password); setRememberMe(true); }
   }, []);
 
   const scrollToLogin = () => {
@@ -645,19 +645,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     try {
       if (mode === 'register') {
         if (password !== confirmPassword) { toast.error('两次密码输入不一致'); return; }
-        const r = register(username, password);
+        const r = await register(email, password);
         if (!r.success) { toast.error(r.error ?? '注册失败'); return; }
-        toast.success('注册成功，正在登录...');
-        const lr = login(username, password);
-        if (lr.success) {
-          if (rememberMe) saveCreds(username, password); else clearCreds();
-          onLoginSuccess();
-        } else { toast.error(lr.error ?? '自动登录失败，请手动登录'); }
+        if (rememberMe) saveCreds(email, password); else clearCreds();
+        if (r.requiresEmailConfirmation) {
+          toast.success('注册成功，请前往邮箱完成确认后再登录');
+          setMode('login');
+          return;
+        }
+        toast.success('注册成功，正在进入...');
+        onLoginSuccess();
       } else {
-        const r = login(username, password);
+        const r = await login(email, password);
         if (!r.success) { toast.error(r.error ?? '登录失败'); return; }
-        if (rememberMe) saveCreds(username, password); else clearCreds();
-        toast.success(`欢迎回来，${r.user?.username}！`);
+        if (rememberMe) saveCreds(email, password); else clearCreds();
+        toast.success(`欢迎回来，${r.user?.username ?? email}！`);
         onLoginSuccess();
       }
     } finally { setIsLoading(false); }
@@ -934,12 +936,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
               <form onSubmit={submit} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[12px] font-semibold text-[#424245]">用户名</label>
+                  <label className="text-[12px] font-semibold text-[#424245]">邮箱</label>
                   <div className="relative group">
                     <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-400/0 via-indigo-400/0 to-violet-400/0 group-focus-within:from-indigo-400/6 group-focus-within:via-indigo-400/10 group-focus-within:to-violet-400/6 transition-all duration-300 pointer-events-none" />
                     <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#aeaeb2] group-focus-within:text-indigo-400 transition-colors z-10" />
-                    <input type="text" value={username} onChange={(e) => setUsername(e.target.value)}
-                      placeholder="请输入用户名" required
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                      placeholder="请输入邮箱" required
                       className="relative w-full pl-10 pr-4 py-3 bg-white border border-black/[0.08] rounded-xl text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:border-indigo-300 text-sm transition-all shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]" />
                   </div>
                 </div>

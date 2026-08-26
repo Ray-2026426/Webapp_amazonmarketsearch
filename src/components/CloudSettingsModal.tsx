@@ -9,7 +9,6 @@ import {
   signInCloudEmail,
   signOutCloud,
   signUpCloudEmail,
-  connectBackendCloudSession,
   type CloudAuthState,
 } from '../utils/cloudAuth';
 
@@ -23,7 +22,6 @@ export function CloudSettingsModal({ onClose }: { onClose: () => void }) {
   const [password, setPassword] = useState('');
   const [authBusy, setAuthBusy] = useState<'login' | 'signup' | 'logout' | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [managedBusy, setManagedBusy] = useState(false);
 
   const canSave = url.trim().length > 0 && key.trim().length > 0;
   const canAuth = email.trim().length > 0 && password.length >= 6;
@@ -39,18 +37,6 @@ export function CloudSettingsModal({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     void refreshAuth();
   }, []);
-
-  const connectManaged = async () => {
-    setManagedBusy(true);
-    try {
-      const ok = await connectBackendCloudSession();
-      await refreshAuth();
-      if (ok) toast.success('云端存储已连接');
-      else toast.error('后台云端存储未配置或连接失败');
-    } finally {
-      setManagedBusy(false);
-    }
-  };
 
   const submit = () => {
     if (!canSave) return;
@@ -123,24 +109,11 @@ export function CloudSettingsModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-xl font-bold text-[#1d1d1f]">云端同步设置</h3>
-            <p className="text-sm text-[#86868b] mt-0.5">云端存储由后台托管；普通用户无需配置</p>
+            <p className="text-sm text-[#86868b] mt-0.5">使用你的邮箱账号登录后，项目会自动同步到服务器</p>
           </div>
           <button type="button" onClick={onClose} className="w-8 h-8 rounded-full hover:bg-[#f5f5f7] flex items-center justify-center text-[#86868b]"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 mb-5">
-          <p className="text-sm font-semibold text-[#1d1d1f]">后台托管云端存储</p>
-          <p className="text-xs text-[#86868b] mt-1">连接后，项目和报告会自动保存到服务器。本页面不会显示云账号密码。</p>
-          <button
-            type="button"
-            onClick={connectManaged}
-            disabled={managedBusy}
-            className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-all"
-          >
-            <LogIn className="w-3.5 h-3.5" />
-            {managedBusy ? '连接中…' : '连接云端存储'}
-          </button>
-        </div>
 
         <button
           type="button"
