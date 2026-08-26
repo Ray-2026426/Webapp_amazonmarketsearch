@@ -123,6 +123,7 @@ export function migrateProject(raw: unknown): ResearchProject | null {
     plannedLaunchDate:
       typeof raw.plannedLaunchDate === 'string' ? raw.plannedLaunchDate : undefined,
     description: typeof raw.description === 'string' ? raw.description : undefined,
+    cloudData: isRecord(raw.cloudData) ? raw.cloudData : undefined,
   };
 }
 

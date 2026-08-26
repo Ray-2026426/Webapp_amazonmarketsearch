@@ -75,6 +75,19 @@ export interface ResearchProject {
   targetGrossMargin?: number;
   plannedLaunchDate?: string;
   description?: string;
+  /**
+   * 云同步整包载荷：把项目内五看、机会卡和报告资产随 projects.data 一起保存到 Supabase。
+   * IndexedDB 仍作为本地缓存；服务器恢复时会把 cloudData 回写到各本地缓存 key。
+   */
+  cloudData?: {
+    marketLook?: unknown;
+    userLook?: unknown;
+    competitorLook?: unknown;
+    selfAssessment?: unknown;
+    opportunities?: unknown;
+    reports?: unknown;
+    updatedAt?: string;
+  };
 }
 
 export interface UnmetNeed {

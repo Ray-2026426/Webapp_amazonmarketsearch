@@ -39,7 +39,15 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-export function ReportsView({ userId, project }: { userId: string; project: ResearchProject }) {
+export function ReportsView({
+  userId,
+  project,
+  onContentChange,
+}: {
+  userId: string;
+  project: ResearchProject;
+  onContentChange?: () => void;
+}) {
   const [reports, setReports] = useState<ProjectReport[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -65,11 +73,13 @@ export function ReportsView({ userId, project }: { userId: string; project: Rese
     await finalizeReport(userId, project.id, r.id);
     toast.success(r.isFinalized ? '已取消定稿' : '已定稿');
     await refresh();
+    onContentChange?.();
   };
   const onDelete = async (r: ProjectReport) => {
     await deleteReport(userId, project.id, r.id);
     toast.success('报告已删除');
     await refresh();
+    onContentChange?.();
   };
   const onCopy = (r: ProjectReport) => {
     void navigator.clipboard?.writeText(r.markdown);

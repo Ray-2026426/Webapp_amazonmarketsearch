@@ -36,6 +36,7 @@ import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
 import type { MarketContext } from './utils/marketLook';
 import { saveReport } from './utils/reportStore';
+import { syncUserProjectsToCloud } from './utils/projectCloudAutosync';
 import { aiInsightToMarkdown, vocReportToMarkdown, competitorReportToMarkdown } from './utils/reportToMarkdown';
 import type { ResearchProject } from './types/researchProject';
 import type { UserContext } from './utils/userLook';
@@ -258,7 +259,9 @@ export default function App() {
         dataFingerprint: reportDataFingerprint,
         promptVersion: 'market-v1',
         modelName: aiSettings?.model ?? '',
-      }).catch(() => {});
+      })
+        .then(() => syncUserProjectsToCloud(uid))
+        .catch(() => {});
     }
   }, [reportDataFingerprint, activeProject, currentUser, marketplace.code, aiSettings]);
 
@@ -274,7 +277,9 @@ export default function App() {
         dataFingerprint,
         promptVersion: 'v1',
         modelName: aiSettings?.model ?? '',
-      }).catch(() => {});
+      })
+        .then(() => syncUserProjectsToCloud(uid))
+        .catch(() => {});
     },
     [activeProject, currentUser, aiSettings]
   );

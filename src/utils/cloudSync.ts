@@ -1,4 +1,4 @@
-// 云端同步层（Phase 3）：匿名登录 + 项目 push/pull/merge。
+// 云端同步层（Phase 3）：云身份 + 项目 push/pull/merge。
 import { getSupabase } from './supabaseClient';
 import { migrateProject } from './projectStore';
 import type { ResearchProject } from '../types/researchProject';
@@ -18,7 +18,10 @@ export interface ProjectMergeResult {
   conflicts: number;
 }
 
-/** 建立匿名云会话（需要 Supabase 项目开启匿名登录）。 */
+const CLOUD_LOGIN_REQUIRED =
+  '请先在「云端设置」登录云账号；如需沿用旧匿名模式，需要在 Supabase Auth 开启 Anonymous sign-ins';
+
+/** 确保存在云会话：优先复用邮箱账号会话，未登录时尝试旧匿名模式作为兼容回退。 */
 export async function ensureCloudSession(): Promise<boolean> {
   const s = getSupabase();
   if (!s) return false;
@@ -35,25 +38,75 @@ export async function ensureCloudSession(): Promise<boolean> {
 interface ProjectRow {
   id: string;
   user_id: string;
+  owner_id: string;
   data: ResearchProject;
   updated_at: string;
+}
+
+interface ProjectMemberRow {
+  project_id: string;
+  user_id: string;
+  role: 'owner';
+}
+
+interface LegacyProjectRow {
+  id: string;
+  user_id: string;
+  data: ResearchProject;
+  updated_at: string;
+}
+
+export function buildCloudProjectRows(
+  projects: ResearchProject[],
+  cloudUserId: string
+): { rows: ProjectRow[]; legacyRows: LegacyProjectRow[]; members: ProjectMemberRow[] } {
+  const rows: ProjectRow[] = projects.map((p) => ({
+    id: p.id,
+    user_id: cloudUserId,
+    owner_id: cloudUserId,
+    data: p,
+    updated_at: p.updatedAt,
+  }));
+  return {
+    rows,
+    legacyRows: rows.map(({ owner_id: _ownerId, ...r }) => r),
+    members: rows.map((r) => ({
+      project_id: r.id,
+      user_id: r.owner_id,
+      role: 'owner',
+    })),
+  };
+}
+
+function isMissingCloudPermissionsSchema(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    text.includes('owner_id') ||
+    text.includes('project_members') ||
+    text.includes('schema cache') ||
+    text.includes('relation "project_members" does not exist')
+  );
 }
 
 export async function pushProjects(projects: ResearchProject[]): Promise<number> {
   const s = getSupabase();
   if (!s || projects.length === 0) return 0;
   const ok = await ensureCloudSession();
-  if (!ok) throw new Error('云会话建立失败（请确认 Supabase 已开启匿名登录）');
+  if (!ok) throw new Error(CLOUD_LOGIN_REQUIRED);
   const { data } = await s.auth.getUser();
   if (!data.user) throw new Error('未获取到云用户');
-  const rows: ProjectRow[] = projects.map((p) => ({
-    id: p.id,
-    user_id: data.user!.id,
-    data: p,
-    updated_at: p.updatedAt,
-  }));
+  const { rows, legacyRows, members } = buildCloudProjectRows(projects, data.user.id);
   const { error } = await s.from('projects').upsert(rows, { onConflict: 'id' });
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (!isMissingCloudPermissionsSchema(error.message)) throw new Error(error.message);
+    const { error: legacyError } = await s.from('projects').upsert(legacyRows, { onConflict: 'id' });
+    if (legacyError) throw new Error(legacyError.message);
+    return legacyRows.length;
+  }
+  const { error: memberError } = await s.from('project_members').upsert(members, { onConflict: 'project_id,user_id' });
+  if (memberError && !isMissingCloudPermissionsSchema(memberError.message)) {
+    throw new Error(memberError.message);
+  }
   return rows.length;
 }
 
@@ -61,7 +114,7 @@ export async function pullProjects(): Promise<ResearchProject[]> {
   const s = getSupabase();
   if (!s) return [];
   const ok = await ensureCloudSession();
-  if (!ok) throw new Error('云会话建立失败');
+  if (!ok) throw new Error(CLOUD_LOGIN_REQUIRED);
   const { data, error } = await s
     .from('projects')
     .select('data')
@@ -78,7 +131,7 @@ export async function deleteCloudProjects(projectIds: string[]): Promise<number>
   const s = getSupabase();
   if (!s) throw new Error('未配置云端');
   const ok = await ensureCloudSession();
-  if (!ok) throw new Error('云会话建立失败');
+  if (!ok) throw new Error(CLOUD_LOGIN_REQUIRED);
   const { error } = await s.from('projects').delete().in('id', ids);
   if (error) throw new Error(error.message);
   return ids.length;

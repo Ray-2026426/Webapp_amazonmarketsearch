@@ -28,6 +28,8 @@ import {
 } from '../utils/cloudDeletionStore';
 import { isCloudConfigured } from '../utils/supabaseClient';
 import { CloudSettingsModal } from './CloudSettingsModal';
+import { hydrateProjectsForCloud, restoreCloudDataToLocal } from '../utils/projectCloudBundle';
+import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
 import type { CompetitorContext } from '../utils/competitorLook';
@@ -122,6 +124,13 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   const [status, setStatus] = useState('active');
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ResearchProject | null>(null);
+  const [hasAutoSynced, setHasAutoSynced] = useState(false);
+
+  const queueCloudSync = () => {
+    window.setTimeout(() => {
+      void syncUserProjectsToCloud(userId);
+    }, 300);
+  };
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -135,23 +144,28 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
     }
   }, [userId]);
 
-  const handleSync = async () => {
+  const handleSync = async (mode: 'manual' | 'auto' = 'manual') => {
     if (!isCloudConfigured()) {
-      toast.info('未配置云端同步');
+      if (mode === 'manual') toast.info('未配置云端同步');
       return;
     }
     setSyncing(true);
     try {
       const pendingDeletions = await loadPendingCloudDeletions(userId);
-      const res = await syncProjects(projects, pendingDeletions);
+      const projectsWithCloudData = await hydrateProjectsForCloud(userId, projects);
+      const res = await syncProjects(projectsWithCloudData, pendingDeletions);
       if (res.ok) {
         await persistProjects(userId, res.projects);
+        const restored = await restoreCloudDataToLocal(userId, res.projects);
         await clearPendingCloudDeletions(userId, pendingDeletions);
         const conflictHint = res.conflicts > 0 ? `，保留冲突副本 ${res.conflicts}` : '';
-        toast.success(`已同步：上传 ${res.pushed}，拉取 ${res.pulled}，删除 ${res.deleted}${conflictHint}`);
+        const restoreHint = restored > 0 ? `，恢复内容 ${restored}` : '';
+        if (mode === 'manual' || restored > 0 || res.conflicts > 0) {
+          toast.success(`已同步：上传 ${res.pushed}，拉取 ${res.pulled}，删除 ${res.deleted}${conflictHint}${restoreHint}`);
+        }
         await refresh();
       } else {
-        toast.error(res.error || '同步失败');
+        if (mode === 'manual') toast.error(res.error || '同步失败');
       }
     } finally {
       setSyncing(false);
@@ -161,6 +175,12 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (loading || hasAutoSynced || projects.length === 0 || !isCloudConfigured()) return;
+    setHasAutoSynced(true);
+    void handleSync('auto');
+  }, [loading, hasAutoSynced, projects.length]);
 
   const filtered = useMemo(() => {
     return searchProjectsSync(projects, { keyword, marketplace, status });
@@ -189,7 +209,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
         </div>
         <button
           type="button"
-          onClick={handleSync}
+          onClick={() => void handleSync('manual')}
           disabled={syncing}
           title="同步项目到云端"
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-black/8 bg-white text-sm font-semibold text-[#424245] hover:bg-[#f5f5f7] transition-all disabled:opacity-50"
@@ -304,6 +324,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
           onClose={() => setCreateOpen(false)}
           onCreated={(p) => {
             setCreateOpen(false);
+            queueCloudSync();
             onOpenProject(p);
           }}
         />
@@ -320,6 +341,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
               await recordPendingCloudDeletion(userId, deleteTarget.id);
               toast.success('项目已删除');
               await refresh();
+              queueCloudSync();
             } else {
               toast.error('删除失败，项目不存在');
             }
@@ -336,6 +358,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
     if (copy) {
       toast.success('已复制项目');
       await refresh();
+      queueCloudSync();
     } else {
       toast.error('复制失败');
     }
@@ -347,6 +370,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
     if (next) {
       toast.success(archived ? '已恢复为活跃项目' : '已归档');
       await refresh();
+      queueCloudSync();
     } else {
       toast.error('操作失败');
     }

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -26,6 +26,7 @@ import { OpportunityLookView } from './OpportunityLookView';
 import { EditProjectModal } from './EditProjectModal';
 import { ReportsView } from './ReportsView';
 import { setActiveLook } from '../utils/projectStore';
+import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
 import type { CompetitorContext } from '../utils/competitorLook';
@@ -124,6 +125,23 @@ export function ProjectWorkspace({
   const [tab, setTab] = useState<Tab>(project.activeLook);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [editOpen, setEditOpen] = useState(false);
+  const initialSyncKey = useRef(`${project.id}:${project.version}:${project.updatedAt}`);
+  const lastQueuedSyncKey = useRef(initialSyncKey.current);
+
+  const queueCloudSync = () => {
+    lastQueuedSyncKey.current = '';
+    void syncUserProjectsToCloud(userId);
+  };
+
+  useEffect(() => {
+    const syncKey = `${p.id}:${p.version}:${p.updatedAt}`;
+    if (syncKey === initialSyncKey.current || syncKey === lastQueuedSyncKey.current) return;
+    lastQueuedSyncKey.current = syncKey;
+    const timer = window.setTimeout(() => {
+      void syncUserProjectsToCloud(userId);
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [p.id, p.version, p.updatedAt, userId]);
 
   const applyProjectUpdate = (updated: ResearchProject) => {
     setP(updated);
@@ -261,7 +279,7 @@ export function ProjectWorkspace({
       ) : tab === 'opportunity' ? (
         <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} onNavigateLook={(look) => void switchToLook(look)} />
       ) : (
-        <ReportsView userId={userId} project={p} />
+        <ReportsView userId={userId} project={p} onContentChange={queueCloudSync} />
       )}
       {editOpen && (
         <EditProjectModal
