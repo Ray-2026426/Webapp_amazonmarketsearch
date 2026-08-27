@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { normalizeAccount } from '../api/auth/account';
+import { localAccountUser } from '../api/auth/_shared';
 
 let passed = 0;
 let failed = 0;
@@ -37,6 +38,14 @@ test('非法账号会被拒绝', () => {
   assert.equal(normalizeAccount('a'), null);
   assert.equal(normalizeAccount('abc def'), null);
   assert.equal(normalizeAccount('-abc'), null);
+});
+
+test('本地降级账号生成稳定用户', () => {
+  const a = localAccountUser('123456');
+  const b = localAccountUser('123456');
+  assert.equal(a.id, b.id);
+  assert.equal(a.account, '123456');
+  assert.match(a.id, /^local_[0-9a-f]{32}$/);
 });
 
 console.log('');

@@ -11,7 +11,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (ids.length === 0) return json(res, 200, { ok: true, deleted: 0 });
 
   const s = getServiceSupabase();
-  if (!s) return json(res, 500, { ok: false, error: '后端未配置' });
+  if (!s) return json(res, 200, { ok: true, deleted: 0, cloudDisabled: true });
 
   const { error } = await s.from('projects').delete().in('id', ids).eq('owner_id', auth.userId);
   if (error) return json(res, 500, { ok: false, error: error.message });

@@ -11,7 +11,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (projects.length === 0) return json(res, 200, { ok: true, pushed: 0 });
 
   const s = getServiceSupabase();
-  if (!s) return json(res, 500, { ok: false, error: '后端未配置' });
+  if (!s) return json(res, 200, { ok: true, pushed: 0, cloudDisabled: true });
 
   const rows = projects.map((p) => {
     const proj = p as { id?: string; updatedAt?: string };

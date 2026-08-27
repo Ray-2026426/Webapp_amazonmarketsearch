@@ -13,7 +13,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!isAdminEmail(auth.email)) return json(res, 403, { ok: false, error: '非管理员' });
 
   const s = getServiceSupabase();
-  if (!s) return json(res, 500, { ok: false, error: '后端未配置' });
+  if (!s) {
+    return json(res, 200, {
+      ok: true,
+      cloudDisabled: true,
+      keys: {
+        deepseek: env('DEEPSEEK_API_KEY'),
+        sellersprite: env('SELLERSPRITE_SECRET_KEY'),
+        xydc: env('XYDC_SECRET_KEY'),
+        lingxing: env('LINGXING_SECRET_KEY'),
+      },
+    });
+  }
 
   const { data } = await s.auth.admin.getUserById(auth.userId);
   const meta = (data?.user?.user_metadata?.appKeys ?? {}) as Record<string, string>;

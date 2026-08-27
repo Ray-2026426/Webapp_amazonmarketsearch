@@ -53,6 +53,16 @@ export function signToken(payload: Record<string, unknown>, ttlMs: number): stri
   return `${header}.${body}.${sig}`;
 }
 
+export function localAccountUser(account: string): { id: string; email: string; account: string } {
+  const normalized = String(account || '').trim().toLowerCase();
+  const digest = crypto.createHash('sha256').update(normalized).digest('hex');
+  return {
+    id: `local_${digest.slice(0, 32)}`,
+    email: `${normalized || 'user'}@local.amzdev`,
+    account: normalized || 'user',
+  };
+}
+
 export function verifyToken(token: string): { userId: string; email: string } | null {
   const secret = getJwtSecret();
   const parts = String(token || '').split('.');

@@ -8,7 +8,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!auth) return json(res, 401, { ok: false, error: '未登录' });
 
   const s = getServiceSupabase();
-  if (!s) return json(res, 500, { ok: false, error: '后端未配置' });
+  if (!s) return json(res, 200, { ok: true, projects: [], cloudDisabled: true });
 
   const { data, error } = await s
     .from('projects')

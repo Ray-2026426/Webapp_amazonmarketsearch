@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getPublicSupabase, getServiceSupabase, signToken, json } from './_shared.js';
+import { getPublicSupabase, getServiceSupabase, localAccountUser, signToken, json } from './_shared.js';
 import { accountError, normalizeAccount } from './account.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -14,7 +14,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!s) {
     const publicSupabase = getPublicSupabase();
     if (!publicSupabase) {
-      return json(res, 500, { ok: false, error: '预览环境后端未配置：缺少 SUPABASE_URL 与 Supabase Key' });
+      const user = localAccountUser(account.account);
+      const token = signToken({ sub: user.id, email: user.email, account: user.account, mode: 'local' }, 30 * 24 * 3600 * 1000);
+      return json(res, 200, { ok: true, token, user, cloudDisabled: true });
     }
     const { data, error } = await publicSupabase.auth.signUp({
       email: account.authEmail,
@@ -28,7 +30,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const user = data.user;
     if (!user) return json(res, 500, { ok: false, error: '注册失败' });
     if (!data.session) {
-      return json(res, 202, { ok: false, error: '账号已创建，但 Supabase 要求邮件确认；请为预览环境配置 SUPABASE_SERVICE_ROLE_KEY 以跳过确认' });
+      const localUser = localAccountUser(account.account);
+      const token = signToken({ sub: localUser.id, email: localUser.email, account: localUser.account, mode: 'local' }, 30 * 24 * 3600 * 1000);
+      return json(res, 200, { ok: true, token, user: localUser, cloudDisabled: true });
     }
     const token = signToken({ sub: user.id, email: user.email, account: account.account }, 30 * 24 * 3600 * 1000);
     return json(res, 200, { ok: true, token, user: { id: user.id, email: user.email, account: account.account } });
