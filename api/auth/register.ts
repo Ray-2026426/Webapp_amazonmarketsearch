@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getServiceSupabase, signToken, json } from './_shared.js';
+import { getPublicSupabase, getServiceSupabase, signToken, json } from './_shared.js';
 import { accountError, normalizeAccount } from './account.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -11,7 +11,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (password.length < 6) return json(res, 400, { ok: false, error: '密码至少 6 位' });
 
   const s = getServiceSupabase();
-  if (!s) return json(res, 500, { ok: false, error: '预览环境后端未配置：缺少 SUPABASE_URL 或 SUPABASE_SERVICE_ROLE_KEY' });
+  if (!s) {
+    const publicSupabase = getPublicSupabase();
+    if (!publicSupabase) {
+      return json(res, 500, { ok: false, error: '预览环境后端未配置：缺少 SUPABASE_URL 与 Supabase Key' });
+    }
+    const { data, error } = await publicSupabase.auth.signUp({
+      email: account.authEmail,
+      password,
+      options: { data: { account: account.account, login_type: account.isEmail ? 'email' : 'account' } },
+    });
+    if (error) {
+      const already = /already registered|already been registered|already exists/i.test(error.message) || error.status === 422;
+      return json(res, already ? 409 : 500, { ok: false, error: already ? '该账号已注册' : (error.message || '注册失败') });
+    }
+    const user = data.user;
+    if (!user) return json(res, 500, { ok: false, error: '注册失败' });
+    if (!data.session) {
+      return json(res, 202, { ok: false, error: '账号已创建，但 Supabase 要求邮件确认；请为预览环境配置 SUPABASE_SERVICE_ROLE_KEY 以跳过确认' });
+    }
+    const token = signToken({ sub: user.id, email: user.email, account: account.account }, 30 * 24 * 3600 * 1000);
+    return json(res, 200, { ok: true, token, user: { id: user.id, email: user.email, account: account.account } });
+  }
 
   const { data, error } = await s.auth.admin.createUser({
     email: account.authEmail,

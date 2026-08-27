@@ -14,6 +14,15 @@ export function getServiceSupabase(): SupabaseClient | null {
   });
 }
 
+export function getPublicSupabase(): SupabaseClient | null {
+  const url = env('SUPABASE_URL');
+  const key = env('SUPABASE_PUBLISHABLE_KEY') || env('VITE_SUPABASE_PUBLISHABLE_KEY') || env('SUPABASE_ANON_KEY');
+  if (!url || !key) return null;
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 export function hashPassword(password: string, salt?: string): string {
   const s = salt ?? crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(password, s, 100000, 64, 'sha256').toString('hex');
