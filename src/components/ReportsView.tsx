@@ -5,6 +5,7 @@ import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { MarkdownReport } from './MarkdownReport';
 import { loadReports, finalizeReport, deleteReport, type ProjectReport, type ReportType } from '../utils/reportStore';
+import { deleteProjectAsset } from '../utils/projectAssets';
 import type { ResearchProject } from '../types/researchProject';
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
@@ -76,6 +77,9 @@ export function ReportsView({
     onContentChange?.();
   };
   const onDelete = async (r: ProjectReport) => {
+    if (r.storagePath) {
+      void deleteProjectAsset(r.storagePath);
+    }
     await deleteReport(userId, project.id, r.id);
     toast.success('报告已删除');
     await refresh();

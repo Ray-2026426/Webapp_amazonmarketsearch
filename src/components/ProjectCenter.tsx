@@ -19,6 +19,7 @@ import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { Select } from './ui/Select';
 import { recordPendingCloudDeletion } from '../utils/cloudDeletionStore';
+import { purgeProjectAssets } from '../utils/projectAssets';
 import { getAuthToken } from '../utils/auth';
 import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
 import type { MarketContext } from '../utils/marketLook';
@@ -319,6 +320,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
             const ok = await deleteProject(userId, deleteTarget.id);
             setDeleteTarget(null);
             if (ok) {
+              void purgeProjectAssets(deleteTarget.id);
               await recordPendingCloudDeletion(userId, deleteTarget.id);
               toast.success('项目已删除');
               await refresh();

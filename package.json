@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "tsx tests/progress.test.ts && tsx tests/cloudSync.test.ts && tsx tests/authAccount.test.ts && tsx tests/aiConfig.test.ts"
+    "test": "tsx tests/progress.test.ts && tsx tests/cloudSync.test.ts && tsx tests/authAccount.test.ts && tsx tests/aiConfig.test.ts && tsx tests/members.test.ts && tsx tests/optimistic.test.ts && tsx tests/assets.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

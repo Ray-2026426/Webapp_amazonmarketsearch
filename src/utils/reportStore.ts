@@ -1,4 +1,4 @@
-﻿// 报告资产与版本（PRD FR-09 / 14.2）。
+// 报告资产与版本（PRD FR-09 / 14.2）。
 import { get, set, del } from 'idb-keyval';
 
 export type ReportType = 'market' | 'user' | 'competitor' | 'self' | 'opportunity' | 'asin' | 'profit';
@@ -10,6 +10,8 @@ export interface ProjectReport {
   subjectId: string;
   title: string;
   markdown: string;
+  /** 大型报告正文入云后的 Storage 路径；存在时 markdown 可为空（按需下载回填）。 */
+  storagePath?: string;
   dataFingerprint: string;
   promptVersion: string;
   modelName: string;

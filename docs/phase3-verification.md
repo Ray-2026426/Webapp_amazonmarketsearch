@@ -29,14 +29,24 @@
 - 跨设备恢复仍需用两个浏览器登录同一邮箱账号做完整 UI 验收。
 - 当前自动同步覆盖项目中心进入、项目新建/复制/归档/恢复/删除、五看保存后的项目版本变化、项目编辑、报告定稿/删除、全局工具报告归档。
 - 部署环境变量需要配置 `SUPABASE_URL`、`SUPABASE_PUBLISHABLE_KEY`、`SUPABASE_CLOUD_EMAIL`、`SUPABASE_CLOUD_PASSWORD`；这些值不得提交到代码仓库。
-- 项目成员底层表与 RLS 已有，邀请成员、成员管理 UI 和共享入口尚未实现。
 - 文件资产仍保存在本地项目数据中，尚未接入 Supabase Storage。
 - 客户端合并可以保护已观察到的同版本分叉，但不能消除“两端同时拉取旧版本后同时写入”的竞态。
+
+## 成员管理与乐观并发（2026-08-27 更新）
+
+- 新增项目成员管理 API `/api/projects/members`：列出、邀请（按邮箱解析 Supabase 用户）、移除、调整角色（editor/viewer）；仅 owner 可管理，成员可读。
+- 新增迁移 006：`projects.revision` 乐观锁列、`find_user_id_by_email`、`project_members_with_info`（带成员校验，防枚举）、`push_project_if_revision`（原子版本检查 + owner/editor 权限，仅 service_role 可调用）。
+- `pull` 已扩展为「owner 或成员可见」：service_role 模式手动按 `project_members` 扩展可见范围；user token 模式走 RLS。
+- `push` 已改为乐观并发写入：service_role 走 RPC，user token 走 PostgREST 带 `revision` 条件的原子更新；冲突时返回云端当前版本，客户端 `reconcilePushConflicts` 用云端版本胜出并保留本地冲突副本后二次推送。
+- 客户端项目新增 `cloudRevision` 字段，随数据往返；`migrateProject` 保留；内容比较忽略该字段，避免误判分叉。
+- 前端新增成员管理弹窗 `ProjectMembersModal`（项目工作区右上角成员入口）：邀请表单、成员列表、角色徽章、owner 专属的角色调整/移除，editor/viewer 只读。
+- 新增迁移 007：`project-assets` Storage 桶 + 基于项目成员角色的 storage.objects RLS（成员可读、owner/editor 可写、owner 可删）。
+- 新增资产 API `/api/assets/upload|download|delete|purge`；大型报告正文（>20KB）转存 Storage，恢复时回填；删除报告/项目时级联删除 Storage 文件。
 
 ## 进入真实团队同步前的门槛
 
 1. 在真实 Supabase 测试项目执行邮箱账号双浏览器、清空本地数据后恢复项目的验收。
-2. 增加项目成员邀请/移除/角色调整 UI，并验证 owner/editor/viewer 权限越权。
-3. 增加服务端 revision 和带 expected revision 的 RPC，实现乐观并发控制。
-4. 为图片、附件和大型报告接入 Storage，并定义删除级联。
+2. ~~增加项目成员邀请/移除/角色调整 UI，并验证 owner/editor/viewer 权限越权~~（已完成：API + UI + 迁移 006；仍待真实环境双浏览器验收）。
+3. ~~增加服务端 revision 和带 expected revision 的 RPC，实现乐观并发控制~~（已完成：迁移 006 `push_project_if_revision` + push 改造；仍待真实环境并发验收）。
+4. ~~为图片、附件和大型报告接入 Storage，并定义删除级联~~（已完成：迁移 007 + 资产 API + 报告转存/回填/级联；图片/附件按需补充接入）。
 5. 执行断网恢复、删除传播和旧 001 项目迁移到 002 权限模型的验收。

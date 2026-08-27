@@ -5,6 +5,12 @@ import { loadCompetitorLook, saveCompetitorLook } from './competitorLook';
 import { loadSelfAssessment, saveSelfAssessment } from './selfAssessment';
 import { loadOpportunities, saveOpportunities } from './opportunityStore';
 import { loadReports, type ProjectReport } from './reportStore';
+import {
+  REPORT_STORAGE_THRESHOLD,
+  reportStoragePath,
+  uploadProjectAssetText,
+  downloadProjectAssetText,
+} from './projectAssets';
 import { set } from 'idb-keyval';
 
 type ProjectCloudData = NonNullable<ResearchProject['cloudData']>;
@@ -29,6 +35,44 @@ function hasMeaningfulCloudData(data: ProjectCloudData | undefined): boolean {
   );
 }
 
+/** 把超阈值报告正文上传 Storage，返回「云载荷报告列表」；上传失败保留内联正文（降级）。 */
+async function externalizeReports(projectId: string, reports: ProjectReport[]): Promise<ProjectReport[]> {
+  const out: ProjectReport[] = [];
+  for (const report of reports) {
+    const markdown = String(report.markdown || '');
+    if (markdown.length > REPORT_STORAGE_THRESHOLD) {
+      const storagePath = reportStoragePath(projectId, report.id);
+      const uploaded = await uploadProjectAssetText(projectId, `reports/${report.id}.md`, markdown);
+      if (uploaded) {
+        out.push({ ...report, storagePath: uploaded, markdown: '' });
+        continue;
+      }
+      out.push(report); // 上传失败：保持内联，避免数据丢失
+    } else {
+      out.push(report);
+    }
+  }
+  return out;
+}
+
+/** 恢复时回填：storagePath 存在且正文为空时，从 Storage 下载。 */
+async function hydrateReportBodies(projectId: string, reports: ProjectReport[]): Promise<ProjectReport[]> {
+  const out: ProjectReport[] = [];
+  for (const report of reports) {
+    if (report.storagePath && !report.markdown) {
+      const text = await downloadProjectAssetText(report.storagePath);
+      if (text !== null) {
+        out.push({ ...report, markdown: text });
+        continue;
+      }
+      out.push({ ...report, markdown: '（报告正文暂不可用，云同步后自动恢复）' });
+      continue;
+    }
+    out.push(report);
+  }
+  return out;
+}
+
 export async function hydrateProjectsForCloud(
   userId: string,
   projects: ResearchProject[]
@@ -43,6 +87,7 @@ export async function hydrateProjectsForCloud(
         loadOpportunities(userId, project.id),
         loadReports(userId, project.id),
       ]);
+      const externalReports = await externalizeReports(project.id, reports);
       return {
         ...project,
         cloudData: {
@@ -51,7 +96,7 @@ export async function hydrateProjectsForCloud(
           competitorLook,
           selfAssessment,
           opportunities,
-          reports,
+          reports: externalReports,
           updatedAt: new Date().toISOString(),
         },
       };
@@ -88,7 +133,8 @@ export async function restoreCloudDataToLocal(
       restored += 1;
     }
     if (Array.isArray(data.reports)) {
-      await set(reportsKey(userId, project.id), data.reports as ProjectReport[]);
+      const hydrated = await hydrateReportBodies(project.id, data.reports as ProjectReport[]);
+      await set(reportsKey(userId, project.id), hydrated);
       restored += 1;
     }
   }
