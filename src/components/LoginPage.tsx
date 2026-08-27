@@ -626,7 +626,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
   useEffect(() => {
     const c = loadCreds();
-    if (c) { setEmail(c.email); setPassword(c.password); setRememberMe(true); }
+    if (c) { setEmail(c.account); setPassword(c.password); setRememberMe(true); }
   }, []);
 
   const scrollToLogin = () => {
@@ -931,12 +931,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
               <form onSubmit={submit} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[12px] font-semibold text-[#424245]">邮箱</label>
+                  <label className="text-[12px] font-semibold text-[#424245]">账号</label>
                   <div className="relative group">
                     <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-400/0 via-indigo-400/0 to-violet-400/0 group-focus-within:from-indigo-400/6 group-focus-within:via-indigo-400/10 group-focus-within:to-violet-400/6 transition-all duration-300 pointer-events-none" />
                     <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#aeaeb2] group-focus-within:text-indigo-400 transition-colors z-10" />
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                      placeholder="请输入邮箱" required
+                    <input type="text" value={email} onChange={(e) => setEmail(e.target.value)}
+                      placeholder="邮箱 / 纯数字 / 账号名" required
                       className="relative w-full pl-10 pr-4 py-3 bg-white border border-black/[0.08] rounded-xl text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:border-indigo-300 text-sm transition-all shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]" />
                   </div>
                 </div>

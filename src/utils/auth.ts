@@ -35,7 +35,6 @@ function readSession(): SessionUser | null {
     if (!raw) return null;
     const s = JSON.parse(raw) as SessionUser;
     if (!s?.id || !s?.username) return null;
-    if (!s.email) return null;
     if (!getAuthToken()) return null;
     const avatar = localStorage.getItem(`${AVATAR_KEY_PREFIX}${s.id}`);
     return avatar ? { ...s, avatarDataUrl: avatar } : s;
@@ -78,19 +77,19 @@ export interface RegisterResult {
   error?: string;
 }
 
-export async function register(email: string, password: string): Promise<RegisterResult> {
+export async function register(account: string, password: string): Promise<RegisterResult> {
   try {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ account, password }),
     });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; user?: { id: string; email: string } };
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; user?: { id: string; email?: string; account?: string } };
     if (!res.ok || !body.ok || !body.token || !body.user) {
       return { success: false, error: body.error || '注册失败' };
     }
     writeToken(body.token);
-    writeSession({ id: body.user.id, username: body.user.email, email: body.user.email });
+    writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email });
     return { success: true };
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : '注册失败' };
@@ -102,19 +101,19 @@ export interface LoginResult {
   error?: string;
 }
 
-export async function login(email: string, password: string): Promise<LoginResult> {
+export async function login(account: string, password: string): Promise<LoginResult> {
   try {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ account, password }),
     });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; user?: { id: string; email: string } };
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; user?: { id: string; email?: string; account?: string } };
     if (!res.ok || !body.ok || !body.token || !body.user) {
       return { success: false, error: body.error || '登录失败' };
     }
     writeToken(body.token);
-    writeSession({ id: body.user.id, username: body.user.email, email: body.user.email });
+    writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email });
     return { success: true, user: getCurrentUser() ?? undefined };
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : '登录失败' };
@@ -126,19 +125,22 @@ export function logout(): void {
   clearToken();
 }
 export interface SavedCredentials {
-  email: string;
+  account: string;
+  email?: string;
   password: string;
 }
 
-export function saveCreds(email: string, password: string): void {
-  localStorage.setItem(SAVED_CREDS_KEY, JSON.stringify({ email, password }));
+export function saveCreds(account: string, password: string): void {
+  localStorage.setItem(SAVED_CREDS_KEY, JSON.stringify({ account, password }));
 }
 
 export function loadCreds(): SavedCredentials | null {
   try {
     const raw = localStorage.getItem(SAVED_CREDS_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as SavedCredentials;
+    const parsed = JSON.parse(raw) as SavedCredentials;
+    if (!parsed.account && parsed.email) return { account: parsed.email, email: parsed.email, password: parsed.password };
+    return parsed;
   } catch {
     return null;
   }
