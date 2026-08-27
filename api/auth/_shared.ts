@@ -1,12 +1,23 @@
 import crypto from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+const DEFAULT_SUPABASE_URL = 'https://fbldvwzoqlewoistybto.supabase.co';
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Y1fTAwpwmaZEEQe6Fdtseg_kljnG53_';
+
 function env(name: string): string {
   return (process.env[name] || '').trim();
 }
 
+function supabaseUrl(): string {
+  return env('SUPABASE_URL') || DEFAULT_SUPABASE_URL;
+}
+
+function supabasePublishableKey(): string {
+  return env('SUPABASE_PUBLISHABLE_KEY') || env('VITE_SUPABASE_PUBLISHABLE_KEY') || env('SUPABASE_ANON_KEY') || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+}
+
 export function getServiceSupabase(): SupabaseClient | null {
-  const url = env('SUPABASE_URL');
+  const url = supabaseUrl();
   const key = env('SUPABASE_SERVICE_ROLE_KEY');
   if (!url || !key) return null;
   return createClient(url, key, {
@@ -15,8 +26,8 @@ export function getServiceSupabase(): SupabaseClient | null {
 }
 
 export function getPublicSupabase(): SupabaseClient | null {
-  const url = env('SUPABASE_URL');
-  const key = env('SUPABASE_PUBLISHABLE_KEY') || env('VITE_SUPABASE_PUBLISHABLE_KEY') || env('SUPABASE_ANON_KEY');
+  const url = supabaseUrl();
+  const key = supabasePublishableKey();
   if (!url || !key) return null;
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -24,8 +35,8 @@ export function getPublicSupabase(): SupabaseClient | null {
 }
 
 export function getUserSupabase(accessToken?: string | null): SupabaseClient | null {
-  const url = env('SUPABASE_URL');
-  const key = env('SUPABASE_PUBLISHABLE_KEY') || env('VITE_SUPABASE_PUBLISHABLE_KEY') || env('SUPABASE_ANON_KEY');
+  const url = supabaseUrl();
+  const key = supabasePublishableKey();
   const token = String(accessToken || '').trim();
   if (!url || !key || !token) return null;
   return createClient(url, key, {
