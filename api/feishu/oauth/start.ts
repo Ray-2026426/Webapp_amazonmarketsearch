@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getAppCredentials, getRedirectUri, sendJson } from '../_shared';
+import { getAppCredentials, getRedirectUri, sendJson } from '../_shared.js';
 
 /**
  * 开始飞书用户 OAuth：跳转到飞书授权页

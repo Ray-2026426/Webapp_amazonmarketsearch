@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getAppAccessToken, getAppCredentials } from '../_shared';
+import { getAppAccessToken, getAppCredentials } from '../_shared.js';
 
 /**
  * OAuth 回调：code 换 user_access_token，再回跳前端并在 hash 写入 token

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getAppAccessToken, getAppCredentials, sendJson } from '../_shared';
+import { getAppAccessToken, getAppCredentials, sendJson } from '../_shared.js';
 
 /**
  * 刷新 user_access_token

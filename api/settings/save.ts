@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getServiceSupabase, verifyToken, isAdminEmail, json } from '../auth/_shared';
+import { getServiceSupabase, verifyToken, isAdminEmail, json } from '../auth/_shared.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method not allowed' });

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getServiceSupabase, verifyToken, isAdminEmail, json } from '../auth/_shared';
+import { getServiceSupabase, verifyToken, isAdminEmail, json } from '../auth/_shared.js';
 
 function env(name: string): string {
   return (process.env[name] || '').trim();

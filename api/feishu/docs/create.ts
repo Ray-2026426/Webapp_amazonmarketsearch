@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createDocxWithMarkdown, getAppCredentials, sendJson } from '../_shared';
+import { createDocxWithMarkdown, getAppCredentials, sendJson } from '../_shared.js';
 
 /**
  * 用用户 token 创建飞书文档并写入 Markdown 正文
