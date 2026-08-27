@@ -108,6 +108,7 @@ export function migrateProject(raw: unknown): ResearchProject | null {
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : nowIso(),
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : nowIso(),
     version: typeof raw.version === 'number' ? raw.version : 1,
+    cloudRevision: typeof raw.cloudRevision === 'number' ? raw.cloudRevision : undefined,
     categories: Array.isArray(raw.categories) ? (raw.categories as string[]) : undefined,
     coreKeywords: Array.isArray(raw.coreKeywords) ? (raw.coreKeywords as string[]) : undefined,
     seedAsins: Array.isArray(raw.seedAsins) ? (raw.seedAsins as string[]) : undefined,

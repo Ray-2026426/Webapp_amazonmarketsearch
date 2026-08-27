@@ -13,7 +13,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const s = getServiceSupabase() ?? getUserSupabase(body.supabaseAccessToken);
   if (!s) return json(res, 200, { ok: true, deleted: 0, cloudDisabled: true });
 
-  const { error } = await s.from('projects').delete().in('id', ids).eq('owner_id', auth.userId);
+  const { data, error } = await s.from('projects').delete().in('id', ids).eq('owner_id', auth.userId);
   if (error) return json(res, 500, { ok: false, error: error.message });
-  return json(res, 200, { ok: true, deleted: ids.length });
+  return json(res, 200, { ok: true, deleted: (data ?? []).length });
 }

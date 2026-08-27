@@ -66,6 +66,11 @@ export interface ResearchProject {
   createdAt: string;
   updatedAt: string;
   version: number;
+  /**
+   * 服务端乐观锁 revision（Phase 3）：云同步时随项目数据往返。
+   * 本地编辑不改变它；推送时作为 expected revision，冲突时由云端版本覆盖。
+   */
+  cloudRevision?: number;
   // FR-01 选填字段
   categories?: string[];
   coreKeywords?: string[];

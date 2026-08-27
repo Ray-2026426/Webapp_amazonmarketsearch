@@ -43,10 +43,22 @@ export async function pullProjects(): Promise<ResearchProject[]> {
     .filter((p): p is ResearchProject => p !== null);
 }
 
-export async function pushProjects(projects: ResearchProject[]): Promise<number> {
-  if (projects.length === 0) return 0;
-  const body = await postJson<{ ok?: boolean; pushed?: number }>('/api/projects/push', { projects });
-  return body.ok ? (body.pushed ?? 0) : 0;
+export interface PushOutcome {
+  pushed: number;
+  /** 云端版本比本地新而被拒绝的项目：key 为项目 id，value 为云端完整项目（含 cloudRevision）。 */
+  conflicts: { id: string; cloud: unknown }[];
+}
+
+export async function pushProjects(projects: ResearchProject[]): Promise<PushOutcome> {
+  if (projects.length === 0) return { pushed: 0, conflicts: [] };
+  const body = await postJson<{ ok?: boolean; pushed?: number; conflicts?: { id: string; cloud: unknown }[] }>(
+    '/api/projects/push',
+    { projects }
+  );
+  return {
+    pushed: body.ok ? (body.pushed ?? 0) : 0,
+    conflicts: body.ok ? (body.conflicts ?? []) : [],
+  };
 }
 
 export interface CloudDeleteResult {
@@ -65,7 +77,11 @@ function canonicalize(value: unknown): unknown {
   if (value && typeof value === 'object') {
     const input = value as Record<string, unknown>;
     const output: Record<string, unknown> = {};
-    for (const key of Object.keys(input).sort()) output[key] = canonicalize(input[key]);
+    for (const key of Object.keys(input).sort()) {
+      // cloudRevision 是服务端乐观锁元数据，内容相同但 revision 不同不算分叉。
+      if (key === 'cloudRevision') continue;
+      output[key] = canonicalize(input[key]);
+    }
     return output;
   }
   return value;
@@ -130,7 +146,16 @@ export function mergeProjectSets(
     conflicts,
   };
 }
-/** Pull, merge, preserve conflicts, apply pending deletions, then push. */
+/** 把服务端拒绝的冲突项目（云端版本）回灌合并，保留本地冲突副本。返回合并结果与冲突数。 */
+export function reconcilePushConflicts(
+  merged: ResearchProject[],
+  cloudWinners: ResearchProject[]
+): ProjectMergeResult {
+  if (cloudWinners.length === 0) return { projects: merged, conflicts: 0 };
+  return mergeProjectSets(merged, cloudWinners);
+}
+
+/** Pull, merge, preserve conflicts, apply pending deletions, then push with optimistic concurrency. */
 export async function syncProjects(
   local: ResearchProject[],
   pendingDeletionIds: string[] = []
@@ -146,13 +171,34 @@ export async function syncProjects(
       local.filter((p) => !deletedSet.has(p.id)),
       cloud.filter((p) => !deletedSet.has(p.id))
     );
-    const pushed = await pushProjects(merge.projects);
+    const pushOutcome = await pushProjects(merge.projects);
+    let conflicts = merge.conflicts;
+
+    // 乐观并发：服务端拒绝的冲突项目，用云端版本替换本地，并保留本地冲突副本后二次推送。
+    if (pushOutcome.conflicts.length > 0) {
+      const cloudWinners = pushOutcome.conflicts
+        .map((c) => migrateProject(c.cloud))
+        .filter((p): p is ResearchProject => p !== null);
+      const mergedAgain = reconcilePushConflicts(merge.projects, cloudWinners);
+      conflicts += mergedAgain.conflicts;
+      await pushProjects(mergedAgain.projects);
+      return {
+        ok: true,
+        pushed: pushOutcome.pushed + mergedAgain.projects.length,
+        pulled: cloud.length,
+        deleted: deletion.deleted,
+        conflicts,
+        projects: mergedAgain.projects,
+        cloudDisabled: deletion.cloudDisabled,
+      };
+    }
+
     return {
       ok: true,
-      pushed,
+      pushed: pushOutcome.pushed,
       pulled: cloud.length,
       deleted: deletion.deleted,
-      conflicts: merge.conflicts,
+      conflicts,
       projects: merge.projects,
       cloudDisabled: deletion.cloudDisabled,
     };
