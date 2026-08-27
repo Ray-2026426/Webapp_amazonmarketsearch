@@ -31,7 +31,7 @@ import { get, set, del } from 'idb-keyval';
 import { Toaster, toast } from 'sonner';
 import { getAuthToken, getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
 import { ensureAdminMcpDefaults, loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
-import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
+import { loadAiSettings, saveAiSettings, sanitizeAiSettings, AiSettings } from './utils/aiConfig';
 import { fetchServerKeys, saveServerKeys } from './utils/serverKeys';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
@@ -186,8 +186,9 @@ export default function App() {
   }, []);
 
   const handleSaveAiSettings = useCallback((settings: AiSettings) => {
-    saveAiSettings(settings);
-    setAiSettings(settings);
+    const cleaned = sanitizeAiSettings(settings);
+    saveAiSettings(cleaned);
+    setAiSettings(cleaned);
   }, []);
 
   // ── Data ──────────────────────────────────────────────────────────────────

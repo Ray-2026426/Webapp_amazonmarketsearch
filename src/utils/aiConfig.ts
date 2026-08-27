@@ -92,9 +92,43 @@ export interface AiSettings {
   customModels?: Partial<Record<AiProvider, string[]>>;
 }
 
+export function isValidCustomApiUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('/')) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function sanitizeAiApiUrls(
+  apiUrls?: Partial<Record<AiProvider, string>>
+): Partial<Record<AiProvider, string>> | undefined {
+  if (!apiUrls) return undefined;
+  const cleaned: Partial<Record<AiProvider, string>> = {};
+  for (const provider of AI_PROVIDERS.map((p) => p.id)) {
+    const value = apiUrls[provider]?.trim();
+    if (value && isValidCustomApiUrl(value)) cleaned[provider] = value;
+  }
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+}
+
+export function sanitizeAiSettings(settings: AiSettings): AiSettings {
+  return {
+    ...settings,
+    apiKey: settings.apiKey ?? '',
+    model: settings.model || getProviderConfig(settings.provider).defaultModel,
+    apiUrls: sanitizeAiApiUrls(settings.apiUrls),
+  };
+}
+
 /** 获取某个供应商生效的 API URL（优先使用自定义 URL，否则返回默认 URL） */
 export function getEffectiveApiUrl(settings: AiSettings, provider: AiProvider): string {
-  return settings.apiUrls?.[provider]?.trim() || getProviderConfig(provider).baseUrl;
+  const customUrl = settings.apiUrls?.[provider]?.trim();
+  return customUrl && isValidCustomApiUrl(customUrl) ? customUrl : getProviderConfig(provider).baseUrl;
 }
 
 /** 获取某个供应商的完整模型列表（默认模型 + 自定义模型） */
@@ -119,11 +153,12 @@ export function loadAiSettings(): AiSettings | null {
   try {
     const storageKey = getAiSettingsKey();
     const raw = localStorage.getItem(storageKey);
-    if (raw) return JSON.parse(raw) as AiSettings;
+    if (raw) return sanitizeAiSettings(JSON.parse(raw) as AiSettings);
     const legacyRaw = canUseDefaultAiKey() ? localStorage.getItem(AI_SETTINGS_KEY) : null;
     if (legacyRaw) {
-      localStorage.setItem(storageKey, legacyRaw);
-      return JSON.parse(legacyRaw) as AiSettings;
+      const migrated = sanitizeAiSettings(JSON.parse(legacyRaw) as AiSettings);
+      localStorage.setItem(storageKey, JSON.stringify(migrated));
+      return migrated;
     }
     // \u56de\u9000\u5230 .env.local \u9ed8\u8ba4\u914d\u7f6e\uff0c\u65e0\u9700\u624b\u52a8\u8f93\u5165
     const defaultKey = canUseDefaultAiKey() ? getDefaultServerKey('deepseek') : '';
@@ -141,7 +176,7 @@ export function loadAiSettings(): AiSettings | null {
 }
 
 export function saveAiSettings(settings: AiSettings): void {
-  localStorage.setItem(getAiSettingsKey(), JSON.stringify(settings));
+  localStorage.setItem(getAiSettingsKey(), JSON.stringify(sanitizeAiSettings(settings)));
 }
 
 export function getProviderConfig(provider: AiProvider): AiProviderConfig {
@@ -365,13 +400,15 @@ async function callGeminiWithImages(
 
 /** 是否填写了自定义 API URL */
 export function hasCustomApiUrl(settings: AiSettings, provider: AiProvider): boolean {
-  return Boolean(settings.apiUrls?.[provider]?.trim());
+  const customUrl = settings.apiUrls?.[provider]?.trim();
+  return Boolean(customUrl && isValidCustomApiUrl(customUrl));
 }
 
 /** 将用户填写的中转 API 地址补全为可请求的完整 endpoint（不会重复添加 /v1） */
 export function resolveCustomApiUrl(url: string, provider: AiProvider): string {
   const cleaned = url.trim().replace(/\/+$/, '');
   if (!cleaned) return cleaned;
+  if (!isValidCustomApiUrl(cleaned)) return '';
 
   if (provider === 'gemini') {
     if (/\/models\/.*:generateContent$/i.test(cleaned) || /\/generateContent$/i.test(cleaned)) {
@@ -454,7 +491,7 @@ function parseOpenAICompatResponse(text: string, endpoint: string): string {
 /** 构建 API endpoint */
 export function buildEndpoint(settings: AiSettings, provider: AiProvider): string {
   const customUrl = settings.apiUrls?.[provider]?.trim();
-  if (customUrl) {
+  if (customUrl && isValidCustomApiUrl(customUrl)) {
     return resolveCustomApiUrl(customUrl, provider);
   }
 

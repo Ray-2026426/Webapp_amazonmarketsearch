@@ -18,11 +18,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const { data, error } = await s.auth.signInWithPassword({ email: account.authEmail, password });
-  if ((error || !data.user) && !service) {
-    const user = localAccountUser(account.account);
-    const token = signToken({ sub: user.id, email: user.email, account: user.account, mode: 'local' }, 30 * 24 * 3600 * 1000);
-    return json(res, 200, { ok: true, token, user, cloudDisabled: true });
-  }
   if (error || !data.user) {
     return json(res, 401, { ok: false, error: account.isEmail ? '邮箱或密码错误' : '账号或密码错误' });
   }

@@ -30,9 +30,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const user = data.user;
     if (!user) return json(res, 500, { ok: false, error: '注册失败' });
     if (!data.session) {
-      const localUser = localAccountUser(account.account);
-      const token = signToken({ sub: localUser.id, email: localUser.email, account: localUser.account, mode: 'local' }, 30 * 24 * 3600 * 1000);
-      return json(res, 200, { ok: true, token, user: localUser, cloudDisabled: true });
+      return json(res, 409, {
+        ok: false,
+        error: account.isEmail
+          ? '注册需要先完成邮箱确认，确认后再登录'
+          : '当前后端需要邮箱确认，纯数字账号需要关闭 Supabase 邮箱确认或配置 SERVICE_ROLE_KEY',
+      });
     }
     const token = signToken({ sub: user.id, email: user.email, account: account.account }, 30 * 24 * 3600 * 1000);
     return json(res, 200, {

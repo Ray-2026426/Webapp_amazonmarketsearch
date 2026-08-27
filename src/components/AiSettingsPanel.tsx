@@ -11,6 +11,7 @@ import {
   isBareDomainUrl,
   suggestFullApiUrl,
   generateText,
+  sanitizeAiApiUrls,
 } from '../utils/aiConfig';
 import {
   loadMcpSettings,
@@ -66,7 +67,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   const [provider, setProvider] = useState<AiProvider>(initialProvider);
   const [model, setModel] = useState<string>(initialModel);
   const [apiKey, setApiKey] = useState(settings?.apiKey ?? '');
-  const [apiUrls, setApiUrls] = useState<Partial<Record<AiProvider, string>>>(settings?.apiUrls ?? {});
+  const [apiUrls, setApiUrls] = useState<Partial<Record<AiProvider, string>>>(sanitizeAiApiUrls(settings?.apiUrls) ?? {});
   const [customModels, setCustomModels] = useState<Partial<Record<AiProvider, string[]>>>(settings?.customModels ?? {});
   const [newCustomModelName, setNewCustomModelName] = useState('');
   const [isTesting, setIsTesting] = useState(false);
@@ -99,7 +100,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     setProvider(p);
     setModel(m);
     setApiKey(settings?.apiKey ?? '');
-    setApiUrls(settings?.apiUrls ?? {});
+    setApiUrls(sanitizeAiApiUrls(settings?.apiUrls) ?? {});
     setCustomModels(settings?.customModels ?? {});
     setTestResult(null);
   }, [settings]);
@@ -242,11 +243,12 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
       toast.error('请填写 AI API Key，或切换到「背景信息 / MCP 数据」页单独应用');
       return;
     }
+    const cleanedApiUrls = sanitizeAiApiUrls(apiUrls);
     onSave({
       provider,
       apiKey: apiKey.trim(),
       model,
-      apiUrls,
+      apiUrls: cleanedApiUrls,
       customModels,
     });
     toast.success('设置已保存');
