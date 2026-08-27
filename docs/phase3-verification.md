@@ -26,11 +26,11 @@
 
 ## 当前边界
 
-- 跨设备恢复仍需用两个浏览器登录同一邮箱账号做完整 UI 验收。
+- ✅ 跨设备恢复已在真实 phase-0 预览环境完成双浏览器验收：同一邮箱账号登录可见同一批项目；账号隔离（新注册账号看不到他人项目）通过。
 - 当前自动同步覆盖项目中心进入、项目新建/复制/归档/恢复/删除、五看保存后的项目版本变化、项目编辑、报告定稿/删除、全局工具报告归档。
-- 部署环境变量需要配置 `SUPABASE_URL`、`SUPABASE_PUBLISHABLE_KEY`、`SUPABASE_CLOUD_EMAIL`、`SUPABASE_CLOUD_PASSWORD`；这些值不得提交到代码仓库。
-- 文件资产仍保存在本地项目数据中，尚未接入 Supabase Storage。
-- 客户端合并可以保护已观察到的同版本分叉，但不能消除“两端同时拉取旧版本后同时写入”的竞态。
+- 部署环境变量需要配置 `SUPABASE_URL`、`SUPABASE_PUBLISHABLE_KEY`、`SUPABASE_SERVICE_ROLE_KEY`（Preview + Production）；`SUPABASE_CLOUD_EMAIL`、`SUPABASE_CLOUD_PASSWORD`。这些值不得提交到代码仓库。
+- 大报告正文已接入 Storage（>20KB 转存 `project-assets` 桶）；图片/附件尚未单独接入。
+- 客户端合并可以保护已观察到的同版本分叉，但不能消除“两端同时拉取旧版本后同时写入”的竞态（已用服务端 revision 乐观锁缓解，仍需真实并发验收）。
 
 ## 成员管理与乐观并发（2026-08-27 更新）
 
@@ -45,8 +45,15 @@
 
 ## 进入真实团队同步前的门槛
 
-1. 在真实 Supabase 测试项目执行邮箱账号双浏览器、清空本地数据后恢复项目的验收。
-2. ~~增加项目成员邀请/移除/角色调整 UI，并验证 owner/editor/viewer 权限越权~~（已完成：API + UI + 迁移 006；仍待真实环境双浏览器验收）。
-3. ~~增加服务端 revision 和带 expected revision 的 RPC，实现乐观并发控制~~（已完成：迁移 006 `push_project_if_revision` + push 改造；仍待真实环境并发验收）。
+1. ~~在真实 Supabase 测试项目执行邮箱账号双浏览器、清空本地数据后恢复项目的验收~~（已完成：phase-0 预览环境双浏览器验收通过，服务端 revision / RPC / 成员管理均已真实生效）。
+2. ~~增加项目成员邀请/移除/角色调整 UI，并验证 owner/editor/viewer 权限越权~~（已完成：API + UI + 迁移 006；成员邀请/角色越权仍需真实环境人工验证）。
+3. ~~增加服务端 revision 和带 expected revision 的 RPC，实现乐观并发控制~~（已完成：迁移 006 `push_project_if_revision` + push 改造；真实并发竞态仍需人工压力验证）。
 4. ~~为图片、附件和大型报告接入 Storage，并定义删除级联~~（已完成：迁移 007 + 资产 API + 报告转存/回填/级联；图片/附件按需补充接入）。
 5. 执行断网恢复、删除传播和旧 001 项目迁移到 002 权限模型的验收。
+
+## 云同步部署运维（2026-08-27）
+
+- Vercel Hobby 免费版限制单个项目最多 12 个 Serverless 函数；本轮为降到额度内，已将 `/api/*` 每分组合并为一个 `[action].ts` 动态路由（auth / projects / assets / settings / feishu 共 5 个函数），前端调用 URL 不变。
+- 部署表单 / 环境变量：`SUPABASE_URL`、`SUPABASE_PUBLISHABLE_KEY`、`SUPABASE_SERVICE_ROLE_KEY`（新版 `sb_secret_` 格式）须在 **Preview + Production** 两个环境都配置，否则预览环境云同步后端「未启用」。
+- 数据库迁移：`supabase/migrations/all_in_one.sql` 为 001-007 合并版，可在 Supabase SQL Editor 一次执行（幂等）；`006` 提供 `projects.revision` 乐观锁列与 `push_project_if_revision` RPC。
+- 云同步状态条：项目中心顶部新增同步诊断横幅，可显示「正常 / 未启用（cloudDisabled）/ 失败」，暴露真实同步结果。
