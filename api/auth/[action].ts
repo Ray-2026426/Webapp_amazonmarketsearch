@@ -96,7 +96,8 @@ const handlers: Record<string, (req: VercelRequest, res: VercelResponse, body: R
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method not allowed' });
   const body = (req.body ?? {}) as Record<string, unknown>;
-  const action = String(req.url?.split('/').filter(Boolean).pop() ?? '').toLowerCase();
+  const pathname = String(req.url || '').split('?')[0];
+  const action = String(pathname.split('/').filter(Boolean).pop() ?? '').toLowerCase();
   const fn = handlers[action];
   if (!fn) return json(res, 400, { ok: false, error: `未知操作: ${action}` });
   await fn(req, res, body);

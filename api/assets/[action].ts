@@ -72,7 +72,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!auth) return json(res, 401, { ok: false, error: '未登录' });
 
   // action 优先级：body.action > URL 最后一段（动态路由 /api/assets/{action}）
-  const action = String(body.action || (req.url?.split('/').filter(Boolean).pop() ?? '')).toLowerCase();
+  const pathname = String(req.url || '').split('?')[0];
+  const action = String(body.action || (pathname.split('/').filter(Boolean).pop() ?? '')).toLowerCase();
   const fn = handlers[action];
   if (!fn) return json(res, 400, { ok: false, error: `未知操作: ${action}` });
 

@@ -157,7 +157,8 @@ const handlers: Record<string, (req: VercelRequest, res: VercelResponse) => Prom
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 支持 GET（oauth/start、oauth/callback）与 POST（oauth/refresh、docs/create）
-  const action = String(req.url?.split('/').filter(Boolean).pop() ?? '').toLowerCase();
+  const pathname = String(req.url || '').split('?')[0];
+  const action = String(pathname.split('/').filter(Boolean).pop() ?? '').toLowerCase();
   const fn = handlers[action];
   if (!fn) return sendJson(res, 404, { error: `未知操作: ${action}` });
   if (action === 'start' || action === 'callback') {

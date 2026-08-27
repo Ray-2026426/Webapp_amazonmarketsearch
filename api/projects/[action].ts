@@ -239,7 +239,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = verifyToken(String(body.token || ''));
   if (!auth) return json(res, 401, { ok: false, error: '未登录' });
 
-  const action = String(req.url?.split('/').filter(Boolean).pop() ?? '').toLowerCase();
+  // action 从路径最后一段取，需剥离 query（如 pull?action=pull 取 pull）
+  const pathname = String(req.url || '').split('?')[0];
+  const action = String(pathname.split('/').filter(Boolean).pop() ?? '').toLowerCase();
   const fn = handlers[action];
   if (!fn) return json(res, 400, { ok: false, error: `未知操作: ${action}` });
 
