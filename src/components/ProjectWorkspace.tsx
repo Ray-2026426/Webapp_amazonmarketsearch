@@ -24,6 +24,7 @@ import { UserLookView } from './UserLookView';
 import { CompetitorLookView } from './CompetitorLookView';
 import { OpportunityLookView } from './OpportunityLookView';
 import { EditProjectModal } from './EditProjectModal';
+import { ProjectMembersModal } from './ProjectMembersModal';
 import { ReportsView } from './ReportsView';
 import { setActiveLook } from '../utils/projectStore';
 import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
@@ -125,6 +126,7 @@ export function ProjectWorkspace({
   const [tab, setTab] = useState<Tab>(project.activeLook);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [editOpen, setEditOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
   const initialSyncKey = useRef(`${project.id}:${project.version}:${project.updatedAt}`);
   const lastQueuedSyncKey = useRef(initialSyncKey.current);
 
@@ -214,6 +216,9 @@ export function ProjectWorkspace({
               <button type="button" onClick={() => setEditOpen(true)} title="编辑项目" className="shrink-0 w-7 h-7 rounded-lg hover:bg-[#f5f5f7] flex items-center justify-center text-[#aeaeb2] hover:text-indigo-600 transition-colors">
                 <Pencil className="w-3.5 h-3.5" />
               </button>
+              <button type="button" onClick={() => setMembersOpen(true)} title="项目成员" className="shrink-0 w-7 h-7 rounded-lg hover:bg-[#f5f5f7] flex items-center justify-center text-[#aeaeb2] hover:text-indigo-600 transition-colors">
+                <Users className="w-3.5 h-3.5" />
+              </button>
             </div>
             <p className="text-sm text-[#86868b] mt-0.5">{p.marketplace} · {p.objective || '未设置目标'}</p>
           </div>
@@ -290,6 +295,13 @@ export function ProjectWorkspace({
             setEditOpen(false);
             applyProjectUpdate(updated);
           }}
+        />
+      )}
+      {membersOpen && (
+        <ProjectMembersModal
+          projectId={p.id}
+          currentUserId={userId}
+          onClose={() => setMembersOpen(false)}
         />
       )}
     </div>
