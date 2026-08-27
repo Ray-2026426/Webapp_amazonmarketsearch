@@ -11,6 +11,7 @@ export interface SessionUser {
 
 const SESSION_KEY = 'amzdev_session';
 const TOKEN_KEY = 'amzdev_auth_token';
+const SUPABASE_TOKEN_KEY = 'amzdev_supabase_access_token';
 const SAVED_CREDS_KEY = 'amzdev_saved_creds';
 const AVATAR_KEY_PREFIX = 'amzdev_avatar_';
 
@@ -57,6 +58,11 @@ function writeToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
+function writeSupabaseToken(token?: string): void {
+  if (token) localStorage.setItem(SUPABASE_TOKEN_KEY, token);
+  else localStorage.removeItem(SUPABASE_TOKEN_KEY);
+}
+
 export function getAuthToken(): string | null {
   try {
     return localStorage.getItem(TOKEN_KEY);
@@ -65,8 +71,17 @@ export function getAuthToken(): string | null {
   }
 }
 
+export function getSupabaseAccessToken(): string | null {
+  try {
+    return localStorage.getItem(SUPABASE_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
 function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(SUPABASE_TOKEN_KEY);
 }
 
 export function getCurrentUser(): SessionUser | null {
@@ -84,11 +99,12 @@ export async function register(account: string, password: string): Promise<Regis
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account, password }),
     });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; user?: { id: string; email?: string; account?: string } };
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; supabaseAccessToken?: string; user?: { id: string; email?: string; account?: string } };
     if (!res.ok || !body.ok || !body.token || !body.user) {
       return { success: false, error: body.error || '注册失败' };
     }
     writeToken(body.token);
+    writeSupabaseToken(body.supabaseAccessToken);
     writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email });
     return { success: true };
   } catch (e) {
@@ -108,11 +124,12 @@ export async function login(account: string, password: string): Promise<LoginRes
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account, password }),
     });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; user?: { id: string; email?: string; account?: string } };
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; supabaseAccessToken?: string; user?: { id: string; email?: string; account?: string } };
     if (!res.ok || !body.ok || !body.token || !body.user) {
       return { success: false, error: body.error || '登录失败' };
     }
     writeToken(body.token);
+    writeSupabaseToken(body.supabaseAccessToken);
     writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email });
     return { success: true, user: getCurrentUser() ?? undefined };
   } catch (e) {

@@ -23,6 +23,17 @@ export function getPublicSupabase(): SupabaseClient | null {
   });
 }
 
+export function getUserSupabase(accessToken?: string | null): SupabaseClient | null {
+  const url = env('SUPABASE_URL');
+  const key = env('SUPABASE_PUBLISHABLE_KEY') || env('VITE_SUPABASE_PUBLISHABLE_KEY') || env('SUPABASE_ANON_KEY');
+  const token = String(accessToken || '').trim();
+  if (!url || !key || !token) return null;
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+}
+
 export function hashPassword(password: string, salt?: string): string {
   const s = salt ?? crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(password, s, 100000, 64, 'sha256').toString('hex');

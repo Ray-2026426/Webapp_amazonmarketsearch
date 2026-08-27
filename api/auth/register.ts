@@ -35,7 +35,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return json(res, 200, { ok: true, token, user: localUser, cloudDisabled: true });
     }
     const token = signToken({ sub: user.id, email: user.email, account: account.account }, 30 * 24 * 3600 * 1000);
-    return json(res, 200, { ok: true, token, user: { id: user.id, email: user.email, account: account.account } });
+    return json(res, 200, {
+      ok: true,
+      token,
+      supabaseAccessToken: data.session.access_token,
+      user: { id: user.id, email: user.email, account: account.account },
+    });
   }
 
   const { data, error } = await s.auth.admin.createUser({

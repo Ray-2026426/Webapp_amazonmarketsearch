@@ -1,13 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getServiceSupabase, verifyToken, json } from '../auth/_shared.js';
+import { getServiceSupabase, getUserSupabase, verifyToken, json } from '../auth/_shared.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method not allowed' });
-  const body = (req.body ?? {}) as { token?: string };
+  const body = (req.body ?? {}) as { token?: string; supabaseAccessToken?: string };
   const auth = verifyToken(String(body.token || ''));
   if (!auth) return json(res, 401, { ok: false, error: '未登录' });
 
-  const s = getServiceSupabase();
+  const s = getServiceSupabase() ?? getUserSupabase(body.supabaseAccessToken);
   if (!s) return json(res, 200, { ok: true, projects: [], cloudDisabled: true });
 
   const { data, error } = await s

@@ -24,7 +24,9 @@ export async function syncUserProjectsToCloud(userId: string): Promise<ProjectCl
     if (!res.ok) return { ok: false, error: res.error };
     await persistProjects(userId, res.projects);
     const restored = await restoreCloudDataToLocal(userId, res.projects);
-    await clearPendingCloudDeletions(userId, pendingDeletions);
+    if (pendingDeletions.length > 0 && !res.cloudDisabled && res.deleted >= pendingDeletions.length) {
+      await clearPendingCloudDeletions(userId, pendingDeletions);
+    }
     return { ok: true, result: res, restored };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : '自动同步失败' };

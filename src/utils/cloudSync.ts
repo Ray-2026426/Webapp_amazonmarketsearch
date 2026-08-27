@@ -1,6 +1,6 @@
 // 云同步层：客户端只和后端 API 通信，后端用 service_role 按 owner_id 隔离数据。
 import { migrateProject } from './projectStore';
-import { getAuthToken } from './auth';
+import { getAuthToken, getSupabaseAccessToken } from './auth';
 import type { ResearchProject } from '../types/researchProject';
 
 export interface SyncResult {
@@ -10,6 +10,7 @@ export interface SyncResult {
   deleted: number;
   conflicts: number;
   projects: ResearchProject[];
+  cloudDisabled?: boolean;
   error?: string;
 }
 
@@ -24,7 +25,7 @@ async function postJson<T>(path: string, payload: Record<string, unknown>): Prom
   const res = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...payload, token }),
+    body: JSON.stringify({ ...payload, token, supabaseAccessToken: getSupabaseAccessToken() }),
   });
   const body = (await res.json().catch(() => ({}))) as T;
   if (!res.ok) {
@@ -48,11 +49,16 @@ export async function pushProjects(projects: ResearchProject[]): Promise<number>
   return body.ok ? (body.pushed ?? 0) : 0;
 }
 
-export async function deleteCloudProjects(projectIds: string[]): Promise<number> {
+export interface CloudDeleteResult {
+  deleted: number;
+  cloudDisabled: boolean;
+}
+
+export async function deleteCloudProjects(projectIds: string[]): Promise<CloudDeleteResult> {
   const ids = [...new Set(projectIds.filter(Boolean))];
-  if (ids.length === 0) return 0;
-  const body = await postJson<{ ok?: boolean; deleted?: number }>('/api/projects/delete', { ids });
-  return body.ok ? (body.deleted ?? 0) : 0;
+  if (ids.length === 0) return { deleted: 0, cloudDisabled: false };
+  const body = await postJson<{ ok?: boolean; deleted?: number; cloudDisabled?: boolean }>('/api/projects/delete', { ids });
+  return body.ok ? { deleted: body.deleted ?? 0, cloudDisabled: Boolean(body.cloudDisabled) } : { deleted: 0, cloudDisabled: false };
 }
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -133,7 +139,7 @@ export async function syncProjects(
     return { ok: false, pushed: 0, pulled: 0, deleted: 0, conflicts: 0, projects: local, error: '未登录' };
   }
   try {
-    const deleted = await deleteCloudProjects(pendingDeletionIds);
+    const deletion = await deleteCloudProjects(pendingDeletionIds);
     const cloud = await pullProjects();
     const deletedSet = new Set(pendingDeletionIds);
     const merge = mergeProjectSets(
@@ -145,9 +151,10 @@ export async function syncProjects(
       ok: true,
       pushed,
       pulled: cloud.length,
-      deleted,
+      deleted: deletion.deleted,
       conflicts: merge.conflicts,
       projects: merge.projects,
+      cloudDisabled: deletion.cloudDisabled,
     };
   } catch (e) {
     return {

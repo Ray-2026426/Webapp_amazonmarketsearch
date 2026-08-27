@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Plus,
   Search,
@@ -13,7 +13,6 @@ import {
   Target,
   X,
   FolderPlus,
-  Cloud,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
@@ -109,22 +108,21 @@ interface ProjectCenterProps {
 export function ProjectCenter({ userId, username, marketContext, userContext, competitorContext, onOpenProject }: ProjectCenterProps) {
   const [projects, setProjects] = useState<ResearchProject[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [marketplace, setMarketplace] = useState('');
   const [status, setStatus] = useState('active');
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ResearchProject | null>(null);
   const [hasAutoSynced, setHasAutoSynced] = useState(false);
-  const [lastSyncAt, setLastSyncAt] = useState<string>('');
+  const syncInFlight = useRef(false);
 
   const queueCloudSync = async () => {
     if (!getAuthToken()) return;
-    setSyncing(true);
+    if (syncInFlight.current) return;
+    syncInFlight.current = true;
     const res = await syncUserProjectsToCloud(userId);
-    setSyncing(false);
+    syncInFlight.current = false;
     if (res.ok) {
-      setLastSyncAt(new Date().toISOString());
       await refresh();
     }
   };
@@ -141,27 +139,19 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
     }
   }, [userId]);
 
-  const handleSync = useCallback(async (mode: 'auto' | 'silent' = 'auto') => {
+  const handleSync = useCallback(async () => {
     if (!getAuthToken()) {
       return;
     }
-    setSyncing(true);
+    if (syncInFlight.current) return;
+    syncInFlight.current = true;
     try {
       const res = await syncUserProjectsToCloud(userId);
       if (res.ok) {
-        setLastSyncAt(new Date().toISOString());
-        const syncResult = res.result;
-        if (syncResult && (res.restored || syncResult.conflicts > 0)) {
-          const conflictHint = syncResult.conflicts > 0 ? `，保留冲突副本 ${syncResult.conflicts}` : '';
-          const restoreHint = res.restored ? `，恢复内容 ${res.restored}` : '';
-          toast.success(`已自动同步${conflictHint}${restoreHint}`);
-        }
         await refresh();
-      } else {
-        if (mode === 'auto') toast.error(res.error || '自动同步失败');
       }
     } finally {
-      setSyncing(false);
+      syncInFlight.current = false;
     }
   }, [refresh, userId]);
 
@@ -172,15 +162,15 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   useEffect(() => {
     if (loading || hasAutoSynced || !getAuthToken()) return;
     setHasAutoSynced(true);
-    void handleSync('auto');
+    void handleSync();
   }, [loading, hasAutoSynced, handleSync]);
 
   useEffect(() => {
     if (!getAuthToken()) return;
     const syncIfVisible = () => {
-      if (document.visibilityState === 'visible') void handleSync('silent');
+      if (document.visibilityState === 'visible') void handleSync();
     };
-    const onFocus = () => void handleSync('silent');
+    const onFocus = () => void handleSync();
     const timer = window.setInterval(syncIfVisible, 30000);
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', syncIfVisible);
@@ -216,12 +206,6 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
             用一次市调项目承载「看市场 → 看用户 → 看竞品 → 看自己 → 看/找机会」全流程
           </p>
         </div>
-        {getAuthToken() && (
-          <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-black/8 bg-white text-xs font-medium text-[#86868b]">
-            <Cloud className={cn('w-3.5 h-3.5', syncing && 'animate-pulse text-indigo-500')} />
-            {syncing ? '自动同步中' : lastSyncAt ? `已自动同步 ${formatDate(lastSyncAt)}` : '自动同步已开启'}
-          </div>
-        )}
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
