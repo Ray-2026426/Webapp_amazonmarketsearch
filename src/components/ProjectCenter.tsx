@@ -13,6 +13,11 @@ import {
   Target,
   X,
   FolderPlus,
+  RefreshCw,
+  Cloud,
+  CloudOff,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
@@ -21,7 +26,7 @@ import { Select } from './ui/Select';
 import { recordPendingCloudDeletion } from '../utils/cloudDeletionStore';
 import { purgeProjectAssets } from '../utils/projectAssets';
 import { getAuthToken } from '../utils/auth';
-import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
+import { syncUserProjectsToCloud, type ProjectCloudSyncResult } from '../utils/projectCloudAutosync';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
 import type { CompetitorContext } from '../utils/competitorLook';
@@ -116,6 +121,8 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   const [deleteTarget, setDeleteTarget] = useState<ResearchProject | null>(null);
   const [hasAutoSynced, setHasAutoSynced] = useState(false);
   const syncInFlight = useRef(false);
+  const [syncState, setSyncState] = useState<ProjectCloudSyncResult | null>(null);
+  const [syncTouched, setSyncTouched] = useState(false);
 
   const queueCloudSync = async () => {
     if (!getAuthToken()) return;
@@ -123,6 +130,8 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
     syncInFlight.current = true;
     const res = await syncUserProjectsToCloud(userId);
     syncInFlight.current = false;
+    setSyncState(res);
+    setSyncTouched(true);
     if (res.ok) {
       await refresh();
     }
@@ -148,6 +157,8 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
     syncInFlight.current = true;
     try {
       const res = await syncUserProjectsToCloud(userId);
+      setSyncState(res);
+      setSyncTouched(true);
       if (res.ok) {
         await refresh();
       }
@@ -215,6 +226,21 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
           <Plus className="w-4 h-4" />
           新建项目
         </button>
+      </div>
+
+      {/* 云同步状态（诊断） */}
+      <div className="mb-4">
+        {syncState ? (
+          <CloudSyncStatusBanner state={syncState} onRetry={() => void handleSync()} />
+        ) : (
+          <button
+            type="button"
+            onClick={() => void handleSync()}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-black/8 bg-white text-xs font-medium text-[#86868b] hover:text-indigo-600 hover:border-indigo-200 transition-all"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> 点此测试云同步
+          </button>
+        )}
       </div>
 
       {/* 搜索与筛选 */}
@@ -720,4 +746,60 @@ function splitList(s: string): string[] | undefined {
     .map((x) => x.trim())
     .filter(Boolean);
   return list.length ? list : undefined;
+}
+
+/** 云同步状态横幅：暴露真实同步结果，便于定位跨设备不同步问题。 */
+function CloudSyncStatusBanner({
+  state,
+  onRetry,
+}: {
+  state: ProjectCloudSyncResult;
+  onRetry: () => void;
+}) {
+  const result = state.result;
+  if (!state.ok) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-rose-100 bg-rose-50/60 px-4 py-3">
+        <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-rose-700">云同步失败</p>
+          <p className="text-xs text-rose-600 mt-0.5 break-all">{state.error || '未知错误'}</p>
+        </div>
+        <button type="button" onClick={onRetry} className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 bg-white text-xs font-semibold text-rose-700 hover:bg-rose-50 transition-all">
+          <RefreshCw className="w-3.5 h-3.5" /> 重试
+        </button>
+      </div>
+    );
+  }
+  if (result?.cloudDisabled) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-amber-100 bg-amber-50/60 px-4 py-3">
+        <CloudOff className="w-4 h-4 text-amber-500 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-amber-700">云同步未启用（云端后端未连接）</p>
+          <p className="text-xs text-amber-700/80 mt-0.5">
+            当前各设备只在本机保存，无法跨设备同步。需要部署环境配置 Supabase 环境变量（SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY 等）。
+          </p>
+        </div>
+        <button type="button" onClick={onRetry} className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-200 bg-white text-xs font-semibold text-amber-700 hover:bg-amber-50 transition-all">
+          <RefreshCw className="w-3.5 h-3.5" /> 重试
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
+      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-emerald-700">云同步正常</p>
+        <p className="text-xs text-emerald-700/80 mt-0.5">
+          拉取 {result?.pulled ?? 0} 条 · 推送 {result?.pushed ?? 0} 条 · 删除 {result?.deleted ?? 0} 条 · 冲突 {result?.conflicts ?? 0} 条
+          {result && result.conflicts > 0 ? '（同版本分叉已生成冲突副本）' : ''}
+        </p>
+      </div>
+      <button type="button" onClick={onRetry} className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-200 bg-white text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-all">
+        <RefreshCw className="w-3.5 h-3.5" /> 刷新
+      </button>
+    </div>
+  );
 }

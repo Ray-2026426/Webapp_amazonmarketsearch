@@ -35,28 +35,39 @@ async function postJson<T>(path: string, payload: Record<string, unknown>): Prom
   return body;
 }
 
-export async function pullProjects(): Promise<ResearchProject[]> {
-  const body = await postJson<{ ok?: boolean; projects?: unknown[] }>('/api/projects/pull', {});
-  if (!body.ok) return [];
-  return ((body.projects ?? []) as unknown[])
-    .map((r) => migrateProject(r))
-    .filter((p): p is ResearchProject => p !== null);
+export interface PullOutcome {
+  projects: ResearchProject[];
+  cloudDisabled: boolean;
+}
+
+export async function pullProjects(): Promise<PullOutcome> {
+  const body = await postJson<{ ok?: boolean; projects?: unknown[]; cloudDisabled?: boolean }>('/api/projects/pull', {});
+  return {
+    projects: body.ok
+      ? ((body.projects ?? []) as unknown[])
+          .map((r) => migrateProject(r))
+          .filter((p): p is ResearchProject => p !== null)
+      : [],
+    cloudDisabled: Boolean(body.cloudDisabled),
+  };
 }
 
 export interface PushOutcome {
   pushed: number;
+  cloudDisabled: boolean;
   /** 云端版本比本地新而被拒绝的项目：key 为项目 id，value 为云端完整项目（含 cloudRevision）。 */
   conflicts: { id: string; cloud: unknown }[];
 }
 
 export async function pushProjects(projects: ResearchProject[]): Promise<PushOutcome> {
-  if (projects.length === 0) return { pushed: 0, conflicts: [] };
-  const body = await postJson<{ ok?: boolean; pushed?: number; conflicts?: { id: string; cloud: unknown }[] }>(
+  if (projects.length === 0) return { pushed: 0, cloudDisabled: false, conflicts: [] };
+  const body = await postJson<{ ok?: boolean; pushed?: number; cloudDisabled?: boolean; conflicts?: { id: string; cloud: unknown }[] }>(
     '/api/projects/push',
     { projects }
   );
   return {
     pushed: body.ok ? (body.pushed ?? 0) : 0,
+    cloudDisabled: Boolean(body.cloudDisabled),
     conflicts: body.ok ? (body.conflicts ?? []) : [],
   };
 }
@@ -165,13 +176,16 @@ export async function syncProjects(
   }
   try {
     const deletion = await deleteCloudProjects(pendingDeletionIds);
-    const cloud = await pullProjects();
+    const pull = await pullProjects();
+    const cloud = pull.projects;
     const deletedSet = new Set(pendingDeletionIds);
     const merge = mergeProjectSets(
       local.filter((p) => !deletedSet.has(p.id)),
       cloud.filter((p) => !deletedSet.has(p.id))
     );
     const pushOutcome = await pushProjects(merge.projects);
+    // 任一环节报告云后端关闭，即整体标记为未启用（避免掩盖跨设备不同步的根因）。
+    const cloudDisabled = deletion.cloudDisabled || pull.cloudDisabled || pushOutcome.cloudDisabled;
     let conflicts = merge.conflicts;
 
     // 乐观并发：服务端拒绝的冲突项目，用云端版本替换本地，并保留本地冲突副本后二次推送。
@@ -189,7 +203,7 @@ export async function syncProjects(
         deleted: deletion.deleted,
         conflicts,
         projects: mergedAgain.projects,
-        cloudDisabled: deletion.cloudDisabled,
+        cloudDisabled,
       };
     }
 
@@ -200,7 +214,7 @@ export async function syncProjects(
       deleted: deletion.deleted,
       conflicts,
       projects: merge.projects,
-      cloudDisabled: deletion.cloudDisabled,
+      cloudDisabled,
     };
   } catch (e) {
     return {
