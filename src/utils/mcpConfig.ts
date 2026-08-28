@@ -71,6 +71,22 @@ function envDefaultSellerSpriteSecret(): string {
   }
 }
 
+function envDefaultLingXingSecret(): string {
+  try {
+    return getDefaultServerKey('lingxing');
+  } catch {
+    return '';
+  }
+}
+
+function envDefaultSorftimeSecret(): string {
+  try {
+    return getDefaultServerKey('sorftime');
+  } catch {
+    return '';
+  }
+}
+
 export interface McpSettings {
   /** @deprecated 兼容旧版，写入时会同步到 providers 里的卖家精灵条目 */
   secretKey: string;
@@ -101,11 +117,12 @@ export function createSellerSpriteProvider(partial?: Partial<McpProviderEntry>):
 }
 
 export function createLingXingProvider(partial?: Partial<McpProviderEntry>): McpProviderEntry {
+  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
     id: partial?.id || `lx_${uid()}`,
     name: partial?.name || '领星',
     kind: 'lingxing',
-    secretKey: (partial?.secretKey || '').trim(),
+    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultLingXingSecret() : '') || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
@@ -135,11 +152,12 @@ export function createXydcProvider(partial?: Partial<McpProviderEntry>): McpProv
 }
 
 export function createSorftimeProvider(partial?: Partial<McpProviderEntry>): McpProviderEntry {
+  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
     id: partial?.id || `sorf_${uid()}`,
     name: partial?.name || 'Sorftime',
     kind: 'sorftime',
-    secretKey: (partial?.secretKey || '').trim(),
+    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultSorftimeSecret() : '') || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
@@ -158,12 +176,20 @@ function ensureBuiltinProviders(providers: McpProviderEntry[]): McpProviderEntry
   const defaultsAllowed = canUseAdminMcpDefaults();
   const envXydc = defaultsAllowed ? envDefaultXydcSecret() : '';
   const envSs = defaultsAllowed ? envDefaultSellerSpriteSecret() : '';
+  const envLx = defaultsAllowed ? envDefaultLingXingSecret() : '';
+  const envSorf = defaultsAllowed ? envDefaultSorftimeSecret() : '';
   const list = providers.map((p) => {
     if (p.kind === 'xydc' && !p.secretKey.trim() && envXydc) {
       return { ...p, secretKey: envXydc };
     }
     if (p.kind === 'sellersprite' && !p.secretKey.trim() && envSs) {
       return { ...p, secretKey: envSs };
+    }
+    if (p.kind === 'lingxing' && !p.secretKey.trim() && envLx) {
+      return { ...p, secretKey: envLx };
+    }
+    if (p.kind === 'sorftime' && !p.secretKey.trim() && envSorf) {
+      return { ...p, secretKey: envSorf };
     }
     return p;
   });
@@ -431,6 +457,7 @@ export function saveMcpSettings(settings: McpSettings): void {
       sellersprite: providers.find((p) => p.kind === 'sellersprite')?.secretKey || '',
       xydc: providers.find((p) => p.kind === 'xydc')?.secretKey || '',
       lingxing: providers.find((p) => p.kind === 'lingxing')?.secretKey || '',
+      sorftime: providers.find((p) => p.kind === 'sorftime')?.secretKey || '',
     });
   }
 }

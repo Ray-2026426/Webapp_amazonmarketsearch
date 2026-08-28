@@ -17,6 +17,7 @@ async function get(req: VercelRequest, res: VercelResponse, auth: { userId: stri
         sellersprite: env('SELLERSPRITE_SECRET_KEY'),
         xydc: env('XYDC_SECRET_KEY'),
         lingxing: env('LINGXING_SECRET_KEY'),
+        sorftime: env('SORFTIME_SECRET_KEY'),
       },
     });
   }
@@ -27,6 +28,7 @@ async function get(req: VercelRequest, res: VercelResponse, auth: { userId: stri
     sellersprite: String(meta.sellersprite || env('SELLERSPRITE_SECRET_KEY') || '').trim(),
     xydc: String(meta.xydc || env('XYDC_SECRET_KEY') || '').trim(),
     lingxing: String(meta.lingxing || env('LINGXING_SECRET_KEY') || '').trim(),
+    sorftime: String(meta.sorftime || env('SORFTIME_SECRET_KEY') || '').trim(),
   };
   return json(res, 200, { ok: true, keys });
 }
@@ -37,8 +39,11 @@ async function save(req: VercelRequest, res: VercelResponse, auth: { userId: str
   if (!s) return json(res, 200, { ok: true, cloudDisabled: true });
 
   const incoming = (body.keys ?? {}) as Record<string, string>;
-  const allowed = ['deepseek', 'sellersprite', 'xydc', 'lingxing'];
-  const appKeys: Record<string, string> = {};
+  const allowed = ['deepseek', 'sellersprite', 'xydc', 'lingxing', 'sorftime'];
+  const { data } = await s.auth.admin.getUserById(auth.userId);
+  const appKeys = {
+    ...(((data?.user?.user_metadata?.appKeys ?? {}) as Record<string, string>) || {}),
+  };
   for (const k of allowed) {
     const v = String(incoming[k] ?? '').trim();
     if (v) appKeys[k] = v;

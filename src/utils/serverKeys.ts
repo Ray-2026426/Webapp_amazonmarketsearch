@@ -4,6 +4,7 @@ export interface ServerKeys {
   sellersprite?: string;
   xydc?: string;
   lingxing?: string;
+  sorftime?: string;
 }
 
 const STORAGE_KEY = 'amzdev_admin_keys';

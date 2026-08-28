@@ -176,7 +176,13 @@ export function loadAiSettings(): AiSettings | null {
 }
 
 export function saveAiSettings(settings: AiSettings): void {
-  localStorage.setItem(getAiSettingsKey(), JSON.stringify(sanitizeAiSettings(settings)));
+  const cleaned = sanitizeAiSettings(settings);
+  localStorage.setItem(getAiSettingsKey(), JSON.stringify(cleaned));
+
+  const token = getAuthToken();
+  if (isAdminSession(getCurrentUser()) && token && cleaned.provider === 'deepseek') {
+    void pushServerKeys(token, { deepseek: cleaned.apiKey });
+  }
 }
 
 export function getProviderConfig(provider: AiProvider): AiProviderConfig {
