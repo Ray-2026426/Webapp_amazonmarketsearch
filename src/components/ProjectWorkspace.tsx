@@ -280,7 +280,7 @@ export function ProjectWorkspace({
       ) : tab === 'user' ? (
         <UserLookView userId={userId} project={p} userContext={userContext} onProjectChange={applyProjectUpdate} />
       ) : tab === 'competitor' ? (
-        <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} />
+        <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} onOpenCompetitorTool={() => onOpenTool('competitors')} />
       ) : tab === 'opportunity' ? (
         <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} onNavigateLook={(look) => void switchToLook(look)} />
       ) : (

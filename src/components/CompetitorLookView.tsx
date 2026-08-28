@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Crosshair,
   Database,
@@ -21,6 +21,7 @@ import {
   type CompetitorLookData,
 } from '../utils/competitorLook';
 import { updateLookProgress } from '../utils/projectStore';
+import { CompetitorPickerPanel } from './CompetitorPickerPanel';
 import type { ResearchProject } from '../types/researchProject';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -30,11 +31,13 @@ export function CompetitorLookView({
   project,
   competitorContext,
   onProjectChange,
+  onOpenCompetitorTool,
 }: {
   userId: string;
   project: ResearchProject;
   competitorContext: CompetitorContext;
   onProjectChange: (updated: ResearchProject) => void;
+  onOpenCompetitorTool?: () => void;
 }) {
   const [data, setData] = useState<CompetitorLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -155,6 +158,23 @@ export function CompetitorLookView({
       </Card>
 
       {data.evidence && <CompetitorEvidenceCard evidence={data.evidence} />}
+
+      {/* 自动挑选对标竞品（机会细分 → 头部/跟随者/新品） */}
+      <CompetitorPickerPanel
+        onOpenCompetitorTool={onOpenCompetitorTool ?? (() => {})}
+        onPicked={(asins, seg) => {
+          // 填充竞品样本池（带角色标注）与标杆 ASIN
+          const pool = data.samplePool.slice();
+          for (const a of asins) {
+            if (!pool.includes(a)) pool.push(a);
+          }
+          const benchmark = data.benchmarkAsins.slice();
+          for (const a of asins.slice(0, 2)) {
+            if (!benchmark.includes(a)) benchmark.push(a);
+          }
+          update({ samplePool: pool, benchmarkAsins: benchmark });
+        }}
+      />
 
       {/* 竞品样本池 / 标杆 ASIN */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
