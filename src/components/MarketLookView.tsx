@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   TrendingUp,
   Database,
@@ -23,6 +23,7 @@ import {
   type MarketLookData,
 } from '../utils/marketLook';
 import { updateLookProgress } from '../utils/projectStore';
+import { SegmentScoreCards } from './SegmentScoreCards';
 import type { ResearchProject } from '../types/researchProject';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -40,11 +41,13 @@ export function MarketLookView({
   project,
   marketContext,
   onProjectChange,
+  onOpenMarketTool,
 }: {
   userId: string;
   project: ResearchProject;
   marketContext: MarketContext;
   onProjectChange: (updated: ResearchProject) => void;
+  onOpenMarketTool?: () => void;
 }) {
   const [data, setData] = useState<MarketLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -174,6 +177,11 @@ export function MarketLookView({
 
       {/* 已捕获证据 */}
       {data.evidence && <EvidenceCard evidence={data.evidence} />}
+
+      {/* 细分市场评分（确定性公式，机会分排序） */}
+      <SegmentScoreCards
+        onOpenMarketTool={onOpenMarketTool ?? (() => {})}
+      />
 
       {/* 市场吸引力判断 */}
       <Card>

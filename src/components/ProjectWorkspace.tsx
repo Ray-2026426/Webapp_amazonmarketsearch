@@ -276,7 +276,7 @@ export function ProjectWorkspace({
       ) : tab === 'self' ? (
         <SelfAssessmentView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
       ) : tab === 'market' ? (
-        <MarketLookView userId={userId} project={p} marketContext={marketContext} onProjectChange={applyProjectUpdate} />
+        <MarketLookView userId={userId} project={p} marketContext={marketContext} onProjectChange={applyProjectUpdate} onOpenMarketTool={() => onOpenTool('market')} />
       ) : tab === 'user' ? (
         <UserLookView userId={userId} project={p} userContext={userContext} onProjectChange={applyProjectUpdate} />
       ) : tab === 'competitor' ? (
