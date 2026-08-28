@@ -27,6 +27,6 @@ assert.deepEqual(sanitizeAiApiUrls(settings.apiUrls), {
 
 const cleaned = sanitizeAiSettings(settings);
 assert.equal(cleaned.apiUrls?.deepseek, undefined);
-assert.equal(buildEndpoint(cleaned, 'deepseek'), '/api-proxy/deepseek/v1/chat/completions');
+assert.equal(buildEndpoint(cleaned, 'deepseek'), '/api-proxy/deepseek/chat/completions');
 
 console.log('aiConfig tests passed');

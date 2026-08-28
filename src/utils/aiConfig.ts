@@ -44,8 +44,8 @@ export const AI_PROVIDERS: AiProviderConfig[] = [
     id: 'deepseek',
     name: 'DeepSeek',
     baseUrl: '/api-proxy/deepseek',
-    defaultModel: 'deepseek-chat',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    defaultModel: 'deepseek-v4-flash',
+    models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
     apiKeyPlaceholder: 'sk-...',
   },
   {
@@ -425,6 +425,15 @@ export function resolveCustomApiUrl(url: string, provider: AiProvider): string {
 
   if (/\/chat\/completions$/i.test(cleaned)) return cleaned;
 
+  if (provider === 'deepseek') {
+    if (/\/v1$/i.test(cleaned)) return `${cleaned.replace(/\/v1$/i, '')}/chat/completions`;
+    try {
+      const path = new URL(cleaned).pathname.replace(/\/+$/, '') || '/';
+      if (path === '/' || path === '') return `${cleaned}/chat/completions`;
+    } catch {}
+    return cleaned;
+  }
+
   if (provider === 'zhipu') {
     if (/\/api\/paas\/v4\/chat\/completions$/i.test(cleaned)) return cleaned;
     if (/\/api\/paas\/v4$/i.test(cleaned)) return `${cleaned}/chat/completions`;
@@ -506,6 +515,9 @@ export function buildEndpoint(settings: AiSettings, provider: AiProvider): strin
     return `${baseUrl}/api/paas/v4/chat/completions`;
   }
   if (provider === 'doubao') {
+    return `${baseUrl}/chat/completions`;
+  }
+  if (provider === 'deepseek') {
     return `${baseUrl}/chat/completions`;
   }
   return `${baseUrl}/v1/chat/completions`;

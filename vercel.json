@@ -16,7 +16,7 @@
     },
     {
       "source": "/api-proxy/deepseek/(.*)",
-      "destination": "https://openrouter.fans/$1"
+      "destination": "https://api.deepseek.com/$1"
     },
     {
       "source": "/api-proxy/claude/(.*)",
