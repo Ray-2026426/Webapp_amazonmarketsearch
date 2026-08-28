@@ -53,12 +53,14 @@ export interface GlobalMarketData {
   asinToSegment: Record<string, string>;
   /** 历史趋势数据（供细分趋势分） */
   history: import('./parser').HistoryRecord[];
+  /** 细分市场描述（people/scenarios/needs），供看用户与细分联合分析 */
+  segmentDescriptions: Record<string, { people: string; scenarios: string; needs: string }>;
 }
 
 const DEMO_RE = /demo|示例|sample/i;
 
 export async function gatherGlobalMarketData(): Promise<GlobalMarketData> {
-  const [products, reviews, keywords, months, marketplace, compWorkspace, segments, asinToSegment, history] = await Promise.all([
+  const [products, reviews, keywords, months, marketplace, compWorkspace, segments, asinToSegment, history, segmentDescriptions] = await Promise.all([
     get('products'),
     get('reviews'),
     get('keywords'),
@@ -68,6 +70,7 @@ export async function gatherGlobalMarketData(): Promise<GlobalMarketData> {
     get('segments'),
     get('asinToSegment'),
     get('history'),
+    get('segmentDescriptions'),
   ] as const);
   const productList = Array.isArray(products) ? (products as Product[]) : [];
   const reviewList = Array.isArray(reviews) ? (reviews as Review[]) : [];
@@ -80,6 +83,7 @@ export async function gatherGlobalMarketData(): Promise<GlobalMarketData> {
   const segmentList = Array.isArray(segments) ? (segments as string[]) : [];
   const segMap = asinToSegment && typeof asinToSegment === 'object' ? (asinToSegment as Record<string, string>) : {};
   const histList = Array.isArray(history) ? (history as import('./parser').HistoryRecord[]) : [];
+  const segDesc = segmentDescriptions && typeof segmentDescriptions === 'object' ? (segmentDescriptions as Record<string, { people: string; scenarios: string; needs: string }>) : {};
 
   return {
     loaded: productList.length > 0 || reviewList.length > 0 || keywordList.length > 0 || competitorAsins.length > 0,
@@ -94,6 +98,7 @@ export async function gatherGlobalMarketData(): Promise<GlobalMarketData> {
     segments: segmentList,
     asinToSegment: segMap,
     history: histList,
+    segmentDescriptions: segDesc,
   };
 }
 
@@ -131,6 +136,14 @@ function summarizeMarketData(g: GlobalMarketData): string {
   if (kwSample.length) {
     lines.push('—— 关键词抽样 ——');
     lines.push(kwSample.join('、'));
+  }
+  // 细分市场描述：看用户与看市场的联合分析输入（people/scenarios/needs）
+  const segDescEntries = Object.entries(g.segmentDescriptions || {}).filter(([, v]) => v && (v.people || v.scenarios || v.needs));
+  if (segDescEntries.length) {
+    lines.push('—— 市场细分（人群/场景/需求描述） ——');
+    for (const [name, d] of segDescEntries) {
+      lines.push(`细分「${name}」：人群:${d.people || '?'} | 场景:${d.scenarios || '?'} | 需求:${d.needs || '?'}`);
+    }
   }
   return lines.join('\n');
 }
@@ -216,7 +229,7 @@ ${summary}`;
     if (data.reviews.length === 0 && data.keywords.length === 0) {
       return { ok: false, error: '尚未加载评论或关键词数据，请先到「关键词分析」或「评论/VOC」加载。' };
     }
-    prompt = `请基于以下关键词与评论数据，完成「看用户」分析（关键词 + VOC 合并），输出 JSON：
+    prompt = `请基于以下关键词、评论，以及「市场细分」的已有人群/场景/需求描述，完成「看用户」分析（关键词 + VOC 合并，并吸收市场细分的用户洞察），输出 JSON：
 {
   "targetUser": "目标用户画像一句话",
   "scenario": "典型使用场景",
@@ -226,7 +239,10 @@ ${summary}`;
     {"targetUser":"","scenario":"","jobToBeDone":"","needStatement":"未满足需求（含证据）","currentAlternative":"用户目前替代方案及代价","evidenceStrength":"high|medium|low"}
   ]
 }
-未满足需求候选 1-4 条，必须来自重复出现的问题/差评/关键词，并说明替代方案。数据：
+要点：
+1) 把「市场细分」里的人群(people)/场景(scenarios)/需求(needs) 与评论/关键词交叉，形成更具体的用户分类，并在输出中体现这些细分视角。
+2) 未满足需求候选 1-4 条，必须来自重复出现的问题/差评/关键词，并说明替代方案。
+数据：
 ${summary}`;
   } else if (look === 'competitor') {
     if (data.competitorAsins.length === 0) {

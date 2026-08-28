@@ -18,7 +18,7 @@ export type OpportunityDecision = 'enter' | 'validate_first' | 'hold' | 'reject'
 
 export type UnmetNeedStatus = 'candidate' | 'validated' | 'rejected';
 
-export const FIVE_LOOKS: FiveLookId[] = ['market', 'user', 'competitor', 'self', 'opportunity'];
+export const FIVE_LOOKS: FiveLookId[] = ['user', 'market', 'competitor', 'self', 'opportunity'];
 
 export const FIVE_LOOK_LABELS: Record<FiveLookId, string> = {
   market: '看市场',

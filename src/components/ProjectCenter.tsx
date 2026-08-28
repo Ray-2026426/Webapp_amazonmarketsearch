@@ -63,9 +63,15 @@ const MARKETPLACES: { code: string; label: string }[] = [
   { code: 'SG', label: 'SG · 新加坡' },
   { code: 'AE', label: 'AE · 阿联酋' },
   { code: 'SA', label: 'SA · 沙特' },
+  { code: 'NL', label: 'NL · 荷兰' },
+  { code: 'SE', label: 'SE · 瑞典' },
+  { code: 'PL', label: 'PL · 波兰' },
+  { code: 'TR', label: 'TR · 土耳其' },
+  { code: 'MX', label: 'MX · 墨西哥' },
+  { code: 'IN', label: 'IN · 印度' },
 ];
 
-const OBJECTIVES = ['新品开发', '市场进入', '存量优化', '产品迭代', '其他'];
+const OBJECTIVES = ['新品开发', '市场进入', '存量优化', '产品迭代', '其他', '自定义…'];
 
 const STATUS_LABELS: Record<ResearchProject['status'], string> = {
   draft: '草稿',
@@ -128,12 +134,15 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
     if (!getAuthToken()) return;
     if (syncInFlight.current) return;
     syncInFlight.current = true;
-    const res = await syncUserProjectsToCloud(userId);
-    syncInFlight.current = false;
-    setSyncState(res);
-    setSyncTouched(true);
-    if (res.ok) {
-      await refresh();
+    try {
+      const res = await syncUserProjectsToCloud(userId);
+      setSyncState(res);
+      setSyncTouched(true);
+      if (res.ok) {
+        await refresh();
+      }
+    } finally {
+      syncInFlight.current = false;
     }
   };
 
@@ -330,10 +339,11 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
           userId={userId}
           username={username}
           onClose={() => setCreateOpen(false)}
-          onCreated={async (p) => {
+          onCreated={async () => {
             setCreateOpen(false);
+            // 需求：新建后留在项目中心，不自动跳进项目内部
+            await refresh();
             await queueCloudSync();
-            onOpenProject(p);
           }}
         />
       )}
@@ -348,6 +358,11 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
             if (ok) {
               void purgeProjectAssets(deleteTarget.id);
               await recordPendingCloudDeletion(userId, deleteTarget.id);
+              // 立即从内存列表移除，避免等待同步期间「复活」（30s 定时同步竞态）
+              setProjects((prev) => {
+                const id = deleteTarget.id;
+                return prev.filter((p) => p.id !== id && !p.id.startsWith(`${id}_conflict_`));
+              });
               toast.success('项目已删除');
               await refresh();
               await queueCloudSync();
@@ -551,6 +566,7 @@ function CreateProjectModal({
   const [name, setName] = useState('');
   const [marketplace, setMarketplace] = useState('US');
   const [objective, setObjective] = useState('新品开发');
+  const [customObjective, setCustomObjective] = useState('');
   const [owner, setOwner] = useState(username);
   const [description, setDescription] = useState('');
   const [coreKeywords, setCoreKeywords] = useState('');
@@ -559,9 +575,11 @@ function CreateProjectModal({
   const [error, setError] = useState('');
 
   const canSave = name.trim().length > 0 && marketplace.length > 0 && objective.length > 0 && owner.trim().length > 0;
+  const isCustomObjective = objective === '自定义…';
+  const finalObjective = isCustomObjective ? customObjective.trim() : objective;
 
   const submit = async () => {
-    if (!canSave) {
+    if (!canSave || (isCustomObjective && !customObjective.trim())) {
       setError('请填写项目名称、站点、研究目标和负责人');
       return;
     }
@@ -571,7 +589,7 @@ function CreateProjectModal({
       const p = await createProject(userId, {
         name: name.trim(),
         marketplace,
-        objective,
+        objective: finalObjective || '其他',
         ownerId: userId,
         description: description.trim() || undefined,
         coreKeywords: splitList(coreKeywords),
@@ -628,6 +646,15 @@ function CreateProjectModal({
                 size="md"
                 className="w-full"
               />
+              {isCustomObjective && (
+                <input
+                  autoFocus
+                  value={customObjective}
+                  onChange={(e) => setCustomObjective(e.target.value)}
+                  placeholder="例如：竞品压制、Listing 翻新、新品孵化…"
+                  className={cn(inputCls, 'mt-2')}
+                />
+              )}
             </Field>
           </div>
 
