@@ -174,6 +174,10 @@ export function OpportunityLookView({
   const usedNeedIds = new Set(cards.map((c) => c.unmetNeedId));
   const candidates = (userLook.unmetNeedCandidates ?? []).filter((c) => !usedNeedIds.has(c.id));
   const sortedCards = [...cards].sort((a, b) => b.score - a.score);
+  const generateAllCandidates = () => {
+    if (candidates.length === 0) return;
+    scheduleSave([...cards, ...candidates.map((candidate) => createOpportunityFromUnmetNeed(project.id, candidate))]);
+  };
 
   return (
     <div className="space-y-4">
@@ -190,7 +194,18 @@ export function OpportunityLookView({
             </p>
           </div>
         </div>
-        <SubmitReview userId={userId} project={project} cards={cards} onProjectChange={onProjectChange} />
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={candidates.length === 0}
+            onClick={generateAllCandidates}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            AI 批量生成机会卡
+          </button>
+          <SubmitReview userId={userId} project={project} cards={cards} onProjectChange={onProjectChange} />
+        </div>
       </div>
 
       {/* 从未满足需求生成 */}
@@ -416,11 +431,11 @@ function OpportunityCardEditor({
 }
 
 function SaveBadge({ state }: { state: SaveState }) {
-  if (state === 'idle') return null;
+  if (state === 'idle' || state === 'saved') return null;
   const map: Record<SaveState, { icon: typeof CheckCircle2; text: string; cls: string }> = {
     idle: { icon: CheckCircle2, text: '', cls: '' },
     saving: { icon: Loader2, text: '保存中…', cls: 'text-amber-600' },
-    saved: { icon: CheckCircle2, text: '已保存', cls: 'text-emerald-600' },
+    saved: { icon: CheckCircle2, text: '', cls: '' },
     error: { icon: AlertTriangle, text: '保存失败', cls: 'text-rose-600' },
   };
   const m = map[state];

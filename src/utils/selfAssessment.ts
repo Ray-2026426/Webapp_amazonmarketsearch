@@ -24,6 +24,7 @@ export interface SelfAssessmentItem {
 export interface SelfAssessment {
   projectId: string;
   items: SelfAssessmentItem[];
+  aiSummary?: string;
   updatedAt: string;
 }
 
@@ -68,7 +69,7 @@ export function defaultSelfAssessment(projectId: string): SelfAssessment {
       items.push({ id: `${g.category}:${label}`, category: g.category, label, status: 'unknown', note: '' });
     }
   }
-  return { projectId, items, updatedAt: new Date().toISOString() };
+  return { projectId, items, aiSummary: '', updatedAt: new Date().toISOString() };
 }
 
 const KEY_PREFIX = 'amzdev_self:';
@@ -79,7 +80,7 @@ function storageKey(userId: string, projectId: string): string {
 export async function loadSelfAssessment(userId: string, projectId: string): Promise<SelfAssessment> {
   try {
     const raw = await get<SelfAssessment>(storageKey(userId, projectId));
-    if (raw && Array.isArray(raw.items) && raw.items.length > 0) return raw;
+    if (raw && Array.isArray(raw.items) && raw.items.length > 0) return { ...raw, aiSummary: raw.aiSummary ?? '' };
   } catch {
     /* ignore */
   }

@@ -54,7 +54,6 @@ export function EditProjectModal({
         seedAsins: splitList(seedAsins),
       });
       if (updated) {
-        toast.success('项目已更新');
         onSaved(updated);
       } else {
         toast.error('保存失败');
@@ -95,7 +94,7 @@ export function EditProjectModal({
           <Field label="核心关键词（逗号分隔）">
             <input value={coreKeywords} onChange={(e) => setCoreKeywords(e.target.value)} className={inputCls} />
           </Field>
-          <Field label="种子 ASIN（逗号分隔）">
+          <Field label="对标 ASIN（逗号分隔）">
             <input value={seedAsins} onChange={(e) => setSeedAsins(e.target.value)} className={inputCls} />
           </Field>
           <Field label="项目说明">

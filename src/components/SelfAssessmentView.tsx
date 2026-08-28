@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Loader2, AlertTriangle, ClipboardList } from 'lucide-react';
+import { CheckCircle2, Loader2, AlertTriangle, ClipboardList, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import {
@@ -13,6 +14,7 @@ import {
   type SelfStatus,
 } from '../utils/selfAssessment';
 import { updateLookProgress } from '../utils/projectStore';
+import { runLookAnalysis, type SelfAnalysisOutput } from '../utils/lookAi';
 import type { ResearchProject } from '../types/researchProject';
 
 const STATUS_ORDER: SelfStatus[] = ['have', 'partial', 'lack', 'unknown'];
@@ -37,6 +39,7 @@ export function SelfAssessmentView({
 }) {
   const [assessment, setAssessment] = useState<SelfAssessment | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [aiRunning, setAiRunning] = useState(false);
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -88,6 +91,35 @@ export function SelfAssessmentView({
     scheduleSave({ ...assessment, items });
   };
 
+  const runAi = async () => {
+    if (!assessment) return;
+    setAiRunning(true);
+    try {
+      const answers = Object.fromEntries(
+        assessment.items
+          .filter((item) => item.status !== 'unknown' || item.note?.trim())
+          .map((item) => [item.label, `${SELF_STATUS_LABELS[item.status]}${item.note ? `；${item.note}` : ''}`])
+      );
+      const res = await runLookAnalysis('self', { answers });
+      if (!res.ok || !res.data) {
+        toast.error(res.error || 'AI 分析失败');
+        return;
+      }
+      const out = res.data as SelfAnalysisOutput;
+      const parts = [
+        out.conclusion,
+        out.fitAssessment,
+        out.strengths?.length ? `优势：${out.strengths.join('；')}` : '',
+        out.gaps?.length ? `缺口：${out.gaps.join('；')}` : '',
+        out.hardConstraints?.length ? `边界：${out.hardConstraints.join('；')}` : '',
+        out.summary,
+      ].filter(Boolean);
+      scheduleSave({ ...assessment, aiSummary: parts.join('\n') });
+    } finally {
+      setAiRunning(false);
+    }
+  };
+
   if (!assessment) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-[#aeaeb2]">
@@ -115,9 +147,27 @@ export function SelfAssessmentView({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-xs text-[#86868b]">已评 {answered}/{assessment.items.length}</span>
+          <button
+            type="button"
+            disabled={aiRunning}
+            onClick={() => void runAi()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-all active:scale-[0.98]"
+          >
+            {aiRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            AI 生成结论
+          </button>
           <SaveBadge state={saveState} />
         </div>
       </div>
+
+      {assessment.aiSummary && (
+        <Card className="border-indigo-100 bg-indigo-50/40">
+          <div className="p-5">
+            <p className="text-sm font-semibold text-[#1d1d1f] mb-2">AI 自评结论</p>
+            <p className="whitespace-pre-line text-sm text-[#424245] leading-6">{assessment.aiSummary}</p>
+          </div>
+        </Card>
+      )}
 
       {SELF_CATEGORY_ORDER.map((cat) => {
         const items = assessment.items.filter((i) => i.category === cat);
@@ -172,11 +222,11 @@ export function SelfAssessmentView({
 }
 
 function SaveBadge({ state }: { state: SaveState }) {
-  if (state === 'idle') return null;
+  if (state === 'idle' || state === 'saved') return null;
   const map: Record<SaveState, { icon: typeof CheckCircle2; text: string; cls: string }> = {
     idle: { icon: CheckCircle2, text: '', cls: '' },
     saving: { icon: Loader2, text: '保存中…', cls: 'text-amber-600' },
-    saved: { icon: CheckCircle2, text: '已保存', cls: 'text-emerald-600' },
+    saved: { icon: CheckCircle2, text: '', cls: '' },
     error: { icon: AlertTriangle, text: '保存失败', cls: 'text-rose-600' },
   };
   const m = map[state];

@@ -1,31 +1,29 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Users,
-  Database,
+  Sparkles,
   Plus,
   X,
   CheckCircle2,
   Loader2,
   AlertTriangle,
-  MessageCircle,
-  Search,
 } from 'lucide-react';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
+import { toast } from 'sonner';
 import {
   loadUserLook,
   saveUserLook,
-  makeUserEvidence,
   computeUserProgress,
   emptyUnmetNeedCandidate,
   EVIDENCE_STRENGTH_LABELS,
   type UserContext,
-  type UserEvidence,
   type UserLookData,
   type UnmetNeedCandidate,
   type EvidenceStrength,
 } from '../utils/userLook';
 import { updateLookProgress } from '../utils/projectStore';
+import { runLookAnalysis, type UserAnalysisOutput } from '../utils/lookAi';
 import type { ResearchProject } from '../types/researchProject';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -45,6 +43,7 @@ export function UserLookView({
 }) {
   const [data, setData] = useState<UserLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [aiRunning, setAiRunning] = useState(false);
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -100,6 +99,33 @@ export function UserLookView({
 
   const update = (patch: Partial<UserLookData>) => scheduleSave({ ...data, ...patch });
 
+  const runAi = async () => {
+    setAiRunning(true);
+    try {
+      const res = await runLookAnalysis('user');
+      if (!res.ok || !res.data) {
+        toast.error(res.error || 'AI 分析失败');
+        return;
+      }
+      const out = res.data as UserAnalysisOutput;
+      update({
+        targetUser: out.targetUser ?? data.targetUser,
+        scenario: out.scenario ?? data.scenario,
+        jobToBeDone: out.jobToBeDone ?? data.jobToBeDone,
+        satisfiedNeeds: Array.isArray(out.satisfiedNeeds) ? out.satisfiedNeeds : data.satisfiedNeeds,
+        unmetNeedCandidates: Array.isArray(out.unmetNeedCandidates)
+          ? out.unmetNeedCandidates.map((c) => ({
+              ...emptyUnmetNeedCandidate(),
+              ...c,
+              evidenceStrength: c.evidenceStrength === 'high' || c.evidenceStrength === 'low' ? c.evidenceStrength : 'medium',
+            }))
+          : data.unmetNeedCandidates,
+      });
+    } finally {
+      setAiRunning(false);
+    }
+  };
+
   const updateCandidate = (id: string, patch: Partial<UnmetNeedCandidate>) => {
     update({ unmetNeedCandidates: data.unmetNeedCandidates.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
   };
@@ -114,8 +140,6 @@ export function UserLookView({
   };
   const addList = (key: 'satisfiedNeeds') => update({ [key]: [...data[key], ''] } as Partial<UserLookData>);
   const removeList = (key: 'satisfiedNeeds', index: number) => update({ [key]: data[key].filter((_, i) => i !== index) } as Partial<UserLookData>);
-
-  const captureEvidence = () => update({ evidence: makeUserEvidence(userContext) });
 
   return (
     <div className="space-y-4">
@@ -132,33 +156,19 @@ export function UserLookView({
             </p>
           </div>
         </div>
-        <SaveBadge state={saveState} />
-      </div>
-
-      {/* 数据上下文 */}
-      <Card>
-        <div className="p-5">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <p className="text-sm font-semibold text-[#1d1d1f]">数据上下文</p>
-            <button
-              type="button"
-              onClick={captureEvidence}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]"
-            >
-              <Database className="w-3.5 h-3.5" />
-              {data.evidence ? '更新捕获证据' : '捕获为项目证据'}
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-[#86868b]">
-            <span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> 关键词 {userContext.keywordsCount}</span>
-            <span className="inline-flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> 评论 {userContext.reviewsCount}</span>
-            <span>{userContext.sourceLabel || '未标注来源'}</span>
-            {userContext.isDemo && <span className="rounded-full bg-indigo-50 text-indigo-600 px-2 py-0.5 text-[10px] font-semibold">示例数据</span>}
-          </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={aiRunning}
+            onClick={() => void runAi()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-all active:scale-[0.98]"
+          >
+            {aiRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            AI 生成结论
+          </button>
+          <SaveBadge state={saveState} />
         </div>
-      </Card>
-
-      {data.evidence && <UserEvidenceCard evidence={data.evidence} />}
+      </div>
 
       {/* 用户需求地图：目标用户 / 场景 / JTBD */}
       <Card>
@@ -300,24 +310,6 @@ function StringListCard({
   );
 }
 
-function UserEvidenceCard({ evidence }: { evidence: UserEvidence }) {
-  return (
-    <Card className="border-indigo-100 bg-indigo-50/40">
-      <div className="p-5">
-        <div className="flex items-center gap-2 mb-2">
-          <Database className="w-4 h-4 text-indigo-600" />
-          <p className="text-sm font-semibold text-[#1d1d1f]">已捕获的用户证据</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-[#86868b]">
-          <span>关键词 {evidence.keywordsCount}</span>
-          <span>评论 {evidence.reviewsCount}</span>
-          <span>{evidence.sourceLabel || '未标注来源'}</span>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
@@ -328,11 +320,11 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function SaveBadge({ state }: { state: SaveState }) {
-  if (state === 'idle') return null;
+  if (state === 'idle' || state === 'saved') return null;
   const map: Record<SaveState, { icon: typeof CheckCircle2; text: string; cls: string }> = {
     idle: { icon: CheckCircle2, text: '', cls: '' },
     saving: { icon: Loader2, text: '保存中…', cls: 'text-amber-600' },
-    saved: { icon: CheckCircle2, text: '已保存', cls: 'text-emerald-600' },
+    saved: { icon: CheckCircle2, text: '', cls: '' },
     error: { icon: AlertTriangle, text: '保存失败', cls: 'text-rose-600' },
   };
   const m = map[state];

@@ -6,6 +6,7 @@ export interface SessionUser {
   username: string;
   email?: string;
   avatarDataUrl?: string;
+  nickname?: string;
   role?: 'admin' | 'user';
 }
 
@@ -14,6 +15,7 @@ const TOKEN_KEY = 'amzdev_auth_token';
 const SUPABASE_TOKEN_KEY = 'amzdev_supabase_access_token';
 const SAVED_CREDS_KEY = 'amzdev_saved_creds';
 const AVATAR_KEY_PREFIX = 'amzdev_avatar_';
+const PROFILE_KEY_PREFIX = 'amzdev_account_profile_';
 const DEFAULT_ADMIN_EMAILS = ['ljh15874760218@gmail.com'];
 
 function adminEmails(): string[] {
@@ -38,21 +40,77 @@ function readSession(): SessionUser | null {
     const s = JSON.parse(raw) as SessionUser;
     if (!s?.id || !s?.username) return null;
     if (!getAuthToken()) return null;
-    const avatar = localStorage.getItem(`${AVATAR_KEY_PREFIX}${s.id}`);
-    return avatar ? { ...s, avatarDataUrl: avatar } : s;
+    const profile = readAccountProfile(s.id);
+    const avatar = profile.avatarDataUrl ?? localStorage.getItem(`${AVATAR_KEY_PREFIX}${s.id}`) ?? undefined;
+    return {
+      ...s,
+      nickname: profile.nickname || s.nickname || s.username,
+      avatarDataUrl: avatar,
+    };
   } catch {
     return null;
   }
 }
 
 function writeSession(user: { id: string; username: string; email?: string; role?: 'admin' | 'user' }): void {
+  const profile = readAccountProfile(user.id);
   const session: SessionUser = {
     id: user.id,
     username: user.username,
     email: user.email,
+    nickname: profile.nickname || user.username,
     role: user.role === 'admin' || isAdminEmail(user.email) ? 'admin' : 'user',
   };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+export interface AccountProfile {
+  nickname: string;
+  avatarDataUrl?: string;
+}
+
+function readAccountProfile(userId: string): AccountProfile {
+  try {
+    const raw = localStorage.getItem(`${PROFILE_KEY_PREFIX}${userId}`);
+    if (!raw) return { nickname: '' };
+    const parsed = JSON.parse(raw) as Partial<AccountProfile>;
+    return {
+      nickname: String(parsed.nickname ?? '').trim(),
+      avatarDataUrl: typeof parsed.avatarDataUrl === 'string' ? parsed.avatarDataUrl : undefined,
+    };
+  } catch {
+    return { nickname: '' };
+  }
+}
+
+export function updateAccountProfile(
+  userId: string,
+  profile: Partial<AccountProfile>
+): { ok: boolean; user?: SessionUser; error?: string } {
+  try {
+    const current = getCurrentUser();
+    const nextProfile: AccountProfile = {
+      ...readAccountProfile(userId),
+      ...profile,
+      nickname: String(profile.nickname ?? readAccountProfile(userId).nickname ?? '').trim(),
+    };
+    if (!nextProfile.nickname && current?.id === userId) nextProfile.nickname = current.username;
+    localStorage.setItem(`${PROFILE_KEY_PREFIX}${userId}`, JSON.stringify(nextProfile));
+    if (nextProfile.avatarDataUrl) localStorage.setItem(`${AVATAR_KEY_PREFIX}${userId}`, nextProfile.avatarDataUrl);
+    else localStorage.removeItem(`${AVATAR_KEY_PREFIX}${userId}`);
+    if (current?.id === userId) {
+      const nextUser = {
+        ...current,
+        nickname: nextProfile.nickname || current.username,
+        avatarDataUrl: nextProfile.avatarDataUrl,
+      };
+      localStorage.setItem(SESSION_KEY, JSON.stringify(nextUser));
+      return { ok: true, user: nextUser };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: '保存账号信息失败' };
+  }
 }
 
 function writeToken(token: string): void {
@@ -173,13 +231,9 @@ export function updateUserAvatar(
   dataUrl: string | null
 ): { ok: boolean; error?: string } {
   try {
-    if (dataUrl) localStorage.setItem(`${AVATAR_KEY_PREFIX}${userId}`, dataUrl);
-    else localStorage.removeItem(`${AVATAR_KEY_PREFIX}${userId}`);
-    const sess = getCurrentUser();
-    if (sess?.id === userId) {
-      const next = dataUrl ? { ...sess, avatarDataUrl: dataUrl } : { ...sess, avatarDataUrl: undefined };
-      localStorage.setItem(SESSION_KEY, JSON.stringify(next));
-    }
+    const profile = readAccountProfile(userId);
+    const res = updateAccountProfile(userId, { ...profile, avatarDataUrl: dataUrl ?? undefined });
+    if (!res.ok) return { ok: false, error: res.error };
     return { ok: true };
   } catch {
     return { ok: false, error: '保存头像失败' };

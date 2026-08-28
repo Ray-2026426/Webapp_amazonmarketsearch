@@ -1,27 +1,26 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Crosshair,
-  Database,
+  Sparkles,
   Plus,
   X,
   CheckCircle2,
   Loader2,
   AlertTriangle,
-  MapPin,
 } from 'lucide-react';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
+import { toast } from 'sonner';
 import {
   loadCompetitorLook,
   saveCompetitorLook,
-  makeCompetitorEvidence,
   computeCompetitorProgress,
   type CompetitorContext,
-  type CompetitorEvidence,
   type CompetitorLookData,
 } from '../utils/competitorLook';
 import { updateLookProgress } from '../utils/projectStore';
 import { CompetitorPickerPanel } from './CompetitorPickerPanel';
+import { runLookAnalysis, type CompetitorAnalysisOutput } from '../utils/lookAi';
 import type { ResearchProject } from '../types/researchProject';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -41,6 +40,7 @@ export function CompetitorLookView({
 }) {
   const [data, setData] = useState<CompetitorLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [aiRunning, setAiRunning] = useState(false);
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -96,6 +96,27 @@ export function CompetitorLookView({
 
   const update = (patch: Partial<CompetitorLookData>) => scheduleSave({ ...data, ...patch });
 
+  const runAi = async () => {
+    setAiRunning(true);
+    try {
+      const res = await runLookAnalysis('competitor');
+      if (!res.ok || !res.data) {
+        toast.error(res.error || 'AI 分析失败');
+        return;
+      }
+      const out = res.data as CompetitorAnalysisOutput;
+      update({
+        samplePool: Array.isArray(out.samplePool) ? out.samplePool : data.samplePool,
+        benchmarkAsins: Array.isArray(out.benchmarkAsins) ? out.benchmarkAsins : data.benchmarkAsins,
+        barriers: out.barriers ?? data.barriers,
+        needMatrix: out.needMatrix ?? data.needMatrix,
+        gaps: Array.isArray(out.gaps) ? out.gaps : data.gaps,
+      });
+    } finally {
+      setAiRunning(false);
+    }
+  };
+
   const updateList = (key: 'samplePool' | 'benchmarkAsins' | 'gaps', index: number, value: string) => {
     const next = [...data[key]];
     next[index] = value;
@@ -103,11 +124,6 @@ export function CompetitorLookView({
   };
   const addList = (key: 'samplePool' | 'benchmarkAsins' | 'gaps') => update({ [key]: [...data[key], ''] } as Partial<CompetitorLookData>);
   const removeList = (key: 'samplePool' | 'benchmarkAsins' | 'gaps', index: number) => update({ [key]: data[key].filter((_, i) => i !== index) } as Partial<CompetitorLookData>);
-
-  const captureEvidence = () => {
-    if (!competitorContext.loaded) return;
-    update({ evidence: makeCompetitorEvidence(competitorContext) });
-  };
 
   return (
     <div className="space-y-4">
@@ -124,40 +140,19 @@ export function CompetitorLookView({
             </p>
           </div>
         </div>
-        <SaveBadge state={saveState} />
-      </div>
-
-      {/* 数据上下文 */}
-      <Card>
-        <div className="p-5">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <p className="text-sm font-semibold text-[#1d1d1f]">数据上下文</p>
-            {competitorContext.loaded && (
-              <button
-                type="button"
-                onClick={captureEvidence}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]"
-              >
-                <Database className="w-3.5 h-3.5" />
-                {data.evidence ? '更新捕获证据' : '捕获为项目证据'}
-              </button>
-            )}
-          </div>
-          {competitorContext.loaded ? (
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-[#86868b]">
-              <span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {competitorContext.marketplace}</span>
-              <span>竞品 ASIN {competitorContext.asinCount}</span>
-              {competitorContext.isDemo && <span className="rounded-full bg-indigo-50 text-indigo-600 px-2 py-0.5 text-[10px] font-semibold">示例数据</span>}
-            </div>
-          ) : (
-            <p className="text-xs text-[#aeaeb2]">
-              尚未加载竞品数据 —— 可到左侧「竞品分析」选定 ASIN 后再回来捕获。
-            </p>
-          )}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={aiRunning}
+            onClick={() => void runAi()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-all active:scale-[0.98]"
+          >
+            {aiRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            AI 生成结论
+          </button>
+          <SaveBadge state={saveState} />
         </div>
-      </Card>
-
-      {data.evidence && <CompetitorEvidenceCard evidence={data.evidence} />}
+      </div>
 
       {/* 自动挑选对标竞品（机会细分 → 头部/跟随者/新品） */}
       <CompetitorPickerPanel
@@ -240,29 +235,12 @@ function StringListCard({
   );
 }
 
-function CompetitorEvidenceCard({ evidence }: { evidence: CompetitorEvidence }) {
-  return (
-    <Card className="border-indigo-100 bg-indigo-50/40">
-      <div className="p-5">
-        <div className="flex items-center gap-2 mb-2">
-          <Database className="w-4 h-4 text-indigo-600" />
-          <p className="text-sm font-semibold text-[#1d1d1f]">已捕获的竞品证据</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-[#86868b]">
-          <span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {evidence.marketplace}</span>
-          <span>竞品 ASIN {evidence.asinCount}</span>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 function SaveBadge({ state }: { state: SaveState }) {
-  if (state === 'idle') return null;
+  if (state === 'idle' || state === 'saved') return null;
   const map: Record<SaveState, { icon: typeof CheckCircle2; text: string; cls: string }> = {
     idle: { icon: CheckCircle2, text: '', cls: '' },
     saving: { icon: Loader2, text: '保存中…', cls: 'text-amber-600' },
-    saved: { icon: CheckCircle2, text: '已保存', cls: 'text-emerald-600' },
+    saved: { icon: CheckCircle2, text: '', cls: '' },
     error: { icon: AlertTriangle, text: '保存失败', cls: 'text-rose-600' },
   };
   const m = map[state];

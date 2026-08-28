@@ -1439,16 +1439,16 @@ export default function App() {
                     <img src={currentUser.avatarDataUrl} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <span className="w-full h-full bg-indigo-600 flex items-center justify-center text-white text-[10px] font-bold">
-                      {currentUser?.username?.[0]?.toUpperCase()}
+                      {(currentUser?.nickname || currentUser?.username)?.[0]?.toUpperCase()}
                     </span>
                   )}
                 </button>
               ) : (
                 <div className="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center shrink-0">
-                  <span className="text-white text-[10px] font-bold">{currentUser?.username?.[0]?.toUpperCase()}</span>
+                  <span className="text-white text-[10px] font-bold">{(currentUser?.nickname || currentUser?.username)?.[0]?.toUpperCase()}</span>
                 </div>
               )}
-              <span className="text-xs font-medium text-[#1d1d1f] truncate">{currentUser?.username}</span>
+              <span className="text-xs font-medium text-[#1d1d1f] truncate">{currentUser?.nickname || currentUser?.username}</span>
             </div>
             <button onClick={handleLogout} className="text-[10px] text-[#86868b] hover:text-rose-600 transition-colors shrink-0 ml-2">退出</button>
           </div>
@@ -1580,7 +1580,7 @@ export default function App() {
             <ProjectWorkspace
               userId={currentUser?.id ?? ''}
               project={activeProject}
-              username={currentUser?.username ?? ''}
+              username={currentUser?.nickname || currentUser?.username || ''}
               marketContext={marketContext}
               userContext={userContext}
               competitorContext={competitorContext}
@@ -1589,7 +1589,7 @@ export default function App() {
               onProjectChange={(updated) => setActiveProject(updated)}
             />
           ) : (
-            <ProjectCenter userId={currentUser?.id ?? ''} username={currentUser?.username ?? ''} marketContext={marketContext} userContext={userContext} competitorContext={competitorContext} onOpenProject={setActiveProject} />
+            <ProjectCenter userId={currentUser?.id ?? ''} username={currentUser?.nickname || currentUser?.username || ''} marketContext={marketContext} userContext={userContext} competitorContext={competitorContext} onOpenProject={setActiveProject} />
           ))}
           {!isDataLoaded && activeView === 'market' ? (
             <div className="h-full flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-700">
@@ -2010,10 +2010,11 @@ export default function App() {
           open={isAvatarSettingsOpen}
           userId={currentUser.id}
           username={currentUser.username}
+          nickname={currentUser.nickname}
           currentAvatar={currentUser.avatarDataUrl}
           onClose={() => setIsAvatarSettingsOpen(false)}
-          onSaved={(avatar) =>
-            setCurrentUser((prev) => (prev ? { ...prev, avatarDataUrl: avatar } : prev))
+          onSaved={(profile) =>
+            setCurrentUser((prev) => (prev ? { ...prev, nickname: profile.nickname, avatarDataUrl: profile.avatarDataUrl } : prev))
           }
         />
       )}

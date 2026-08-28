@@ -10,7 +10,6 @@ import {
   Clock,
   User,
   Globe,
-  Target,
   X,
   FolderPlus,
   RefreshCw,
@@ -49,29 +48,25 @@ import {
 
 const MARKETPLACES: { code: string; label: string }[] = [
   { code: 'US', label: 'US · 美国' },
+  { code: 'CA', label: 'CA · 加拿大' },
+  { code: 'MX', label: 'MX · 墨西哥' },
+  { code: 'BR', label: 'BR · 巴西' },
   { code: 'UK', label: 'UK · 英国' },
   { code: 'DE', label: 'DE · 德国' },
   { code: 'FR', label: 'FR · 法国' },
   { code: 'IT', label: 'IT · 意大利' },
   { code: 'ES', label: 'ES · 西班牙' },
-  { code: 'CA', label: 'CA · 加拿大' },
-  { code: 'JP', label: 'JP · 日本' },
-  { code: 'AU', label: 'AU · 澳大利亚' },
-  { code: 'MX', label: 'MX · 墨西哥' },
-  { code: 'IN', label: 'IN · 印度' },
-  { code: 'BR', label: 'BR · 巴西' },
-  { code: 'SG', label: 'SG · 新加坡' },
-  { code: 'AE', label: 'AE · 阿联酋' },
-  { code: 'SA', label: 'SA · 沙特' },
   { code: 'NL', label: 'NL · 荷兰' },
   { code: 'SE', label: 'SE · 瑞典' },
   { code: 'PL', label: 'PL · 波兰' },
   { code: 'TR', label: 'TR · 土耳其' },
-  { code: 'MX', label: 'MX · 墨西哥' },
+  { code: 'JP', label: 'JP · 日本' },
+  { code: 'AU', label: 'AU · 澳大利亚' },
+  { code: 'SG', label: 'SG · 新加坡' },
   { code: 'IN', label: 'IN · 印度' },
+  { code: 'AE', label: 'AE · 阿联酋' },
+  { code: 'SA', label: 'SA · 沙特' },
 ];
-
-const OBJECTIVES = ['新品开发', '市场进入', '存量优化', '产品迭代', '其他', '自定义…'];
 
 const STATUS_LABELS: Record<ResearchProject['status'], string> = {
   draft: '草稿',
@@ -414,7 +409,6 @@ function searchProjectsSync(
       const haystack = [
         p.name,
         p.marketplace,
-        p.objective,
         ...(p.categories ?? []),
         ...(p.coreKeywords ?? []),
         ...(p.seedAsins ?? []),
@@ -472,9 +466,6 @@ function ProjectCard({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-[#86868b]">
           <span className="inline-flex items-center gap-1">
             <Globe className="w-3.5 h-3.5" /> {marketplaceLabel(project.marketplace)}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Target className="w-3.5 h-3.5" /> {project.objective || '未设置目标'}
           </span>
           <span className="inline-flex items-center gap-1">
             <User className="w-3.5 h-3.5" /> {ownerLabel}
@@ -565,22 +556,18 @@ function CreateProjectModal({
 }) {
   const [name, setName] = useState('');
   const [marketplace, setMarketplace] = useState('US');
-  const [objective, setObjective] = useState('新品开发');
-  const [customObjective, setCustomObjective] = useState('');
-  const [owner, setOwner] = useState(username);
   const [description, setDescription] = useState('');
   const [coreKeywords, setCoreKeywords] = useState('');
   const [seedAsins, setSeedAsins] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const canSave = name.trim().length > 0 && marketplace.length > 0 && objective.length > 0 && owner.trim().length > 0;
-  const isCustomObjective = objective === '自定义…';
-  const finalObjective = isCustomObjective ? customObjective.trim() : objective;
+  const owner = username.trim() || '当前用户';
+  const canSave = name.trim().length > 0 && marketplace.length > 0;
 
   const submit = async () => {
-    if (!canSave || (isCustomObjective && !customObjective.trim())) {
-      setError('请填写项目名称、站点、研究目标和负责人');
+    if (!canSave) {
+      setError('请填写项目名称和站点');
       return;
     }
     setSaving(true);
@@ -589,13 +576,12 @@ function CreateProjectModal({
       const p = await createProject(userId, {
         name: name.trim(),
         marketplace,
-        objective: finalObjective || '其他',
+        objective: '待确认',
         ownerId: userId,
         description: description.trim() || undefined,
         coreKeywords: splitList(coreKeywords),
         seedAsins: splitList(seedAsins),
       });
-      toast.success('项目已创建');
       onCreated(p);
     } catch (e) {
       setError(e instanceof Error ? e.message : '创建失败');
@@ -610,7 +596,7 @@ function CreateProjectModal({
         <div className="flex items-center justify-between px-7 pt-6">
           <div>
             <h3 className="text-xl font-bold text-[#1d1d1f]">新建项目</h3>
-            <p className="text-sm text-[#86868b] mt-0.5">先定边界和责任人，再从任意一看开始</p>
+            <p className="text-sm text-[#86868b] mt-0.5">先定类目、站点和对标对象，再从任意一看开始</p>
           </div>
           <button type="button" onClick={onClose} className="w-8 h-8 rounded-full hover:bg-[#f5f5f7] flex items-center justify-center text-[#86868b]">
             <X className="w-4 h-4" />
@@ -638,29 +624,12 @@ function CreateProjectModal({
                 className="w-full"
               />
             </Field>
-            <Field label="研究目标" required>
-              <Select
-                value={objective}
-                onChange={setObjective}
-                options={OBJECTIVES.map((o) => ({ value: o, label: o }))}
-                size="md"
-                className="w-full"
-              />
-              {isCustomObjective && (
-                <input
-                  autoFocus
-                  value={customObjective}
-                  onChange={(e) => setCustomObjective(e.target.value)}
-                  placeholder="例如：竞品压制、Listing 翻新、新品孵化…"
-                  className={cn(inputCls, 'mt-2')}
-                />
-              )}
+            <Field label="负责人">
+              <div className="w-full px-3 py-2.5 rounded-xl border border-black/8 bg-[#f5f5f7] text-sm text-[#1d1d1f]">
+                {owner}
+              </div>
             </Field>
           </div>
-
-          <Field label="负责人" required>
-            <input value={owner} onChange={(e) => setOwner(e.target.value)} className={inputCls} />
-          </Field>
 
           <Field label="核心关键词（逗号分隔，选填）">
             <input
@@ -671,7 +640,7 @@ function CreateProjectModal({
             />
           </Field>
 
-          <Field label="种子 ASIN（逗号分隔，选填）">
+          <Field label="对标 ASIN（逗号分隔，选填）">
             <input
               value={seedAsins}
               onChange={(e) => setSeedAsins(e.target.value)}
@@ -703,7 +672,7 @@ function CreateProjectModal({
             onClick={submit}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 text-white text-sm font-semibold hover:from-indigo-600 hover:to-violet-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
           >
-            {saving ? '创建中…' : '创建并进入'}
+            {saving ? '创建中…' : '创建项目'}
           </button>
         </div>
       </div>
