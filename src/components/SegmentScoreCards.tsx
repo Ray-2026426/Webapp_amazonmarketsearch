@@ -35,10 +35,12 @@ function DimBar({ label, value, icon, color }: { label: string; value: number; i
 export function SegmentScoreCards({
   onOpenMarketTool,
   onSelectOpportunitySegment,
+  selectedOpportunitySegment,
   onCaptured,
 }: {
   onOpenMarketTool: () => void;
-  onSelectOpportunitySegment?: (segment: string) => void;
+  onSelectOpportunitySegment?: (segment: string | null) => void;
+  selectedOpportunitySegment?: string;
   onCaptured?: (segments: string[]) => void;
 }) {
   const [results, setResults] = useState<SegmentScoreResult[] | null>(null);
@@ -109,14 +111,16 @@ export function SegmentScoreCards({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {(results ?? []).map((r) => {
-              const isSel = selected === r.segment;
+              const currentSelected = selectedOpportunitySegment ?? selected ?? '';
+              const isSel = currentSelected === r.segment;
               return (
                 <button
                   key={r.segment}
                   type="button"
                   onClick={() => {
-                    setSelected(isSel ? null : r.segment);
-                    onSelectOpportunitySegment?.(r.segment);
+                    const next = isSel ? null : r.segment;
+                    setSelected(next);
+                    onSelectOpportunitySegment?.(next);
                   }}
                   className={cn(
                     'text-left rounded-2xl border p-4 transition-all',

@@ -1,4 +1,4 @@
-import { Product, HistoryRecord } from './parser';
+import type { Product, HistoryRecord } from './parser';
 
 export interface AsinPeriodStats {
   sales: number;

@@ -16,9 +16,11 @@ const ROLE_META: Record<PickedCompetitor['role'], { label: string; icon: typeof 
 export function CompetitorPickerPanel({
   onOpenCompetitorTool,
   onPicked,
+  preferredSegment,
 }: {
   onOpenCompetitorTool: () => void;
   onPicked: (asins: string[], segment: string) => void;
+  preferredSegment?: string;
 }) {
   const [state, setState] = useState<'loading' | 'empty' | 'nopick' | 'ready'>('loading');
   const [picked, setPicked] = useState<PickedCompetitor[]>([]);
@@ -38,7 +40,10 @@ export function CompetitorPickerPanel({
       return;
     }
     const scored = scoreSegments(g.segments, g.asinToSegment, g.products, g.history);
-    const top = scored[0];
+    const preferred = preferredSegment?.trim()
+      ? scored.find((s) => s.segment === preferredSegment.trim())
+      : null;
+    const top = preferred ?? scored[0];
     if (!top || top.opportunity <= 0) {
       setState('nopick');
       return;
@@ -50,7 +55,7 @@ export function CompetitorPickerPanel({
     setOpportunity(top.opportunity);
     setApplied(false);
     setState('ready');
-  }, []);
+  }, [preferredSegment]);
 
   useEffect(() => {
     void load();
@@ -103,6 +108,7 @@ export function CompetitorPickerPanel({
           <div className="space-y-3">
             <p className="text-xs text-[#86868b]">
               机会细分：<span className="font-semibold text-[#1d1d1f]">{segment}</span>（机会分 <span className="font-semibold text-indigo-600">{opportunity}</span>）
+              {preferredSegment?.trim() && segment === preferredSegment.trim() && <span className="ml-2 text-[11px] text-indigo-600">来自看市场选择</span>}
               {applied && <span className="ml-2 text-[11px] text-emerald-600">✓ 已填充到样本池</span>}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">

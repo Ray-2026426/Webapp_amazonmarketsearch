@@ -3,6 +3,7 @@ import { CheckCircle2, Loader2, AlertTriangle, ClipboardList, Sparkles } from 'l
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
+import { FiveLookSummaryShell } from './five-look/FiveLookSummaryShell';
 import {
   loadSelfAssessment,
   saveSelfAssessment,
@@ -13,9 +14,10 @@ import {
   type SelfAssessment,
   type SelfStatus,
 } from '../utils/selfAssessment';
+import { loadCompetitorLook, type CompetitorLookData } from '../utils/competitorLook';
 import { updateLookProgress } from '../utils/projectStore';
 import { runLookAnalysis, type SelfAnalysisOutput } from '../utils/lookAi';
-import type { ResearchProject } from '../types/researchProject';
+import { LOOK_STATUS_LABELS, type ResearchProject } from '../types/researchProject';
 
 const STATUS_ORDER: SelfStatus[] = ['have', 'partial', 'lack', 'unknown'];
 
@@ -32,20 +34,25 @@ export function SelfAssessmentView({
   userId,
   project,
   onProjectChange,
+  onNavigateOpportunity,
 }: {
   userId: string;
   project: ResearchProject;
   onProjectChange: (updated: ResearchProject) => void;
+  onNavigateOpportunity?: () => void;
 }) {
   const [assessment, setAssessment] = useState<SelfAssessment | null>(null);
+  const [competitorLook, setCompetitorLook] = useState<CompetitorLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [aiRunning, setAiRunning] = useState(false);
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void loadSelfAssessment(userId, project.id).then((a) => {
-      if (!cancelled) setAssessment(a);
+    void Promise.all([loadSelfAssessment(userId, project.id), loadCompetitorLook(userId, project.id)]).then(([a, c]) => {
+      if (cancelled) return;
+      setAssessment(a);
+      setCompetitorLook(c);
     });
     return () => {
       cancelled = true;
@@ -120,7 +127,7 @@ export function SelfAssessmentView({
     }
   };
 
-  if (!assessment) {
+  if (!assessment || !competitorLook) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-[#aeaeb2]">
         <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载自评…
@@ -129,9 +136,72 @@ export function SelfAssessmentView({
   }
 
   const answered = assessment.items.filter((i) => i.status !== 'unknown').length;
+  const strengths = assessment.items
+    .filter((i) => i.status === 'have')
+    .map((i) => formatSelfItem(i.label, i.note));
+  const gaps = assessment.items
+    .filter((i) => i.status === 'partial' || i.status === 'lack')
+    .map((i) => `${SELF_STATUS_LABELS[i.status]}：${formatSelfItem(i.label, i.note)}`);
+  const boundaries = assessment.items
+    .filter((i) => (i.category === 'constraint' || i.category === 'boundary') && i.status !== 'unknown')
+    .map((i) => `${i.label}${i.note ? `：${i.note}` : `（${SELF_STATUS_LABELS[i.status]}）`}`);
+  const hardGapCount = assessment.items.filter((i) => i.status === 'lack').length;
+  const hasCompetitorGap = competitorLook.gaps.some((g) => g.trim());
+  const selfJudgement = answered === 0
+    ? '还没有判断我方能不能抓住这个机会。'
+    : hardGapCount > 0
+      ? `已有 ${hardGapCount} 个明确缺口，需要先判断是否会阻断进入。`
+      : hasCompetitorGap
+        ? '已可对照竞品缝隙判断我方承接能力。'
+        : '已有自身信息，但还缺少明确竞品缝隙作为承接对象。';
 
   return (
     <div className="space-y-4">
+      <FiveLookSummaryShell
+        eyebrow="Five Looks / Self"
+        title="看自己 · 机会承接判断"
+        judgement={selfJudgement}
+        description="这里不只是自评表，而是判断我们是否适合抓住前面发现的缝隙：能否做出差异化、资源是否接得住、利润和风险边界是否成立。"
+        statusBadge={
+          <span className="rounded-full border border-black/5 bg-[#f5f5f7] px-2.5 py-1 text-[11px] font-semibold text-[#86868b]">
+            {LOOK_STATUS_LABELS[project.fiveLookProgress.self.status]} · {project.fiveLookProgress.self.completionPercent}%
+          </span>
+        }
+        metrics={[
+          { label: '已评项目', value: `${answered}/${assessment.items.length}`, tone: answered ? 'brand' : 'neutral' },
+          { label: '已具备', value: `${strengths.length}`, tone: strengths.length ? 'good' : 'neutral' },
+          { label: '缺口/部分', value: `${gaps.length}`, tone: gaps.length ? 'warn' : 'neutral' },
+          { label: '竞品缝隙', value: `${competitorLook.gaps.filter((g) => g.trim()).length}`, tone: hasCompetitorGap ? 'brand' : 'warn' },
+        ]}
+        sections={[
+          {
+            title: '可用优势',
+            items: strengths,
+            emptyText: '还没有明确可复用优势。优先确认供应链、研发、内容、广告或类目经验。',
+            tone: strengths.length ? 'good' : 'neutral',
+          },
+          {
+            title: '承接缺口',
+            items: gaps,
+            emptyText: '还没有识别能力缺口。没有缺口不等于能做，还需要确认硬边界和利润。',
+            tone: gaps.length ? 'warn' : 'neutral',
+          },
+          {
+            title: '硬约束 / 边界',
+            items: boundaries,
+            emptyText: '补充最低毛利、最高 CPC、最大验证成本、MOQ、交期和止损条件。',
+            tone: boundaries.length ? 'warn' : 'neutral',
+          },
+        ]}
+        nextAction={{
+          label: answered > 0 ? '去生成机会结论' : '先完成自评',
+          description: answered > 0
+            ? '下一步把未满足需求、目标细分、竞品破绽和我方承接能力合并，生成机会卡或无机会结论。'
+            : '先完成关键自评项，再判断我方能否做到“我有人无”或“人有我优”。',
+          onClick: answered > 0 ? onNavigateOpportunity : undefined,
+        }}
+      />
+
       {/* 头部说明 + 保存状态 */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
@@ -219,6 +289,11 @@ export function SelfAssessmentView({
       })}
     </div>
   );
+}
+
+function formatSelfItem(label: string, note?: string): string {
+  const clean = note?.trim();
+  return clean ? `${label}：${clean}` : label;
 }
 
 function SaveBadge({ state }: { state: SaveState }) {

@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { Select } from './ui/Select';
+import { FiveLookSummaryShell } from './five-look/FiveLookSummaryShell';
 import {
   loadOpportunities,
   saveOpportunities,
@@ -21,6 +22,7 @@ import {
   computeOpportunityProgress,
 } from '../utils/opportunityStore';
 import { loadUserLook, type UserLookData, type UnmetNeedCandidate } from '../utils/userLook';
+import { loadMarketLook, type MarketLookData } from '../utils/marketLook';
 import { loadSelfAssessment, type SelfAssessment } from '../utils/selfAssessment';
 import { updateLookProgress, setProjectStatus } from '../utils/projectStore';
 import {
@@ -57,17 +59,19 @@ export function OpportunityLookView({
 }) {
   const [cards, setCards] = useState<OpportunityCard[] | null>(null);
   const [userLook, setUserLook] = useState<UserLookData | null>(null);
+  const [marketLook, setMarketLook] = useState<MarketLookData | null>(null);
   const [self, setSelf] = useState<SelfAssessment | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loadOpportunities(userId, project.id), loadUserLook(userId, project.id), loadSelfAssessment(userId, project.id)]).then(
-      ([opps, u, s]) => {
+    Promise.all([loadOpportunities(userId, project.id), loadUserLook(userId, project.id), loadMarketLook(userId, project.id), loadSelfAssessment(userId, project.id)]).then(
+      ([opps, u, m, s]) => {
         if (cancelled) return;
         setCards(opps);
         setUserLook(u);
+        setMarketLook(m);
         setSelf(s);
       }
     );
@@ -114,7 +118,7 @@ export function OpportunityLookView({
     [persist]
   );
 
-  if (!cards || !userLook) {
+  if (!cards || !userLook || !marketLook) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-[#aeaeb2]">
         <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载…
@@ -174,6 +178,15 @@ export function OpportunityLookView({
   const usedNeedIds = new Set(cards.map((c) => c.unmetNeedId));
   const candidates = (userLook.unmetNeedCandidates ?? []).filter((c) => !usedNeedIds.has(c.id));
   const sortedCards = [...cards].sort((a, b) => b.score - a.score);
+  const selectedSegment = marketLook.selectedOpportunitySegment?.trim() || '';
+  const decidedCards = cards.filter((c) => c.decision !== 'undecided');
+  const validatedCards = cards.filter((c) => c.coverage >= 0.75 && c.score >= 60);
+  const noOpportunityReasons = buildNoOpportunityReasons(project, userLook, marketLook, cards);
+  const opportunityJudgement = cards.length > 0
+    ? `已有 ${cards.length} 张机会卡，${validatedCards.length} 张证据覆盖较完整，${decidedCards.length} 张已决策。`
+    : noOpportunityReasons.length > 0
+      ? `当前还不能形成正式机会：${noOpportunityReasons[0]}。`
+      : '已有基础线索，可以从未满足需求生成机会卡。';
   const generateAllCandidates = () => {
     if (candidates.length === 0) return;
     scheduleSave([...cards, ...candidates.map((candidate) => createOpportunityFromUnmetNeed(project.id, candidate))]);
@@ -181,6 +194,53 @@ export function OpportunityLookView({
 
   return (
     <div className="space-y-4">
+      <FiveLookSummaryShell
+        eyebrow="Five Looks / Opportunity"
+        title="看/找机会 · 机会闭环"
+        judgement={opportunityJudgement}
+        description="机会必须从未满足需求出发，同时被市场、竞品、自身和利润证据支撑。没有机会时也要说明卡点，而不是强行生成建议。"
+        statusBadge={
+          <span className="rounded-full border border-black/5 bg-[#f5f5f7] px-2.5 py-1 text-[11px] font-semibold text-[#86868b]">
+            {LOOK_STATUS_LABELS[project.fiveLookProgress.opportunity.status]} · {project.fiveLookProgress.opportunity.completionPercent}%
+          </span>
+        }
+        metrics={[
+          { label: '目标细分', value: selectedSegment || '未选择', tone: selectedSegment ? 'brand' : 'warn' },
+          { label: '候选需求', value: `${userLook.unmetNeedCandidates.length}`, tone: userLook.unmetNeedCandidates.length ? 'brand' : 'warn' },
+          { label: '机会卡', value: `${cards.length}`, tone: cards.length ? 'good' : 'neutral' },
+          { label: '已决策', value: `${decidedCards.length}`, tone: decidedCards.length ? 'good' : 'neutral' },
+        ]}
+        sections={[
+          {
+            title: '成立依据',
+            items: sortedCards.slice(0, 3).map((c) => `${c.title}：${c.score} 分，覆盖度 ${Math.round(c.coverage * 100)}%`),
+            emptyText: '还没有正式机会卡。先确认未满足需求、目标细分市场和自身承接能力。',
+            tone: cards.length ? 'good' : 'neutral',
+          },
+          {
+            title: '无机会 / 卡点',
+            items: noOpportunityReasons,
+            emptyText: '当前没有明显阻断项，但仍需生成机会卡并补齐证据后再决策。',
+            tone: noOpportunityReasons.length ? 'warn' : 'good',
+          },
+          {
+            title: '下一步验证',
+            items: sortedCards.flatMap((c) => c.validationActions.map((a) => a.action)).filter(Boolean),
+            emptyText: '机会成立后，需要明确最小验证动作、负责人和成功标准。',
+            tone: 'neutral',
+          },
+        ]}
+        nextAction={{
+          label: cards.length ? '补齐证据并决策' : candidates.length ? '生成机会卡' : '回到看用户',
+          description: cards.length
+            ? '优先处理覆盖度不足、利润不成立或自身承接不清楚的机会卡，再做进入/验证/暂缓/放弃决策。'
+            : candidates.length
+              ? '从未满足需求候选生成机会卡，然后补充市场、竞品、自身和利润证据。'
+              : '当前没有可生成机会卡的未满足需求，请先回到看用户补充需求证据。',
+          onClick: cards.length ? undefined : candidates.length ? generateAllCandidates : () => onNavigateLook('user'),
+        }}
+      />
+
       {/* 头部 + 提交评审 */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
@@ -270,6 +330,22 @@ export function OpportunityLookView({
       <SaveBadge state={saveState} />
     </div>
   );
+}
+
+function buildNoOpportunityReasons(
+  project: ResearchProject,
+  userLook: UserLookData,
+  marketLook: MarketLookData,
+  cards: OpportunityCard[]
+): string[] {
+  const reasons: string[] = [];
+  if (userLook.unmetNeedCandidates.length === 0) reasons.push('缺少未满足需求，无法判断用户到底要什么');
+  if (!marketLook.selectedOpportunitySegment?.trim()) reasons.push('缺少目标细分市场，无法判断水涨船高或供小于求');
+  if (project.fiveLookProgress.competitor.status === 'not_started') reasons.push('缺少三类竞对拆解，无法判断对手的产品和运营破绽');
+  if (project.fiveLookProgress.self.status === 'not_started') reasons.push('缺少自身承接判断，无法确认我方是否适合抓这个机会');
+  if (cards.length > 0 && cards.every((c) => c.score < 50)) reasons.push('现有机会卡评分偏低，暂不建议进入');
+  if (cards.length > 0 && cards.every((c) => !c.profitAssumption || c.profitAssumption.price <= 0)) reasons.push('缺少利润假设，无法判断商业可行性');
+  return reasons;
 }
 
 function SubmitReview({ userId, project, cards, onProjectChange }: { userId: string; project: ResearchProject; cards: OpportunityCard[]; onProjectChange: (u: ResearchProject) => void }) {

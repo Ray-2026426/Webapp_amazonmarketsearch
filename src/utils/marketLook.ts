@@ -25,6 +25,8 @@ export interface MarketEvidence {
 
 export interface MarketLookData {
   projectId: string;
+  /** 进入看竞品前选择的目标细分市场 */
+  selectedOpportunitySegment?: string;
   /** 市场吸引力判断 */
   attractiveness: string;
   /** 3–5 条关键证据 */
@@ -45,6 +47,7 @@ function storageKey(userId: string, projectId: string): string {
 export function defaultMarketLook(projectId: string): MarketLookData {
   return {
     projectId,
+    selectedOpportunitySegment: '',
     attractiveness: '',
     keyEvidences: [],
     risks: [],

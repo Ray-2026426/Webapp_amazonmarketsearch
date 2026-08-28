@@ -20,6 +20,10 @@ export interface CompetitorLookData {
   projectId: string;
   samplePool: string[];
   benchmarkAsins: string[];
+  /** 产品力拆解：功能、材质、设计、体验、差评痛点 */
+  productPowerFindings: string[];
+  /** 运营力拆解：Listing、主图、流量结构、价格、评价壁垒 */
+  operationPowerFindings: string[];
   barriers: string;
   needMatrix: string;
   gaps: string[];
@@ -37,6 +41,8 @@ export function defaultCompetitorLook(projectId: string): CompetitorLookData {
     projectId,
     samplePool: [],
     benchmarkAsins: [],
+    productPowerFindings: [],
+    operationPowerFindings: [],
     barriers: '',
     needMatrix: '',
     gaps: [],
@@ -54,6 +60,8 @@ export async function loadCompetitorLook(userId: string, projectId: string): Pro
         ...raw,
         samplePool: Array.isArray(raw.samplePool) ? raw.samplePool : [],
         benchmarkAsins: Array.isArray(raw.benchmarkAsins) ? raw.benchmarkAsins : [],
+        productPowerFindings: Array.isArray(raw.productPowerFindings) ? raw.productPowerFindings : [],
+        operationPowerFindings: Array.isArray(raw.operationPowerFindings) ? raw.operationPowerFindings : [],
         gaps: Array.isArray(raw.gaps) ? raw.gaps : [],
       };
     }
@@ -85,7 +93,9 @@ export function computeCompetitorProgress(
 ): Pick<FiveLookProgress, 'status' | 'completionPercent' | 'missingRequirements'> {
   const hasPool = data.samplePool.some((s) => s.trim().length > 0);
   const hasBenchmark = data.benchmarkAsins.some((s) => s.trim().length > 0);
-  const hasBarriers = data.barriers.trim().length > 0;
+  const hasBarriers = data.barriers.trim().length > 0
+    || data.productPowerFindings.some((s) => s.trim().length > 0)
+    || data.operationPowerFindings.some((s) => s.trim().length > 0);
   const hasGaps = data.gaps.some((s) => s.trim().length > 0);
 
   const filled = (hasPool ? 1 : 0) + (hasBenchmark ? 1 : 0) + (hasBarriers ? 1 : 0) + (hasGaps ? 1 : 0);

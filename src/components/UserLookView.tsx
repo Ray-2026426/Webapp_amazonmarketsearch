@@ -7,10 +7,12 @@ import {
   CheckCircle2,
   Loader2,
   AlertTriangle,
+  Wrench,
 } from 'lucide-react';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { toast } from 'sonner';
+import { FiveLookSummaryShell } from './five-look/FiveLookSummaryShell';
 import {
   loadUserLook,
   saveUserLook,
@@ -24,7 +26,7 @@ import {
 } from '../utils/userLook';
 import { updateLookProgress } from '../utils/projectStore';
 import { runLookAnalysis, type UserAnalysisOutput } from '../utils/lookAi';
-import type { ResearchProject } from '../types/researchProject';
+import { LOOK_STATUS_LABELS, type ResearchProject } from '../types/researchProject';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -35,11 +37,17 @@ export function UserLookView({
   project,
   userContext,
   onProjectChange,
+  onOpenKeywordTool,
+  onOpenVocTool,
+  onNavigateMarket,
 }: {
   userId: string;
   project: ResearchProject;
   userContext: UserContext;
   onProjectChange: (updated: ResearchProject) => void;
+  onOpenKeywordTool?: () => void;
+  onOpenVocTool?: () => void;
+  onNavigateMarket?: () => void;
 }) {
   const [data, setData] = useState<UserLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -98,6 +106,20 @@ export function UserLookView({
   }
 
   const update = (patch: Partial<UserLookData>) => scheduleSave({ ...data, ...patch });
+  const progress = project.fiveLookProgress.user;
+  const unmetNeeds = data.unmetNeedCandidates
+    .map((c) => c.needStatement || [c.targetUser, c.scenario, c.jobToBeDone].filter(Boolean).join(' / '))
+    .filter(Boolean);
+  const searchPath = [
+    data.targetUser ? `目标用户：${data.targetUser}` : '',
+    data.scenario ? `使用场景：${data.scenario}` : '',
+    data.jobToBeDone ? `用户任务：${data.jobToBeDone}` : '',
+  ].filter(Boolean);
+  const strongNeedCount = data.unmetNeedCandidates.filter((c) => c.evidenceStrength === 'high').length;
+  const judgement = unmetNeeds.length > 0
+    ? `已识别 ${unmetNeeds.length} 个未满足需求候选，其中 ${strongNeedCount} 个证据强度较高。`
+    : '还没有形成可进入市场验证的未满足需求。';
+  const userSource = userContext.sourceLabel || data.evidence?.sourceLabel || '未捕获';
 
   const runAi = async () => {
     setAiRunning(true);
@@ -143,6 +165,63 @@ export function UserLookView({
 
   return (
     <div className="space-y-4">
+      <FiveLookSummaryShell
+        eyebrow="Five Looks / User"
+        title="看用户 · 需求地图"
+        judgement={judgement}
+        description="先回答用户是谁、怎么搜、怎么比较、把产品看成哪些类型，再把关键词和 VOC 沉淀成未满足需求候选。明细分析留在关键词和评论工具里。"
+        statusBadge={
+          <span className="rounded-full border border-black/5 bg-[#f5f5f7] px-2.5 py-1 text-[11px] font-semibold text-[#86868b]">
+            {LOOK_STATUS_LABELS[progress.status]} · {progress.completionPercent}%
+          </span>
+        }
+        metrics={[
+          { label: '关键词样本', value: `${userContext.keywordsCount || data.evidence?.keywordsCount || 0}`, tone: userContext.keywordsCount ? 'brand' : 'neutral' },
+          { label: '评论样本', value: `${userContext.reviewsCount || data.evidence?.reviewsCount || 0}`, tone: userContext.reviewsCount ? 'brand' : 'neutral' },
+          { label: '未满足需求', value: `${data.unmetNeedCandidates.length}`, tone: data.unmetNeedCandidates.length ? 'warn' : 'neutral' },
+          { label: '数据来源', value: userSource, tone: userContext.isDemo || data.evidence?.isDemo ? 'warn' : 'neutral' },
+        ]}
+        sections={[
+          {
+            title: '用户决策路径',
+            items: searchPath,
+            emptyText: '先补目标用户、使用场景和 JTBD，才能判断用户如何搜索和决策。',
+            tone: 'neutral',
+          },
+          {
+            title: '已满足需求',
+            items: data.satisfiedNeeds,
+            emptyText: '先记录现有产品已经满足的需求，用来和未满足需求做对照。',
+            tone: 'good',
+          },
+          {
+            title: '未满足需求候选',
+            items: unmetNeeds,
+            emptyText: '还没有候选需求。先从关键词意图和 VOC 痛点中提炼重复出现的问题。',
+            tone: data.unmetNeedCandidates.length ? 'warn' : 'neutral',
+          },
+        ]}
+        nextAction={{
+          label: data.unmetNeedCandidates.length ? '去看市场验证' : '补充需求证据',
+          description: data.unmetNeedCandidates.length
+            ? '下一步应验证这些需求对应的细分市场是否水涨船高、是否供小于求。'
+            : '先用关键词工具和评论 / VOC 工具补充证据，再回到这里沉淀未满足需求。',
+          onClick: data.unmetNeedCandidates.length ? onNavigateMarket : onOpenKeywordTool,
+        }}
+        toolAction={onOpenKeywordTool ? { label: '查看关键词明细', onClick: onOpenKeywordTool } : undefined}
+      >
+        {onOpenVocTool && (
+          <button
+            type="button"
+            onClick={onOpenVocTool}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-black/8 bg-white text-xs font-semibold text-[#424245] hover:text-indigo-600 hover:border-indigo-200 transition-all active:scale-[0.98]"
+          >
+            <Wrench className="w-3.5 h-3.5" />
+            查看评论 / VOC 明细
+          </button>
+        )}
+      </FiveLookSummaryShell>
+
       {/* 头部 */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">

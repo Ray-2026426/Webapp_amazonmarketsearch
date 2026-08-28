@@ -173,6 +173,8 @@ export interface UserAnalysisOutput {
 export interface CompetitorAnalysisOutput {
   samplePool?: string[];
   benchmarkAsins?: string[];
+  productPowerFindings?: string[];
+  operationPowerFindings?: string[];
   barriers?: string;
   needMatrix?: string;
   gaps?: string[];
@@ -252,6 +254,8 @@ ${summary}`;
 {
   "samplePool": ["竞品样本池分层（按价格带/定位分）"],
   "benchmarkAsins": ["标杆 ASIN（2-3个，说明为何是标杆）"],
+  "productPowerFindings": ["产品力拆解：功能/材质/设计/体验/差评痛点，2-4条"],
+  "operationPowerFindings": ["运营力拆解：Listing/主图/流量结构/价格/评价壁垒，2-4条"],
   "barriers": "竞争壁垒与经营能力（100字内）",
   "needMatrix": "用户需求满足矩阵（哪些方面满足、哪些不足）",
   "gaps": ["未充分满足的产品缺口（2-4条）"]

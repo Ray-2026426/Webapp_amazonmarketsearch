@@ -274,13 +274,40 @@ export function ProjectWorkspace({
       {tab === 'overview' ? (
         <ProjectOverviewContent project={p} username={username} userId={userId} onNavigateLook={(look) => void switchToLook(look)} />
       ) : tab === 'self' ? (
-        <SelfAssessmentView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
+        <SelfAssessmentView
+          userId={userId}
+          project={p}
+          onProjectChange={applyProjectUpdate}
+          onNavigateOpportunity={() => void switchToLook('opportunity')}
+        />
       ) : tab === 'market' ? (
-        <MarketLookView userId={userId} project={p} marketContext={marketContext} onProjectChange={applyProjectUpdate} onOpenMarketTool={() => onOpenTool('market')} />
+        <MarketLookView
+          userId={userId}
+          project={p}
+          marketContext={marketContext}
+          onProjectChange={applyProjectUpdate}
+          onOpenMarketTool={() => onOpenTool('market')}
+          onNavigateCompetitor={() => void switchToLook('competitor')}
+        />
       ) : tab === 'user' ? (
-        <UserLookView userId={userId} project={p} userContext={userContext} onProjectChange={applyProjectUpdate} />
+        <UserLookView
+          userId={userId}
+          project={p}
+          userContext={userContext}
+          onProjectChange={applyProjectUpdate}
+          onOpenKeywordTool={() => onOpenTool('keywords')}
+          onOpenVocTool={() => onOpenTool('insights')}
+          onNavigateMarket={() => void switchToLook('market')}
+        />
       ) : tab === 'competitor' ? (
-        <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} onOpenCompetitorTool={() => onOpenTool('competitors')} />
+        <CompetitorLookView
+          userId={userId}
+          project={p}
+          competitorContext={competitorContext}
+          onProjectChange={applyProjectUpdate}
+          onOpenCompetitorTool={() => onOpenTool('competitors')}
+          onNavigateSelf={() => void switchToLook('self')}
+        />
       ) : tab === 'opportunity' ? (
         <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} onNavigateLook={(look) => void switchToLook(look)} />
       ) : (

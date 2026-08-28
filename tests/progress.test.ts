@@ -2,9 +2,9 @@
 import assert from 'node:assert/strict';
 
 import { computeSelfProgress } from '../src/utils/selfAssessment';
-import { computeMarketProgress } from '../src/utils/marketLook';
+import { computeMarketProgress, defaultMarketLook } from '../src/utils/marketLook';
 import { computeUserProgress } from '../src/utils/userLook';
-import { computeCompetitorProgress } from '../src/utils/competitorLook';
+import { computeCompetitorProgress, defaultCompetitorLook } from '../src/utils/competitorLook';
 import { computeOpportunityProgress, scoreOpportunity } from '../src/utils/opportunityStore';
 import { applyLookProgressUpdate, migrateProject } from '../src/utils/projectStore';
 import { reportReuseKey, reuseKeyOf, decideReportSave, type ProjectReport } from '../src/utils/reportStore';
@@ -77,6 +77,14 @@ test('computeMarketProgress: 判断+3证据+1风险 -> 完成 100%', () => {
   assert.equal(r.completionPercent, 100);
 });
 
+test('defaultMarketLook: 目标细分市场默认为空，兼容旧项目', () => {
+  const d = defaultMarketLook('p');
+  assert.equal(d.selectedOpportunitySegment, '');
+  const r = computeMarketProgress({ ...d, selectedOpportunitySegment: '高端侧睡', attractiveness: '值得进入', keyEvidences: ['a', 'b', 'c'], risks: ['r'] });
+  assert.equal(r.status, 'completed');
+  assert.equal(r.completionPercent, 100);
+});
+
 test('computeUserProgress: 5 项齐全 -> 完成 100%', () => {
   const r = computeUserProgress({
     projectId: 'p', targetUser: '侧睡人群', scenario: '睡前', jobToBeDone: '保持颈椎中立',
@@ -89,7 +97,21 @@ test('computeUserProgress: 5 项齐全 -> 完成 100%', () => {
 });
 
 test('computeCompetitorProgress: 4 项齐全 -> 完成 100%', () => {
-  const r = computeCompetitorProgress({ projectId: 'p', samplePool: ['头部款'], benchmarkAsins: ['B0X'], barriers: '评论壁垒', needMatrix: '', gaps: ['缺侧睡设计'], evidence: null, updatedAt: '' });
+  const r = computeCompetitorProgress({ projectId: 'p', samplePool: ['头部款'], benchmarkAsins: ['B0X'], productPowerFindings: [], operationPowerFindings: [], barriers: '评论壁垒', needMatrix: '', gaps: ['缺侧睡设计'], evidence: null, updatedAt: '' });
+  assert.equal(r.status, 'completed');
+  assert.equal(r.completionPercent, 100);
+});
+
+test('computeCompetitorProgress: 产品力/运营力拆解可替代旧壁垒字段', () => {
+  const d = defaultCompetitorLook('p');
+  const r = computeCompetitorProgress({
+    ...d,
+    samplePool: ['头部', '跟随者', '新品'],
+    benchmarkAsins: ['B001', 'B002'],
+    productPowerFindings: ['支撑性强但闷热'],
+    operationPowerFindings: ['流量集中在品牌词'],
+    gaps: ['缺少夏季透气方案'],
+  });
   assert.equal(r.status, 'completed');
   assert.equal(r.completionPercent, 100);
 });

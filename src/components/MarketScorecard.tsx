@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Product, HistoryRecord } from '../utils/parser';
+import type { Product, HistoryRecord } from '../utils/parser';
 import { Target, Shield, TrendingUp, Sparkles, Star, BarChart3, Info, Settings, X, RotateCcw, DollarSign, GripVertical } from 'lucide-react';
 
 type DimKey = 'marketSize' | 'growth' | 'concentration' | 'reviews' | 'priceDispersion' | 'newProduct' | 'rating' | 'fbaCost';

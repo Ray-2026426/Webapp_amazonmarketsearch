@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
+import { FiveLookSummaryShell } from './five-look/FiveLookSummaryShell';
 import { toast } from 'sonner';
 import {
   loadMarketLook,
@@ -21,7 +22,7 @@ import {
 import { updateLookProgress } from '../utils/projectStore';
 import { SegmentScoreCards } from './SegmentScoreCards';
 import { runLookAnalysis, type MarketAnalysisOutput } from '../utils/lookAi';
-import type { ResearchProject } from '../types/researchProject';
+import { LOOK_STATUS_LABELS, type ResearchProject } from '../types/researchProject';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -31,12 +32,14 @@ export function MarketLookView({
   marketContext,
   onProjectChange,
   onOpenMarketTool,
+  onNavigateCompetitor,
 }: {
   userId: string;
   project: ResearchProject;
   marketContext: MarketContext;
   onProjectChange: (updated: ResearchProject) => void;
   onOpenMarketTool?: () => void;
+  onNavigateCompetitor?: () => void;
 }) {
   const [data, setData] = useState<MarketLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -95,6 +98,16 @@ export function MarketLookView({
   }
 
   const update = (patch: Partial<MarketLookData>) => scheduleSave({ ...data, ...patch });
+  const progress = project.fiveLookProgress.market;
+  const selectedSegment = data.selectedOpportunitySegment?.trim() || '';
+  const evidenceCount = data.keyEvidences.filter((s) => s.trim()).length;
+  const riskCount = data.risks.filter((s) => s.trim()).length;
+  const judgement = selectedSegment
+    ? `已选择「${selectedSegment}」作为目标细分市场，下一步应围绕它拆解三类竞对。`
+    : data.attractiveness.trim()
+      ? '已有市场吸引力判断，但还没有选择目标细分市场。'
+      : '还没有形成可用于竞品拆解的细分市场判断。';
+  const marketSource = marketContext.sourceLabel || data.evidence?.sourceLabel || '未捕获';
 
   const runAi = async () => {
     setAiRunning(true);
@@ -132,6 +145,52 @@ export function MarketLookView({
 
   return (
     <div className="space-y-4">
+      <FiveLookSummaryShell
+        eyebrow="Five Looks / Market"
+        title="看市场 · 细分机会池"
+        judgement={judgement}
+        description="这里不再复述市场大盘明细，而是判断哪些细分市场水涨船高、是否供小于求，并选择一个目标细分市场进入三竞对拆解。"
+        statusBadge={
+          <span className="rounded-full border border-black/5 bg-[#f5f5f7] px-2.5 py-1 text-[11px] font-semibold text-[#86868b]">
+            {LOOK_STATUS_LABELS[progress.status]} · {progress.completionPercent}%
+          </span>
+        }
+        metrics={[
+          { label: '目标细分', value: selectedSegment || '未选择', tone: selectedSegment ? 'brand' : 'warn' },
+          { label: '商品样本', value: `${marketContext.sampleSize || data.evidence?.sampleSize || 0}`, tone: marketContext.sampleSize ? 'brand' : 'neutral' },
+          { label: '历史月份', value: `${marketContext.months?.length || data.evidence?.months?.length || 0}`, tone: marketContext.months?.length ? 'brand' : 'neutral' },
+          { label: '数据来源', value: marketSource, tone: marketContext.isDemo || data.evidence?.isDemo ? 'warn' : 'neutral' },
+        ]}
+        sections={[
+          {
+            title: '市场判断',
+            items: [data.attractiveness],
+            emptyText: '先形成市场吸引力判断：规模、趋势、竞争结构、价格带和进入窗口是否支持继续投入。',
+            tone: data.attractiveness.trim() ? 'good' : 'neutral',
+          },
+          {
+            title: '关键证据',
+            items: data.keyEvidences,
+            emptyText: '至少沉淀 3 条关键证据，例如增长趋势、集中度、价格带、上新窗口或供需缺口。',
+            tone: evidenceCount >= 3 ? 'good' : 'warn',
+          },
+          {
+            title: '风险 / 待验证',
+            items: [...data.risks, ...data.openQuestions],
+            emptyText: '记录会改变进入判断的风险，例如季节性、合规、头部垄断、利润或样本偏差。',
+            tone: riskCount > 0 ? 'warn' : 'neutral',
+          },
+        ]}
+        nextAction={{
+          label: selectedSegment ? '去看竞品拆解' : '选择目标细分',
+          description: selectedSegment
+            ? '围绕该细分市场选择绝对头部、强力跟随者和新链接，拆分产品力与运营力，寻找缝隙。'
+            : '先在细分市场评分中选择一个目标细分市场，再进入看竞品。',
+          onClick: selectedSegment ? onNavigateCompetitor : onOpenMarketTool,
+        }}
+        toolAction={onOpenMarketTool ? { label: '查看市场明细', onClick: onOpenMarketTool } : undefined}
+      />
+
       {/* 头部 */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
@@ -162,6 +221,8 @@ export function MarketLookView({
       {/* 细分市场评分（确定性公式，机会分排序） */}
       <SegmentScoreCards
         onOpenMarketTool={onOpenMarketTool ?? (() => {})}
+        selectedOpportunitySegment={data.selectedOpportunitySegment}
+        onSelectOpportunitySegment={(segment) => update({ selectedOpportunitySegment: segment ?? '' })}
       />
 
       {/* 市场吸引力判断 */}
