@@ -350,10 +350,16 @@ async function clearLookData(userId: string, projectId: string): Promise<void> {
 
 export async function deleteProject(userId: string, projectId: string): Promise<boolean> {
   const list = await loadProjects(userId);
-  const next = list.filter((p) => p.id !== projectId);
+  // 删除目标项目及其全部冲突副本（id 以 `${projectId}_conflict_` 开头），杜绝本地残留导致删了复活。
+  const isSelfOrConflict = (p: ResearchProject) =>
+    p.id === projectId || p.id.startsWith(`${projectId}_conflict_`);
+  const next = list.filter((p) => !isSelfOrConflict(p));
   if (next.length === list.length) return false;
   await persistProjects(userId, next);
-  await clearLookData(userId, projectId);
+  // 连同冲突副本对应的 look 数据一起清理
+  for (const p of list) {
+    if (isSelfOrConflict(p)) await clearLookData(userId, p.id);
+  }
   return true;
 }
 

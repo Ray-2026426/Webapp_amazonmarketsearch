@@ -106,6 +106,27 @@ function isConflictCopyId(id: string): boolean {
   return id.includes('_conflict_');
 }
 
+/** 判断项目是否属于某个待删 id（含其冲突副本），用于删除后彻底剔除，避免「删了复活」。 */
+function matchesPendingDeletion(p: ResearchProject, deletedSet: Set<string>): boolean {
+  if (deletedSet.has(p.id)) return true;
+  // 冲突副本 id 形如 `${原始id}_conflict_{side}_{stamp}`，剥离后半段后是否能命中待删 id
+  const conflictIdx = p.id.indexOf('_conflict_');
+  if (conflictIdx >= 0) {
+    const baseId = p.id.slice(0, conflictIdx);
+    if (deletedSet.has(baseId)) return true;
+  }
+  return false;
+}
+
+/** 过滤掉待删项目及其冲突副本（用于最终持久化前的硬剔除，杜绝复活）。 */
+export function dropPendingDeletions(
+  projects: ResearchProject[],
+  pendingDeletionIds: string[]
+): ResearchProject[] {
+  const deletedSet = new Set(pendingDeletionIds);
+  return projects.filter((p) => !matchesPendingDeletion(p, deletedSet));
+}
+
 function conflictCopy(project: ResearchProject, side: 'local' | 'cloud'): ResearchProject {
   const stamp = (project.updatedAt || 'unknown').replace(/[^0-9A-Za-z]/g, '').slice(0, 20);
   return {
@@ -180,8 +201,8 @@ export async function syncProjects(
     const cloud = pull.projects;
     const deletedSet = new Set(pendingDeletionIds);
     const merge = mergeProjectSets(
-      local.filter((p) => !deletedSet.has(p.id)),
-      cloud.filter((p) => !deletedSet.has(p.id))
+      local.filter((p) => !matchesPendingDeletion(p, deletedSet)),
+      cloud.filter((p) => !matchesPendingDeletion(p, deletedSet))
     );
     const pushOutcome = await pushProjects(merge.projects);
     // 任一环节报告云后端关闭，即整体标记为未启用（避免掩盖跨设备不同步的根因）。
@@ -202,7 +223,8 @@ export async function syncProjects(
         pulled: cloud.length,
         deleted: deletion.deleted,
         conflicts,
-        projects: mergedAgain.projects,
+        // 硬剔除待删项目及其冲突副本，杜绝「删了复活」
+        projects: dropPendingDeletions(mergedAgain.projects, pendingDeletionIds),
         cloudDisabled,
       };
     }
@@ -213,7 +235,7 @@ export async function syncProjects(
       pulled: cloud.length,
       deleted: deletion.deleted,
       conflicts,
-      projects: merge.projects,
+      projects: dropPendingDeletions(merge.projects, pendingDeletionIds),
       cloudDisabled,
     };
   } catch (e) {

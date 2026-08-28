@@ -1,7 +1,7 @@
 // 乐观并发纯逻辑测试（Phase 3）：push 冲突回灌 + 冲突副本保留。
 import assert from 'node:assert/strict';
 
-import { mergeProjectSets, reconcilePushConflicts } from '../src/utils/cloudSync';
+import { mergeProjectSets, reconcilePushConflicts, dropPendingDeletions } from '../src/utils/cloudSync';
 import { emptyFiveLookProgress } from '../src/utils/projectStore';
 import { migrateProject } from '../src/utils/projectStore';
 import type { ResearchProject } from '../src/types/researchProject';
@@ -122,6 +122,35 @@ test('内容相同仅 cloudRevision 不同不视为分叉', () => {
   assert.equal(result.projects.length, 1);
   assert.equal(result.conflicts, 0);
   assert.ok(!result.projects.some((p) => p.id.includes('_conflict_')));
+});
+
+test('删除后硬剔除：待删 id 与其冲突副本都被移除（删了不复活）', () => {
+  const projects = [
+    project({ id: 'p1', name: 'A' }),
+    project({ id: 'p1_conflict_local_20260101000000000Z', name: 'A（冲突副本）' }),
+    project({ id: 'p2', name: 'B' }),
+  ];
+  const result = dropPendingDeletions(projects, ['p1']);
+  const ids = result.map((p) => p.id);
+  assert.ok(!ids.includes('p1'), '原始项目应被删除');
+  assert.ok(!ids.some((id) => id.includes('_conflict_' ) && id.startsWith('p1_conflict_')), 'p1 的冲突副本应被删除');
+  assert.ok(ids.includes('p2'), '其他项目应保留');
+});
+
+test('dropPendingDeletions：空待删列表不删除任何项目', () => {
+  const projects = [project({ id: 'p1', name: 'A' })];
+  const result = dropPendingDeletions(projects, []);
+  assert.equal(result.length, 1);
+});
+
+test('dropPendingDeletions：非冲突 id 不影响删除多个目标', () => {
+  const projects = [
+    project({ id: 'pA', name: 'A' }),
+    project({ id: 'pA_conflict_cloud_20260201T000000000Z', name: 'A副' }),
+    project({ id: 'pB', name: 'B' }),
+  ];
+  const result = dropPendingDeletions(projects, ['pA', 'pB']);
+  assert.equal(result.length, 0);
 });
 
 console.log('');
