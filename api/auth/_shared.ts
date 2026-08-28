@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const DEFAULT_SUPABASE_URL = 'https://fbldvwzoqlewoistybto.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Y1fTAwpwmaZEEQe6Fdtseg_kljnG53_';
+const DEFAULT_ADMIN_EMAILS = ['ljh15874760218@gmail.com'];
 
 function env(name: string): string {
   return (process.env[name] || '').trim();
@@ -108,8 +109,7 @@ export function json(res: import('@vercel/node').VercelResponse, status: number,
 export function isAdminEmail(email?: string | null): boolean {
   const raw = env('ADMIN_EMAILS') || env('VITE_ADMIN_EMAILS');
   const list = raw
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+    ? raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+    : DEFAULT_ADMIN_EMAILS;
   return Boolean(email) && list.includes(String(email).trim().toLowerCase());
 }

@@ -89,6 +89,16 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
   const [userBackground, setUserBackground] = useState<UserBackgroundProfile>(() => loadUserBackground());
 
+  function loadDisplayMcpProviders(): McpProviderEntry[] {
+    return loadMcpSettings().providers.map((p) => ({
+      ...p,
+      mcpUrl:
+        /mcp\.sellersprite\.com/i.test(p.mcpUrl) || /mcp\.xydc\.com/i.test(p.mcpUrl)
+          ? ''
+          : p.mcpUrl,
+    }));
+  }
+
   useEffect(() => {
     const p = settings?.provider ?? 'deepseek';
     const cfg = getProviderConfig(p);
@@ -102,6 +112,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     setApiKey(settings?.apiKey ?? '');
     setApiUrls(sanitizeAiApiUrls(settings?.apiUrls) ?? {});
     setCustomModels(settings?.customModels ?? {});
+    setMcpProviders(loadDisplayMcpProviders());
     setTestResult(null);
   }, [settings]);
 

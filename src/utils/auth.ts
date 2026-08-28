@@ -14,12 +14,13 @@ const TOKEN_KEY = 'amzdev_auth_token';
 const SUPABASE_TOKEN_KEY = 'amzdev_supabase_access_token';
 const SAVED_CREDS_KEY = 'amzdev_saved_creds';
 const AVATAR_KEY_PREFIX = 'amzdev_avatar_';
+const DEFAULT_ADMIN_EMAILS = ['ljh15874760218@gmail.com'];
 
 function adminEmails(): string[] {
   const raw = String(import.meta.env?.VITE_ADMIN_EMAILS ?? '').trim();
   return raw
     ? raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
-    : [];
+    : DEFAULT_ADMIN_EMAILS;
 }
 
 export function isAdminEmail(email?: string | null): boolean {
@@ -44,12 +45,12 @@ function readSession(): SessionUser | null {
   }
 }
 
-function writeSession(user: { id: string; username: string; email?: string }): void {
+function writeSession(user: { id: string; username: string; email?: string; role?: 'admin' | 'user' }): void {
   const session: SessionUser = {
     id: user.id,
     username: user.username,
     email: user.email,
-    role: isAdminEmail(user.email) ? 'admin' : 'user',
+    role: user.role === 'admin' || isAdminEmail(user.email) ? 'admin' : 'user',
   };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 }
@@ -99,13 +100,13 @@ export async function register(account: string, password: string): Promise<Regis
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account, password }),
     });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; supabaseAccessToken?: string; user?: { id: string; email?: string; account?: string } };
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; supabaseAccessToken?: string; user?: { id: string; email?: string; account?: string; role?: 'admin' | 'user' } };
     if (!res.ok || !body.ok || !body.token || !body.user) {
       return { success: false, error: body.error || '注册失败' };
     }
     writeToken(body.token);
     writeSupabaseToken(body.supabaseAccessToken);
-    writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email });
+    writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email, role: body.user.role });
     return { success: true };
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : '注册失败' };
@@ -124,13 +125,13 @@ export async function login(account: string, password: string): Promise<LoginRes
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account, password }),
     });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; supabaseAccessToken?: string; user?: { id: string; email?: string; account?: string } };
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; supabaseAccessToken?: string; user?: { id: string; email?: string; account?: string; role?: 'admin' | 'user' } };
     if (!res.ok || !body.ok || !body.token || !body.user) {
       return { success: false, error: body.error || '登录失败' };
     }
     writeToken(body.token);
     writeSupabaseToken(body.supabaseAccessToken);
-    writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email });
+    writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email, role: body.user.role });
     return { success: true, user: getCurrentUser() ?? undefined };
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : '登录失败' };

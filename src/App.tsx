@@ -146,13 +146,14 @@ export default function App() {
 
   // 管理员登录后：拉取服务器 Key，再初始化 MCP/AI 默认值
   useEffect(() => {
-    if (!isAdminSession(currentUser)) return;
+    if (!currentUser) return;
     const token = getAuthToken();
     if (!token) return;
     let cancelled = false;
     void (async () => {
       const keys = await fetchServerKeys(token);
       if (cancelled) return;
+      if (!Object.values(keys).some((v) => String(v || '').trim())) return;
       saveServerKeys(keys);
       try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
       setAiSettings(loadAiSettings());
