@@ -25,7 +25,7 @@ export const FIVE_LOOK_LABELS: Record<FiveLookId, string> = {
   user: '看用户',
   competitor: '看竞品',
   self: '看自己',
-  opportunity: '看/找机会',
+  opportunity: '看机会',
 };
 
 export const LOOK_STATUS_LABELS: Record<LookStatus, string> = {

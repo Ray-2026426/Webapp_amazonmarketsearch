@@ -2,18 +2,25 @@ import { useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
-import { Select } from './ui/Select';
 import { updateProject } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
 
 const MARKETPLACES = [
-  { code: 'US', label: 'US · 美国' }, { code: 'UK', label: 'UK · 英国' }, { code: 'DE', label: 'DE · 德国' },
-  { code: 'FR', label: 'FR · 法国' }, { code: 'IT', label: 'IT · 意大利' }, { code: 'ES', label: 'ES · 西班牙' },
-  { code: 'CA', label: 'CA · 加拿大' }, { code: 'JP', label: 'JP · 日本' }, { code: 'AU', label: 'AU · 澳大利亚' },
-  { code: 'MX', label: 'MX · 墨西哥' }, { code: 'IN', label: 'IN · 印度' }, { code: 'BR', label: 'BR · 巴西' },
+  { code: 'US', label: 'US · 美国' },
+  { code: 'UK', label: 'UK · 英国' },
+  { code: 'DE', label: 'DE · 德国' },
+  { code: 'FR', label: 'FR · 法国' },
+  { code: 'IT', label: 'IT · 意大利' },
+  { code: 'ES', label: 'ES · 西班牙' },
+  { code: 'CA', label: 'CA · 加拿大' },
+  { code: 'JP', label: 'JP · 日本' },
+  { code: 'AU', label: 'AU · 澳大利亚' },
+  { code: 'MX', label: 'MX · 墨西哥' },
+  { code: 'IN', label: 'IN · 印度' },
+  { code: 'BR', label: 'BR · 巴西' },
 ];
 
-const OBJECTIVES = ['新品开发', '市场进入', '存量优化', '产品迭代', '其他'];
+const OBJECTIVES = ['新品开发', '市场进入', '存量优化', '产品迭代', '竞品突破', '利润验证'];
 
 function splitList(s: string): string[] | undefined {
   const list = s.split(/[,，\n]/).map((x) => x.trim()).filter(Boolean);
@@ -39,7 +46,7 @@ export function EditProjectModal({
   const [seedAsins, setSeedAsins] = useState((project.seedAsins ?? []).join(', '));
   const [saving, setSaving] = useState(false);
 
-  const canSave = name.trim().length > 0 && marketplace.length > 0;
+  const canSave = name.trim().length > 0 && marketplace.trim().length > 0 && objective.trim().length > 0;
 
   const submit = async () => {
     if (!canSave) return;
@@ -47,8 +54,8 @@ export function EditProjectModal({
     try {
       const updated = await updateProject(userId, project.id, {
         name: name.trim(),
-        marketplace,
-        objective,
+        marketplace: marketplace.trim(),
+        objective: objective.trim(),
         description: description.trim() || undefined,
         coreKeywords: splitList(coreKeywords),
         seedAsins: splitList(seedAsins),
@@ -85,10 +92,32 @@ export function EditProjectModal({
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="站点" required>
-              <Select value={marketplace} onChange={setMarketplace} options={MARKETPLACES.map((m) => ({ value: m.code, label: m.label }))} size="md" className="w-full" />
+              <input
+                value={marketplace}
+                onChange={(e) => setMarketplace(e.target.value)}
+                list="edit-project-marketplaces"
+                className={inputCls}
+                placeholder="选择或输入站点"
+              />
+              <datalist id="edit-project-marketplaces">
+                {MARKETPLACES.map((m) => (
+                  <option key={m.code} value={m.code}>{m.label}</option>
+                ))}
+              </datalist>
             </Field>
             <Field label="研究目标" required>
-              <Select value={objective} onChange={setObjective} options={OBJECTIVES.map((o) => ({ value: o, label: o }))} size="md" className="w-full" />
+              <input
+                value={objective}
+                onChange={(e) => setObjective(e.target.value)}
+                list="edit-project-objectives"
+                className={inputCls}
+                placeholder="选择或输入研究目标"
+              />
+              <datalist id="edit-project-objectives">
+                {OBJECTIVES.map((o) => (
+                  <option key={o} value={o} />
+                ))}
+              </datalist>
             </Field>
           </div>
           <Field label="核心关键词（逗号分隔）">
@@ -105,7 +134,7 @@ export function EditProjectModal({
         <div className="px-7 pb-7 flex items-center justify-end gap-2">
           <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl border border-black/8 text-sm font-medium text-[#424245] hover:bg-[#f5f5f7] transition-all">取消</button>
           <button type="button" disabled={!canSave || saving} onClick={submit} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 text-white text-sm font-semibold hover:from-indigo-600 hover:to-violet-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]">
-            {saving ? '保存中…' : '保存'}
+            {saving ? '保存中...' : '保存'}
           </button>
         </div>
       </div>

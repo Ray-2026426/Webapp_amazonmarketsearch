@@ -68,6 +68,8 @@ const MARKETPLACES: { code: string; label: string }[] = [
   { code: 'SA', label: 'SA · 沙特' },
 ];
 
+const OBJECTIVES = ['新品开发', '市场进入', '存量优化', '产品迭代', '竞品突破', '利润验证'];
+
 const STATUS_LABELS: Record<ResearchProject['status'], string> = {
   draft: '草稿',
   researching: '研究中',
@@ -556,6 +558,7 @@ function CreateProjectModal({
 }) {
   const [name, setName] = useState('');
   const [marketplace, setMarketplace] = useState('US');
+  const [objective, setObjective] = useState('新品开发');
   const [description, setDescription] = useState('');
   const [coreKeywords, setCoreKeywords] = useState('');
   const [seedAsins, setSeedAsins] = useState('');
@@ -563,11 +566,11 @@ function CreateProjectModal({
   const [error, setError] = useState('');
 
   const owner = username.trim() || '当前用户';
-  const canSave = name.trim().length > 0 && marketplace.length > 0;
+  const canSave = name.trim().length > 0 && marketplace.trim().length > 0 && objective.trim().length > 0;
 
   const submit = async () => {
     if (!canSave) {
-      setError('请填写项目名称和站点');
+      setError('请填写项目名称、站点和研究目标');
       return;
     }
     setSaving(true);
@@ -575,8 +578,8 @@ function CreateProjectModal({
     try {
       const p = await createProject(userId, {
         name: name.trim(),
-        marketplace,
-        objective: '待确认',
+        marketplace: marketplace.trim(),
+        objective: objective.trim(),
         ownerId: userId,
         description: description.trim() || undefined,
         coreKeywords: splitList(coreKeywords),
@@ -616,20 +619,40 @@ function CreateProjectModal({
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="站点" required>
-              <Select
+              <input
                 value={marketplace}
-                onChange={setMarketplace}
-                options={MARKETPLACES.map((m) => ({ value: m.code, label: m.label }))}
-                size="md"
-                className="w-full"
+                onChange={(e) => setMarketplace(e.target.value)}
+                list="create-project-marketplaces"
+                className={inputCls}
+                placeholder="选择或输入站点"
               />
+              <datalist id="create-project-marketplaces">
+                {MARKETPLACES.map((m) => (
+                  <option key={m.code} value={m.code}>{m.label}</option>
+                ))}
+              </datalist>
             </Field>
-            <Field label="负责人">
+            <Field label="研究目标" required>
+              <input
+                value={objective}
+                onChange={(e) => setObjective(e.target.value)}
+                list="create-project-objectives"
+                className={inputCls}
+                placeholder="选择或输入研究目标"
+              />
+              <datalist id="create-project-objectives">
+                {OBJECTIVES.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+            </Field>
+          </div>
+
+          <Field label="负责人">
               <div className="w-full px-3 py-2.5 rounded-xl border border-black/8 bg-[#f5f5f7] text-sm text-[#1d1d1f]">
                 {owner}
               </div>
-            </Field>
-          </div>
+          </Field>
 
           <Field label="核心关键词（逗号分隔，选填）">
             <input

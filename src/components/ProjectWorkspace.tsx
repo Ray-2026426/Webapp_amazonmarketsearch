@@ -12,7 +12,6 @@ import {
   UserCog,
   Sparkles,
   Pencil,
-  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
@@ -25,12 +24,12 @@ import { CompetitorLookView } from './CompetitorLookView';
 import { OpportunityLookView } from './OpportunityLookView';
 import { EditProjectModal } from './EditProjectModal';
 import { ProjectMembersModal } from './ProjectMembersModal';
-import { ReportsView } from './ReportsView';
 import { setActiveLook } from '../utils/projectStore';
 import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
 import type { CompetitorContext } from '../utils/competitorLook';
+import type { Product } from '../utils/parser';
 import {
   FIVE_LOOK_LABELS,
   FIVE_LOOKS,
@@ -40,7 +39,7 @@ import {
   type ResearchProject,
 } from '../types/researchProject';
 
-type Tab = 'overview' | FiveLookId | 'reports';
+type Tab = 'overview' | FiveLookId;
 
 const LOOK_ICONS: Record<FiveLookId, typeof Target> = {
   market: Target,
@@ -108,6 +107,7 @@ export function ProjectWorkspace({
   marketContext,
   userContext,
   competitorContext,
+  products = [],
   onBack,
   onOpenTool,
   onProjectChange,
@@ -118,6 +118,7 @@ export function ProjectWorkspace({
   marketContext: MarketContext;
   userContext: UserContext;
   competitorContext: CompetitorContext;
+  products?: Product[];
   onBack: () => void;
   onOpenTool: (view: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit') => void;
   onProjectChange: (updated: ResearchProject) => void;
@@ -234,7 +235,7 @@ export function ProjectWorkspace({
       </div>
 
       {/* 打开对应的分析工具（工具仍在全局工作区，通过项目入口进入） */}
-      {toolButtons.length > 0 && (
+      {false && toolButtons.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-3">
           {toolButtons.map((b) => (
             <button
@@ -267,7 +268,6 @@ export function ProjectWorkspace({
             />
           );
         })}
-        <TabButton active={tab === 'reports'} onClick={() => setTab('reports')} label="报告" icon={<FileText className="w-3.5 h-3.5" />} />
       </div>
 
       {/* 内容区 */}
@@ -304,14 +304,13 @@ export function ProjectWorkspace({
           userId={userId}
           project={p}
           competitorContext={competitorContext}
+          products={products}
           onProjectChange={applyProjectUpdate}
           onOpenCompetitorTool={() => onOpenTool('competitors')}
           onNavigateSelf={() => void switchToLook('self')}
         />
-      ) : tab === 'opportunity' ? (
-        <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} onNavigateLook={(look) => void switchToLook(look)} />
       ) : (
-        <ReportsView userId={userId} project={p} onContentChange={queueCloudSync} />
+        <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} onNavigateLook={(look) => void switchToLook(look)} />
       )}
       {editOpen && (
         <EditProjectModal

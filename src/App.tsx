@@ -33,7 +33,6 @@ import { AnchorAnnotationsLayer } from './components/AnchorAnnotationsLayer';
 import type { AnchorAnnotation } from './utils/anchorAnnotations';
 import { normalizeAnchorAnnotations } from './utils/anchorAnnotations';
 import { PageQuickNav } from './components/PageQuickNav';
-import { AsinCompareBar } from './components/AsinCompareBar';
 import { DataQualityPanel } from './components/DataQualityPanel';
 import { buildMarketDataQuality } from './utils/dataQuality';
 import {
@@ -1658,6 +1657,7 @@ export default function App() {
                 marketContext={marketContext}
                 userContext={userContext}
                 competitorContext={competitorContext}
+                products={products}
                 onBack={() => setActiveProject(null)}
                 onOpenTool={(view) => setActiveView(view)}
                 onProjectChange={(updated) => setActiveProject(updated)}
@@ -1965,15 +1965,6 @@ export default function App() {
           )}
         </div>
       </main>
-
-      {/* ── ASIN Compare Bar ── */}
-      <AsinCompareBar
-        products={filteredProducts}
-        selectedAsins={selectedCompareAsins}
-        onRemove={(asin) => setSelectedCompareAsins(prev => prev.filter(a => a !== asin))}
-        onClear={() => setSelectedCompareAsins([])}
-        domain={marketplace.domain}
-      />
 
       {!isLoading && !isInitializing && !isRestoring && (
         <AnchorAnnotationsLayer

@@ -1,56 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Sparkles,
-  Plus,
-  X,
-  CheckCircle2,
-  Loader2,
-  AlertTriangle,
-  ClipboardCheck,
-  ArrowRight,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { cn } from './ui/Card';
-import { Card } from './ui/Card';
-import { Select } from './ui/Select';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
+import { Card, cn } from './ui/Card';
 import { FiveLookSummaryShell } from './five-look/FiveLookSummaryShell';
-import {
-  loadOpportunities,
-  saveOpportunities,
-  createOpportunityFromUnmetNeed,
-  scoreOpportunity,
-  computeOpportunityProgress,
-} from '../utils/opportunityStore';
-import { loadUserLook, type UserLookData, type UnmetNeedCandidate } from '../utils/userLook';
+import { loadOpportunities } from '../utils/opportunityStore';
+import { loadUserLook, type UnmetNeedCandidate, type UserLookData } from '../utils/userLook';
 import { loadMarketLook, type MarketLookData } from '../utils/marketLook';
-import { loadSelfAssessment, type SelfAssessment } from '../utils/selfAssessment';
-import { updateLookProgress, setProjectStatus } from '../utils/projectStore';
 import {
-  FIVE_LOOK_LABELS,
   LOOK_STATUS_LABELS,
+  type FiveLookId,
   type OpportunityCard,
   type OpportunityDecision,
-  type FiveLookId,
   type ResearchProject,
 } from '../types/researchProject';
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+const DECISION_LABELS: Record<OpportunityDecision, string> = {
+  enter: '进入',
+  validate_first: '先验证',
+  hold: '暂缓',
+  reject: '放弃',
+  undecided: '未决策',
+};
 
-const DECISIONS: { value: OpportunityDecision; label: string }[] = [
-  { value: 'enter', label: '进入' },
-  { value: 'validate_first', label: '验证后进入' },
-  { value: 'hold', label: '暂缓' },
-  { value: 'reject', label: '放弃' },
-  { value: 'undecided', label: '未决定' },
-];
-
-
+type DisplayOpportunity =
+  | { kind: 'card'; id: string; title: string; card: OpportunityCard }
+  | { kind: 'candidate'; id: string; title: string; candidate: UnmetNeedCandidate };
 
 export function OpportunityLookView({
   userId,
   project,
-  onProjectChange,
-  onNavigateLook,
 }: {
   userId: string;
   project: ResearchProject;
@@ -60,19 +37,16 @@ export function OpportunityLookView({
   const [cards, setCards] = useState<OpportunityCard[] | null>(null);
   const [userLook, setUserLook] = useState<UserLookData | null>(null);
   const [marketLook, setMarketLook] = useState<MarketLookData | null>(null);
-  const [self, setSelf] = useState<SelfAssessment | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>('idle');
-  const saveTimer = useRef<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string>('');
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loadOpportunities(userId, project.id), loadUserLook(userId, project.id), loadMarketLook(userId, project.id), loadSelfAssessment(userId, project.id)]).then(
-      ([opps, u, m, s]) => {
+    void Promise.all([loadOpportunities(userId, project.id), loadUserLook(userId, project.id), loadMarketLook(userId, project.id)]).then(
+      ([opps, user, market]) => {
         if (cancelled) return;
         setCards(opps);
-        setUserLook(u);
-        setMarketLook(m);
-        setSelf(s);
+        setUserLook(user);
+        setMarketLook(market);
       }
     );
     return () => {
@@ -80,125 +54,50 @@ export function OpportunityLookView({
     };
   }, [userId, project.id]);
 
-  const persist = useCallback(
-    async (nextCards: OpportunityCard[]) => {
-      setSaveState('saving');
-      try {
-        const scored = nextCards.map((c) => {
-          const { score, coverage } = scoreOpportunity(c, project, userLook, self);
-          return { ...c, score, coverage, updatedAt: new Date().toISOString() };
-        });
-        await saveOpportunities(userId, project.id, scored);
-        setCards(scored);
-        const progress = computeOpportunityProgress(scored, project);
-        const updated = await updateLookProgress(userId, project.id, 'opportunity', {
-          ...project.fiveLookProgress.opportunity,
-          status: progress.status,
-          completionPercent: progress.completionPercent,
-          missingRequirements: progress.missingRequirements,
-          updatedAt: new Date().toISOString(),
-        });
-        if (updated) onProjectChange(updated);
-        setSaveState('saved');
-      } catch {
-        setSaveState('error');
-      }
-    },
-    [userId, project.id, project.fiveLookProgress.opportunity, project.fiveLookProgress, userLook, self, onProjectChange]
-  );
+  const opportunities = useMemo<DisplayOpportunity[]>(() => {
+    const official = (cards ?? [])
+      .slice()
+      .sort((a, b) => b.score - a.score)
+      .map((card) => ({ kind: 'card' as const, id: card.id, title: card.title, card }));
+    if (official.length) return official;
+    return (userLook?.unmetNeedCandidates ?? []).map((candidate) => ({
+      kind: 'candidate' as const,
+      id: candidate.id,
+      title: candidate.needStatement || candidate.jobToBeDone || '未命名机会',
+      candidate,
+    }));
+  }, [cards, userLook]);
 
-  const scheduleSave = useCallback(
-    (nextCards: OpportunityCard[]) => {
-      setCards(nextCards);
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => {
-        void persist(nextCards);
-      }, 500);
-    },
-    [persist]
-  );
+  useEffect(() => {
+    if (!selectedId && opportunities.length) setSelectedId(opportunities[0].id);
+  }, [opportunities, selectedId]);
 
   if (!cards || !userLook || !marketLook) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-[#aeaeb2]">
-        <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载…
+        <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载看机会结论...
       </div>
     );
   }
 
-  const updateCard = (id: string, patch: Partial<OpportunityCard>) => {
-    scheduleSave(cards.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-  };
-  const removeCard = (id: string) => scheduleSave(cards.filter((c) => c.id !== id));
-
-  const addRisk = (cardId: string) => {
-    const card = cards.find((c) => c.id === cardId);
-    if (!card) return;
-    updateCard(cardId, { risks: [...card.risks, { id: `r_${Date.now()}`, category: 'demand', label: '', severity: 'medium', description: '' }] });
-  };
-  const updateRisk = (cardId: string, riskId: string, label: string) => {
-    const card = cards.find((c) => c.id === cardId);
-    if (!card) return;
-    updateCard(cardId, { risks: card.risks.map((r) => (r.id === riskId ? { ...r, label } : r)) });
-  };
-  const removeRisk = (cardId: string, riskId: string) => {
-    const card = cards.find((c) => c.id === cardId);
-    if (!card) return;
-    updateCard(cardId, { risks: card.risks.filter((r) => r.id !== riskId) });
-  };
-  const addAction = (cardId: string) => {
-    const card = cards.find((c) => c.id === cardId);
-    if (!card) return;
-    updateCard(cardId, { validationActions: [...card.validationActions, { id: `v_${Date.now()}`, action: '', owner: '', successCriteria: '' }] });
-  };
-  const updateAction = (cardId: string, actionId: string, action: string) => {
-    const card = cards.find((c) => c.id === cardId);
-    if (!card) return;
-    updateCard(cardId, { validationActions: card.validationActions.map((a) => (a.id === actionId ? { ...a, action } : a)) });
-  };
-  const removeAction = (cardId: string, actionId: string) => {
-    const card = cards.find((c) => c.id === cardId);
-    if (!card) return;
-    updateCard(cardId, { validationActions: card.validationActions.filter((a) => a.id !== actionId) });
-  };
-  const updateProfit = (cardId: string, patch: Partial<{ price: number; cost: number; cpc: number }>) => {
-    const card = cards.find((c) => c.id === cardId);
-    if (!card) return;
-    const cur = card.profitAssumption ?? { price: 0, cost: 0, cpc: 0 };
-    updateCard(cardId, { profitAssumption: { ...cur, ...patch } });
-  };
-
-  const generateFromCandidate = (candidate: UnmetNeedCandidate) => {
-    const card = createOpportunityFromUnmetNeed(project.id, candidate);
-    const next = [...cards, card];
-    scheduleSave(next);
-    toast.success('已生成机会卡');
-  };
-
-  const usedNeedIds = new Set(cards.map((c) => c.unmetNeedId));
-  const candidates = (userLook.unmetNeedCandidates ?? []).filter((c) => !usedNeedIds.has(c.id));
-  const sortedCards = [...cards].sort((a, b) => b.score - a.score);
-  const selectedSegment = marketLook.selectedOpportunitySegment?.trim() || '';
-  const decidedCards = cards.filter((c) => c.decision !== 'undecided');
-  const validatedCards = cards.filter((c) => c.coverage >= 0.75 && c.score >= 60);
+  const selected = opportunities.find((item) => item.id === selectedId) ?? opportunities[0];
   const noOpportunityReasons = buildNoOpportunityReasons(project, userLook, marketLook, cards);
-  const opportunityJudgement = cards.length > 0
-    ? `已有 ${cards.length} 张机会卡，${validatedCards.length} 张证据覆盖较完整，${decidedCards.length} 张已决策。`
-    : noOpportunityReasons.length > 0
-      ? `当前还不能形成正式机会：${noOpportunityReasons[0]}。`
-      : '已有基础线索，可以从未满足需求生成机会卡。';
-  const generateAllCandidates = () => {
-    if (candidates.length === 0) return;
-    scheduleSave([...cards, ...candidates.map((candidate) => createOpportunityFromUnmetNeed(project.id, candidate))]);
-  };
+  const selectedSegment = marketLook.selectedOpportunitySegment?.trim() || '';
+  const officialCards = opportunities.filter((item) => item.kind === 'card').length;
+  const enterableCards = cards.filter((card) => card.decision === 'enter' || card.decision === 'validate_first').length;
+  const judgement = officialCards
+    ? `当前有 ${officialCards} 个机会，${enterableCards} 个处于进入或先验证状态。`
+    : noOpportunityReasons.length
+      ? `当前结论：无机会。主要原因是${noOpportunityReasons[0]}。`
+      : '当前只有未满足需求候选，还没有形成正式机会卡。';
 
   return (
     <div className="space-y-4">
       <FiveLookSummaryShell
         eyebrow="Five Looks / Opportunity"
-        title="看/找机会 · 机会闭环"
-        judgement={opportunityJudgement}
-        description="机会必须从未满足需求出发，同时被市场、竞品、自身和利润证据支撑。没有机会时也要说明卡点，而不是强行生成建议。"
+        title="看机会 · 机会结论"
+        judgement={judgement}
+        description="这里只用卡片展示机会或无机会原因。点击机会卡后，再看该机会的具体描述、成立依据、风险和验证方式。"
         statusBadge={
           <span className="rounded-full border border-black/5 bg-[#f5f5f7] px-2.5 py-1 text-[11px] font-semibold text-[#86868b]">
             {LOOK_STATUS_LABELS[project.fiveLookProgress.opportunity.status]} · {project.fiveLookProgress.opportunity.completionPercent}%
@@ -206,128 +105,162 @@ export function OpportunityLookView({
         }
         metrics={[
           { label: '目标细分', value: selectedSegment || '未选择', tone: selectedSegment ? 'brand' : 'warn' },
-          { label: '候选需求', value: `${userLook.unmetNeedCandidates.length}`, tone: userLook.unmetNeedCandidates.length ? 'brand' : 'warn' },
           { label: '机会卡', value: `${cards.length}`, tone: cards.length ? 'good' : 'neutral' },
-          { label: '已决策', value: `${decidedCards.length}`, tone: decidedCards.length ? 'good' : 'neutral' },
+          { label: '候选需求', value: `${userLook.unmetNeedCandidates.length}`, tone: userLook.unmetNeedCandidates.length ? 'brand' : 'warn' },
+          { label: '无机会原因', value: `${noOpportunityReasons.length}`, tone: noOpportunityReasons.length ? 'warn' : 'neutral' },
         ]}
-        sections={[
-          {
-            title: '成立依据',
-            items: sortedCards.slice(0, 3).map((c) => `${c.title}：${c.score} 分，覆盖度 ${Math.round(c.coverage * 100)}%`),
-            emptyText: '还没有正式机会卡。先确认未满足需求、目标细分市场和自身承接能力。',
-            tone: cards.length ? 'good' : 'neutral',
-          },
-          {
-            title: '无机会 / 卡点',
-            items: noOpportunityReasons,
-            emptyText: '当前没有明显阻断项，但仍需生成机会卡并补齐证据后再决策。',
-            tone: noOpportunityReasons.length ? 'warn' : 'good',
-          },
-          {
-            title: '下一步验证',
-            items: sortedCards.flatMap((c) => c.validationActions.map((a) => a.action)).filter(Boolean),
-            emptyText: '机会成立后，需要明确最小验证动作、负责人和成功标准。',
-            tone: 'neutral',
-          },
-        ]}
-        nextAction={{
-          label: cards.length ? '补齐证据并决策' : candidates.length ? '生成机会卡' : '回到看用户',
-          description: cards.length
-            ? '优先处理覆盖度不足、利润不成立或自身承接不清楚的机会卡，再做进入/验证/暂缓/放弃决策。'
-            : candidates.length
-              ? '从未满足需求候选生成机会卡，然后补充市场、竞品、自身和利润证据。'
-              : '当前没有可生成机会卡的未满足需求，请先回到看用户补充需求证据。',
-          onClick: cards.length ? undefined : candidates.length ? generateAllCandidates : () => onNavigateLook('user'),
-        }}
+        sections={[]}
       />
 
-      {/* 头部 + 提交评审 */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center shrink-0">
-            <Sparkles className="w-5 h-5 text-indigo-600" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-[#1d1d1f]">看/找机会 · 机会卡</h3>
-            <p className="text-sm text-[#86868b] mt-0.5 max-w-xl">
-              把未满足需求转化为可比较、可验证、可决策的机会；评分只辅助排序，不替代负责人决策。
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            disabled={candidates.length === 0}
-            onClick={generateAllCandidates}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            AI 批量生成机会卡
-          </button>
-          <SubmitReview userId={userId} project={project} cards={cards} onProjectChange={onProjectChange} />
-        </div>
-      </div>
-
-      {/* 从未满足需求生成 */}
-      <Card>
-        <div className="p-5">
-          <p className="text-sm font-semibold text-[#1d1d1f] mb-1">从未满足需求生成机会卡</p>
-          <p className="text-xs text-[#aeaeb2] mb-3">来源：看用户里已录入的未满足需求候选</p>
-          {candidates.length === 0 ? (
-            <p className="text-xs text-[#aeaeb2]">
-              {cards.length > 0 ? '所有未满足需求都已生成机会卡。' : '暂无未满足需求候选，请先到「看用户」录入。'}
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {candidates.map((c) => (
-                <div key={c.id} className="flex items-start justify-between gap-3 rounded-xl border border-black/5 bg-[#fafafa] p-3">
+      {opportunities.length ? (
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {opportunities.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setSelectedId(item.id)}
+                className={cn(
+                  'text-left rounded-2xl border bg-white p-4 transition-all',
+                  selected?.id === item.id
+                    ? 'border-indigo-300 ring-2 ring-indigo-500/20 bg-indigo-50/30'
+                    : 'border-black/8 hover:border-indigo-200 hover:shadow-sm'
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm text-[#1d1d1f] font-medium">{c.needStatement || '（未命名需求）'}</p>
-                    <p className="text-xs text-[#86868b] mt-0.5">
-                      {c.targetUser || '未定用户'} · {c.jobToBeDone || '未定任务'} · 证据强度 {c.evidenceStrength === 'high' ? '高' : c.evidenceStrength === 'medium' ? '中' : '低'}
+                    <p className="text-sm font-semibold text-[#1d1d1f] line-clamp-2">{item.title}</p>
+                    <p className="text-xs text-[#86868b] mt-1">
+                      {item.kind === 'card' ? DECISION_LABELS[item.card.decision] : '候选机会'}
                     </p>
                   </div>
-                  <button type="button" onClick={() => generateFromCandidate(c)} className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]">
-                    <Plus className="w-3.5 h-3.5" /> 生成机会卡
-                  </button>
+                  {item.kind === 'card' ? (
+                    <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700">
+                      {item.card.score} 分
+                    </span>
+                  ) : (
+                    <span className="shrink-0 rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                      待验证
+                    </span>
+                  )}
                 </div>
-              ))}
+                <p className="text-xs text-[#424245] leading-5 mt-3 line-clamp-3">
+                  {item.kind === 'card'
+                    ? item.card.needStatement
+                    : item.candidate.needStatement || item.candidate.currentAlternative || '尚未补充机会描述。'}
+                </p>
+              </button>
+            ))}
+          </div>
+          <OpportunityDetail item={selected} selectedSegment={selectedSegment} noOpportunityReasons={noOpportunityReasons} />
+        </div>
+      ) : (
+        <Card>
+          <div className="p-10 text-center">
+            <AlertTriangle className="w-7 h-7 text-amber-500 mx-auto mb-3" />
+            <p className="text-sm font-semibold text-[#1d1d1f]">暂无机会</p>
+            <div className="mt-3 max-w-xl mx-auto space-y-1">
+              {noOpportunityReasons.length ? (
+                noOpportunityReasons.map((reason) => (
+                  <p key={reason} className="text-sm text-[#86868b] leading-6">
+                    {reason}
+                  </p>
+                ))
+              ) : (
+                <p className="text-sm text-[#86868b] leading-6">还没有足够的用户、市场、竞品和自身结论来判断机会。</p>
+              )}
             </div>
-          )}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function OpportunityDetail({
+  item,
+  selectedSegment,
+  noOpportunityReasons,
+}: {
+  item?: DisplayOpportunity;
+  selectedSegment: string;
+  noOpportunityReasons: string[];
+}) {
+  if (!item) return null;
+
+  if (item.kind === 'candidate') {
+    const c = item.candidate;
+    return (
+      <Card>
+        <div className="p-5 space-y-4">
+          <DetailHeader title={item.title} badge="候选机会" />
+          <DetailSection title="机会描述" items={[c.needStatement || '暂无未满足需求描述。']} />
+          <DetailSection title="目标用户 / 场景 / 任务" items={[c.targetUser, c.scenario, c.jobToBeDone].filter(Boolean)} emptyText="暂无用户路径信息。" />
+          <DetailSection title="当前替代方案" items={[c.currentAlternative].filter(Boolean)} emptyText="暂无替代方案信息。" />
+          <DetailSection title="为什么还不是正式机会" items={noOpportunityReasons.length ? noOpportunityReasons : ['需要补齐市场、竞品、自己和利润证据。']} tone="warn" />
         </div>
       </Card>
+    );
+  }
 
-      <DecisionSummary cards={sortedCards} />
-      <PriorityMatrix cards={sortedCards} />
+  const card = item.card;
+  return (
+    <Card>
+      <div className="p-5 space-y-4">
+        <DetailHeader title={card.title} badge={`${DECISION_LABELS[card.decision]} · ${card.score} 分`} />
+        <DetailSection title="机会描述" items={[card.needStatement]} />
+        <DetailSection title="目标细分" items={[selectedSegment || card.scenario].filter(Boolean)} emptyText="暂无目标细分。" />
+        <DetailSection title="产品假设" items={[card.solutionHypothesis].filter(Boolean)} emptyText="暂无产品假设。" tone="good" />
+        <DetailSection title="当前替代方案" items={[card.currentAlternative, card.currentAlternativeCost].filter(Boolean)} emptyText="暂无替代方案。" />
+        <DetailSection title="主要风险" items={card.risks.map((risk) => risk.label || risk.description).filter(Boolean)} emptyText="暂无风险。" tone="warn" />
+        <DetailSection title="验证动作" items={card.validationActions.map((action) => action.action || action.successCriteria).filter(Boolean)} emptyText="暂无验证动作。" />
+      </div>
+    </Card>
+  );
+}
 
-      {/* 机会卡列表 */}
-      {sortedCards.length === 0 ? (
-        <Card className="py-12 text-center">
-          <Sparkles className="w-6 h-6 text-[#c7c7cc] mx-auto mb-2" />
-          <p className="text-sm text-[#aeaeb2]">还没有机会卡</p>
-        </Card>
-      ) : (
-        sortedCards.map((card) => (
-          <OpportunityCardEditor
-            key={card.id}
-            card={card}
-            onChange={(patch) => updateCard(card.id, patch)}
-            onRemove={() => removeCard(card.id)}
-            onAddRisk={() => addRisk(card.id)}
-            onUpdateRisk={(rid, v) => updateRisk(card.id, rid, v)}
-            onRemoveRisk={(rid) => removeRisk(card.id, rid)}
-            onAddAction={() => addAction(card.id)}
-            onUpdateAction={(aid, v) => updateAction(card.id, aid, v)}
-            onRemoveAction={(aid) => removeAction(card.id, aid)}
-            profitAssumption={card.profitAssumption}
-            onProfitChange={(patch) => updateProfit(card.id, patch)}
-            project={project}
-            onNavigateLook={onNavigateLook}
-          />
+function DetailHeader({ title, badge }: { title: string; badge: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-indigo-600">机会详情</p>
+        <h3 className="text-lg font-bold text-[#1d1d1f] mt-1 leading-6">{title}</h3>
+      </div>
+      <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-black/5 bg-[#f5f5f7] px-2.5 py-1 text-[11px] font-semibold text-[#424245]">
+        <Sparkles className="w-3.5 h-3.5" /> {badge}
+      </span>
+    </div>
+  );
+}
+
+function DetailSection({
+  title,
+  items,
+  emptyText = '暂无数据。',
+  tone = 'neutral',
+}: {
+  title: string;
+  items: string[];
+  emptyText?: string;
+  tone?: 'neutral' | 'good' | 'warn';
+}) {
+  const toneCls = {
+    neutral: 'bg-[#fafafa] border-black/5',
+    good: 'bg-emerald-50/70 border-emerald-100',
+    warn: 'bg-amber-50/70 border-amber-100',
+  }[tone];
+  return (
+    <div className={cn('rounded-xl border p-3', toneCls)}>
+      <p className="text-xs font-semibold text-[#424245] mb-1.5">{title}</p>
+      {items.length ? (
+        items.map((item, index) => (
+          <p key={`${item}-${index}`} className="text-sm text-[#424245] leading-6">
+            {item}
+          </p>
         ))
+      ) : (
+        <p className="text-sm text-[#86868b] leading-6">{emptyText}</p>
       )}
-
-      <SaveBadge state={saveState} />
     </div>
   );
 }
@@ -341,294 +274,9 @@ function buildNoOpportunityReasons(
   const reasons: string[] = [];
   if (userLook.unmetNeedCandidates.length === 0) reasons.push('缺少未满足需求，无法判断用户到底要什么');
   if (!marketLook.selectedOpportunitySegment?.trim()) reasons.push('缺少目标细分市场，无法判断水涨船高或供小于求');
-  if (project.fiveLookProgress.competitor.status === 'not_started') reasons.push('缺少三类竞对拆解，无法判断对手的产品和运营破绽');
-  if (project.fiveLookProgress.self.status === 'not_started') reasons.push('缺少自身承接判断，无法确认我方是否适合抓这个机会');
-  if (cards.length > 0 && cards.every((c) => c.score < 50)) reasons.push('现有机会卡评分偏低，暂不建议进入');
-  if (cards.length > 0 && cards.every((c) => !c.profitAssumption || c.profitAssumption.price <= 0)) reasons.push('缺少利润假设，无法判断商业可行性');
+  if (project.fiveLookProgress.competitor.status === 'not_started') reasons.push('缺少三类竞品对比，无法判断对手破绽');
+  if (project.fiveLookProgress.self.status === 'not_started') reasons.push('缺少自身承接判断，无法确认我们是否适合抓这个机会');
+  if (cards.length > 0 && cards.every((card) => card.decision === 'reject')) reasons.push('所有机会卡都已被放弃');
+  if (cards.length > 0 && cards.every((card) => card.score < 50)) reasons.push('现有机会卡评分偏低，暂不建议进入');
   return reasons;
 }
-
-function SubmitReview({ userId, project, cards, onProjectChange }: { userId: string; project: ResearchProject; cards: OpportunityCard[]; onProjectChange: (u: ResearchProject) => void }) {
-  const fourLooks = ['market', 'user', 'competitor', 'self'] as const;
-  const allDone = fourLooks.every((l) => project.fiveLookProgress[l].status === 'completed');
-  const doneCount = fourLooks.filter((l) => project.fiveLookProgress[l].status === 'completed').length;
-  const decidedCount = cards.filter((c) => c.decision !== 'undecided').length;
-  const canSubmit = allDone && decidedCount > 0;
-  const submitted = project.status === 'ready_for_review';
-  const submit = async () => {
-    if (!canSubmit) return;
-    const updated = await setProjectStatus(userId, project.id, 'ready_for_review');
-    if (updated) {
-      onProjectChange(updated);
-      toast.success('已提交评审');
-    } else {
-      toast.error('提交失败');
-    }
-  };
-  return (
-    <div className="flex flex-col items-end gap-1 shrink-0">
-      {submitted ? (
-        <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
-          <CheckCircle2 className="w-3.5 h-3.5" /> 已提交评审
-        </span>
-      ) : (
-        <button
-          type="button"
-          disabled={!canSubmit}
-          onClick={submit}
-          className={cn(
-            'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all',
-            canSubmit
-              ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white border-transparent hover:from-indigo-600 hover:to-violet-600 active:scale-[0.98]'
-              : 'bg-white text-[#aeaeb2] border-black/8 cursor-not-allowed'
-          )}
-        >
-          <ClipboardCheck className="w-3.5 h-3.5" />
-          提交评审
-        </button>
-      )}
-      <span className="text-[11px] text-[#aeaeb2]">前四看 {doneCount}/4 · 已决策 {decidedCount}</span>
-    </div>
-  );
-}
-
-function OpportunityCardEditor({
-  card,
-  onChange,
-  onRemove,
-  onAddRisk,
-  onUpdateRisk,
-  onRemoveRisk,
-  onAddAction,
-  onUpdateAction,
-  onRemoveAction,
-  profitAssumption,
-  onProfitChange,
-  project,
-  onNavigateLook,
-}: {
-  card: OpportunityCard;
-  onChange: (patch: Partial<OpportunityCard>) => void;
-  onRemove: () => void;
-  onAddRisk: () => void;
-  onUpdateRisk: (id: string, label: string) => void;
-  onRemoveRisk: (id: string) => void;
-  onAddAction: () => void;
-  onUpdateAction: (id: string, action: string) => void;
-  onRemoveAction: (id: string) => void;
-  profitAssumption?: { price: number; cost: number; cpc: number };
-  onProfitChange: (patch: Partial<{ price: number; cost: number; cpc: number }>) => void;
-  project: ResearchProject;
-  onNavigateLook: (look: FiveLookId) => void;
-}) {
-  return (
-    <Card>
-      <div className="p-5">
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex-1 min-w-0">
-            <input
-              value={card.title}
-              onChange={(e) => onChange({ title: e.target.value })}
-              placeholder="机会名称（以需求或任务命名）"
-              className="w-full text-base font-semibold text-[#1d1d1f] bg-transparent border-b border-transparent focus:border-indigo-300 focus:outline-none pb-1"
-            />
-            <p className="text-xs text-[#86868b] mt-1 truncate">{card.needStatement}</p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="rounded-full bg-indigo-50 text-indigo-700 px-2 py-0.5 text-[11px] font-semibold">评分 {card.score}</span>
-            <span className="rounded-full bg-[#f5f5f7] text-[#86868b] px-2 py-0.5 text-[11px] font-semibold">覆盖 {Math.round(card.coverage * 100)}%</span>
-            <button type="button" onClick={onRemove} className="w-8 h-8 rounded-lg hover:bg-rose-50 flex items-center justify-center text-[#aeaeb2] hover:text-rose-500 transition-colors"><X className="w-4 h-4" /></button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          <EvidenceChip label="市场" pct={project.fiveLookProgress.market.completionPercent} onClick={() => onNavigateLook('market')} />
-          <EvidenceChip label="用户" pct={project.fiveLookProgress.user.completionPercent} onClick={() => onNavigateLook('user')} />
-          <EvidenceChip label="竞品" pct={project.fiveLookProgress.competitor.completionPercent} onClick={() => onNavigateLook('competitor')} />
-          <EvidenceChip label="自己" pct={project.fiveLookProgress.self.completionPercent} onClick={() => onNavigateLook('self')} />
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-          <div>
-            <p className="text-xs font-semibold text-[#424245] mb-1.5">决策</p>
-            <Select value={card.decision} onChange={(v) => onChange({ decision: v as OpportunityCard['decision'] })} options={DECISIONS} className="w-full" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-[#424245] mb-1.5">产品假设（如何更好地满足需求）</p>
-            <textarea value={card.solutionHypothesis} onChange={(e) => onChange({ solutionHypothesis: e.target.value })} rows={2} placeholder="准备如何更好满足这个需求…" className={inputCls} />
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-black/5 bg-[#fafafa] p-3 mb-3">
-          <p className="text-xs font-semibold text-[#424245] mb-2">商业可行性 · 利润假设</p>
-          <div className="grid grid-cols-3 gap-3 mb-2">
-            <ProfitField label="售价" value={profitAssumption?.price} onChange={(v) => onProfitChange({ price: v })} />
-            <ProfitField label="采购成本" value={profitAssumption?.cost} onChange={(v) => onProfitChange({ cost: v })} />
-            <ProfitField label="CPC" value={profitAssumption?.cpc} onChange={(v) => onProfitChange({ cpc: v })} />
-          </div>
-          <ProfitHint price={profitAssumption?.price} cost={profitAssumption?.cost} cpc={profitAssumption?.cpc} />
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-xs font-semibold text-[#424245]">主要风险</p>
-              <button type="button" onClick={onAddRisk} className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"><Plus className="w-3.5 h-3.5" /> 添加</button>
-            </div>
-            <div className="space-y-1.5">
-              {card.risks.length === 0 && <p className="text-xs text-[#c7c7cc]">无</p>}
-              {card.risks.map((r) => (
-                <div key={r.id} className="flex items-center gap-1.5">
-                  <input value={r.label} onChange={(e) => onUpdateRisk(r.id, e.target.value)} placeholder="风险描述" className={inputCls} />
-                  <button type="button" onClick={() => onRemoveRisk(r.id)} className="shrink-0 w-7 h-7 rounded-lg hover:bg-rose-50 flex items-center justify-center text-[#aeaeb2] hover:text-rose-500"><X className="w-3.5 h-3.5" /></button>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-xs font-semibold text-[#424245]">验证动作</p>
-              <button type="button" onClick={onAddAction} className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"><Plus className="w-3.5 h-3.5" /> 添加</button>
-            </div>
-            <div className="space-y-1.5">
-              {card.validationActions.length === 0 && <p className="text-xs text-[#c7c7cc]">无</p>}
-              {card.validationActions.map((a) => (
-                <div key={a.id} className="flex items-center gap-1.5">
-                  <input value={a.action} onChange={(e) => onUpdateAction(a.id, e.target.value)} placeholder="最小验证方式" className={inputCls} />
-                  <button type="button" onClick={() => onRemoveAction(a.id)} className="shrink-0 w-7 h-7 rounded-lg hover:bg-rose-50 flex items-center justify-center text-[#aeaeb2] hover:text-rose-500"><X className="w-3.5 h-3.5" /></button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function SaveBadge({ state }: { state: SaveState }) {
-  if (state === 'idle' || state === 'saved') return null;
-  const map: Record<SaveState, { icon: typeof CheckCircle2; text: string; cls: string }> = {
-    idle: { icon: CheckCircle2, text: '', cls: '' },
-    saving: { icon: Loader2, text: '保存中…', cls: 'text-amber-600' },
-    saved: { icon: CheckCircle2, text: '', cls: '' },
-    error: { icon: AlertTriangle, text: '保存失败', cls: 'text-rose-600' },
-  };
-  const m = map[state];
-  const Icon = m.icon;
-  return (
-    <span className={cn('inline-flex items-center gap-1 text-xs font-medium', m.cls)}>
-      <Icon className={cn('w-3.5 h-3.5', state === 'saving' && 'animate-spin')} />
-      {m.text}
-    </span>
-  );
-}
-
-function ProfitField({ label, value, onChange }: { label: string; value?: number; onChange: (v: number) => void }) {
-  return (
-    <label className="block">
-      <span className="block text-[11px] font-medium text-[#86868b] mb-1">{label}</span>
-      <input
-        type="number"
-        value={value === undefined || value === 0 ? '' : value}
-        onChange={(e) => onChange(Number(e.target.value) || 0)}
-        placeholder="0"
-        className="w-full px-2.5 py-1.5 rounded-lg border border-black/8 bg-white text-sm text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 transition-all"
-      />
-    </label>
-  );
-}
-
-function ProfitHint({ price, cost, cpc }: { price?: number; cost?: number; cpc?: number }) {
-  const p = Number(price) || 0;
-  const cst = Number(cost) || 0;
-  const cp = Number(cpc) || 0;
-  const profit = p - cst - cp;
-  const margin = p > 0 ? profit / p : 0;
-  if (p <= 0) return <p className="text-[11px] text-[#c7c7cc]">填写售价后可计算毛利</p>;
-  return (
-    <p className={cn('text-[11px] font-medium', margin >= 0.2 ? 'text-emerald-600' : margin >= 0.1 ? 'text-amber-600' : 'text-rose-600')}>
-      预估单件利润 {profit.toFixed(2)} · 毛利率 {Math.round(margin * 100)}%
-    </p>
-  );
-}
-
-function DecisionSummary({ cards }: { cards: OpportunityCard[] }) {
-  if (cards.length === 0) return null;
-  const decided = cards.filter((c) => c.decision !== 'undecided');
-  const avgScore = Math.round(cards.reduce((s, c) => s + c.score, 0) / cards.length);
-  const avgCov = Math.round((cards.reduce((s, c) => s + c.coverage, 0) / cards.length) * 100);
-  const top = cards[0];
-  return (
-    <Card className="border-indigo-100 bg-gradient-to-r from-indigo-50/50 to-violet-50/50">
-      <div className="p-5">
-        <p className="text-sm font-semibold text-[#1d1d1f] mb-2">决策摘要</p>
-        <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-xs text-[#424245]">
-          <span>机会 {cards.length}</span>
-          <span>已决策 {decided.length}</span>
-          <span>平均评分 {avgScore}</span>
-          <span>平均覆盖 {avgCov}%</span>
-        </div>
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {DECISIONS.filter((d) => d.value !== 'undecided').map((d) => {
-            const n = cards.filter((c) => c.decision === d.value).length;
-            return n > 0 ? (
-              <span key={d.value} className="rounded-full bg-white border border-black/8 px-2 py-0.5 text-[11px] text-[#424245]">
-                {d.label} {n}
-              </span>
-            ) : null;
-          })}
-        </div>
-        {top && <p className="text-xs text-[#86868b] mt-2">最高分：{top.title}（{top.score} 分）</p>}
-      </div>
-    </Card>
-  );
-}
-
-function PriorityMatrix({ cards }: { cards: OpportunityCard[] }) {
-  if (cards.length === 0) return null;
-  const buckets: Record<'hh' | 'hl' | 'lh' | 'll', OpportunityCard[]> = { hh: [], hl: [], lh: [], ll: [] };
-  for (const c of cards) {
-    const highValue = c.score >= 50;
-    const highCover = c.coverage >= 0.5;
-    const k = highValue ? (highCover ? 'hh' : 'hl') : highCover ? 'lh' : 'll';
-    buckets[k].push(c);
-  }
-  const cells: { k: 'hh' | 'hl' | 'lh' | 'll'; label: string; cls: string }[] = [
-    { k: 'hh', label: '高价值 · 高覆盖（优先）', cls: 'bg-emerald-50 border-emerald-200' },
-    { k: 'hl', label: '高价值 · 低覆盖（需补证据）', cls: 'bg-amber-50 border-amber-200' },
-    { k: 'lh', label: '低价值 · 高覆盖（谨慎）', cls: 'bg-sky-50 border-sky-200' },
-    { k: 'll', label: '低价值 · 低覆盖（待完善）', cls: 'bg-[#f5f5f7] border-black/10' },
-  ];
-  return (
-    <Card>
-      <div className="p-5">
-        <p className="text-sm font-semibold text-[#1d1d1f] mb-3">机会优先级矩阵</p>
-        <div className="grid grid-cols-2 gap-2">
-          {cells.map((cell) => (
-            <div key={cell.k} className={cn('rounded-2xl border p-3', cell.cls)}>
-              <p className="text-[11px] font-semibold text-[#424245] mb-1.5">{cell.label}</p>
-              {buckets[cell.k].length === 0 ? (
-                <p className="text-xs text-[#c7c7cc]">无</p>
-              ) : (
-                buckets[cell.k].map((c) => (
-                  <p key={c.id} className="text-xs text-[#424245] truncate">{c.title}（{c.score}）</p>
-                ))
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function EvidenceChip({ label, pct, onClick }: { label: string; pct: number; onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} title={'定位到看' + label} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-black/8 bg-white text-[10px] text-[#86868b] hover:border-indigo-200 hover:text-indigo-600 transition-colors">
-      {label} {pct}%
-    </button>
-  );
-}
-const inputCls =
-  'w-full px-3 py-2.5 rounded-xl border border-black/8 bg-gradient-to-b from-white to-[#f8f9fb] text-sm text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 transition-all';

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowRight, CheckCircle2, Circle, AlertTriangle, Wrench } from 'lucide-react';
+import { CheckCircle2, Circle, AlertTriangle, Wrench } from 'lucide-react';
 import { Card, cn } from '../ui/Card';
 
 export interface FiveLookSummaryMetric {
@@ -13,6 +13,27 @@ export interface FiveLookSummarySection {
   items: string[];
   emptyText: string;
   tone?: 'neutral' | 'good' | 'warn' | 'bad';
+}
+
+export interface FiveLookBoardColumn {
+  title: string;
+  subtitle?: string;
+  items: string[];
+  emptyText: string;
+  tone?: 'neutral' | 'good' | 'warn' | 'bad' | 'brand';
+}
+
+export interface FiveLookFlowStep {
+  label: string;
+  value: string;
+  tone?: 'neutral' | 'good' | 'warn' | 'bad' | 'brand';
+}
+
+export interface FiveLookBarItem {
+  label: string;
+  value: number;
+  detail?: string;
+  tone?: 'neutral' | 'good' | 'warn' | 'bad' | 'brand';
 }
 
 const toneText: Record<NonNullable<FiveLookSummaryMetric['tone']>, string> = {
@@ -37,6 +58,22 @@ const sectionIconCls: Record<NonNullable<FiveLookSummarySection['tone']>, string
   bad: 'text-rose-500',
 };
 
+const boardTone: Record<NonNullable<FiveLookBoardColumn['tone']>, string> = {
+  neutral: 'border-black/5 bg-white',
+  good: 'border-emerald-100 bg-emerald-50/50',
+  warn: 'border-amber-100 bg-amber-50/50',
+  bad: 'border-rose-100 bg-rose-50/50',
+  brand: 'border-indigo-100 bg-indigo-50/50',
+};
+
+const chipTone: Record<NonNullable<FiveLookFlowStep['tone']>, string> = {
+  neutral: 'border-black/8 bg-white text-[#424245]',
+  good: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+  warn: 'border-amber-100 bg-amber-50 text-amber-700',
+  bad: 'border-rose-100 bg-rose-50 text-rose-700',
+  brand: 'border-indigo-100 bg-indigo-50 text-indigo-700',
+};
+
 export function FiveLookSummaryShell({
   eyebrow,
   title,
@@ -45,7 +82,7 @@ export function FiveLookSummaryShell({
   statusBadge,
   metrics,
   sections,
-  nextAction,
+  visual,
   toolAction,
   children,
 }: {
@@ -56,6 +93,7 @@ export function FiveLookSummaryShell({
   statusBadge?: ReactNode;
   metrics?: FiveLookSummaryMetric[];
   sections: FiveLookSummarySection[];
+  visual?: ReactNode;
   nextAction?: {
     label: string;
     description: string;
@@ -92,17 +130,6 @@ export function FiveLookSummaryShell({
                 {toolAction.label}
               </button>
             )}
-            {nextAction && (
-              <button
-                type="button"
-                onClick={nextAction.onClick}
-                disabled={!nextAction.onClick}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 text-white text-xs font-semibold hover:from-indigo-600 hover:to-violet-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
-              >
-                {nextAction.label}
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            )}
           </div>
         </div>
 
@@ -114,6 +141,12 @@ export function FiveLookSummaryShell({
                 <p className={cn('mt-1 text-sm font-bold tabular-nums', toneText[m.tone ?? 'neutral'])}>{m.value}</p>
               </div>
             ))}
+          </div>
+        )}
+
+        {visual && (
+          <div className="rounded-[24px] border border-black/5 bg-[#f8f9fb] p-3 sm:p-4">
+            {visual}
           </div>
         )}
 
@@ -145,15 +178,158 @@ export function FiveLookSummaryShell({
           })}
         </div>
 
-        {nextAction && (
-          <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 px-4 py-3">
-            <p className="text-xs font-semibold text-indigo-700">推荐下一步</p>
-            <p className="mt-1 text-sm text-indigo-900/80 leading-relaxed">{nextAction.description}</p>
-          </div>
-        )}
-
         {children}
       </div>
     </Card>
+  );
+}
+
+export function FiveLookPresentationBoard({
+  title,
+  subtitle,
+  columns,
+}: {
+  title: string;
+  subtitle?: string;
+  columns: FiveLookBoardColumn[];
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-[#1d1d1f]">{title}</p>
+          {subtitle && <p className="mt-0.5 text-xs text-[#86868b]">{subtitle}</p>}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {columns.map((column) => {
+          const items = column.items.map((item) => item.trim()).filter(Boolean);
+          return (
+            <div key={column.title} className={cn('rounded-2xl border p-4 min-h-[150px]', boardTone[column.tone ?? 'neutral'])}>
+              <p className="text-sm font-semibold text-[#1d1d1f]">{column.title}</p>
+              {column.subtitle && <p className="mt-0.5 text-[11px] text-[#86868b]">{column.subtitle}</p>}
+              <div className="mt-3 space-y-2">
+                {items.length === 0 ? (
+                  <p className="text-sm text-[#aeaeb2] leading-relaxed">{column.emptyText}</p>
+                ) : (
+                  items.slice(0, 4).map((item, index) => (
+                    <div key={`${item}-${index}`} className="rounded-xl bg-white/75 border border-white/80 px-3 py-2 text-sm text-[#424245] leading-relaxed shadow-sm">
+                      {item}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function FiveLookSignalFlow({
+  title,
+  steps,
+}: {
+  title: string;
+  steps: FiveLookFlowStep[];
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-[#86868b]">{title}</p>
+      <div className="flex flex-col md:flex-row gap-2">
+        {steps.map((step, index) => (
+          <div key={`${step.label}-${index}`} className="flex-1 min-w-0">
+            <div className={cn('h-full rounded-2xl border px-3 py-3', chipTone[step.tone ?? 'neutral'])}>
+              <p className="text-[11px] font-semibold opacity-80">{step.label}</p>
+              <p className="mt-1 text-sm font-semibold leading-snug truncate">{step.value || '待补充'}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function FiveLookQuadrantBoard({
+  title,
+  xLeft,
+  xRight,
+  yTop,
+  yBottom,
+  focusLabel,
+  items,
+}: {
+  title: string;
+  xLeft: string;
+  xRight: string;
+  yTop: string;
+  yBottom: string;
+  focusLabel: string;
+  items: { label: string; meta?: string; tone?: 'good' | 'warn' | 'bad' | 'brand' }[];
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm font-bold text-[#1d1d1f]">{title}</p>
+      <div className="grid grid-cols-[auto_1fr] gap-2 items-stretch">
+        <div className="flex flex-col items-center justify-between py-2 text-[11px] text-[#86868b]">
+          <span>{yTop}</span>
+          <span className="[writing-mode:vertical-rl] rotate-180">需求强度</span>
+          <span>{yBottom}</span>
+        </div>
+        <div className="relative min-h-[220px] rounded-2xl border border-black/5 bg-white overflow-hidden">
+          <div className="absolute inset-0 grid grid-cols-2 grid-rows-2">
+            <div className="border-r border-b border-black/5 bg-emerald-50/55" />
+            <div className="border-b border-black/5 bg-amber-50/55" />
+            <div className="border-r border-black/5 bg-[#f5f5f7]" />
+            <div className="bg-rose-50/45" />
+          </div>
+          <div className="absolute left-4 top-4 text-xs font-semibold text-emerald-700">{focusLabel}</div>
+          <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-2 p-4 pt-10">
+            {items.length === 0 ? (
+              <p className="text-sm text-[#aeaeb2]">暂无细分评分，先到市场工具补数据。</p>
+            ) : (
+              items.slice(0, 4).map((item, index) => (
+                <div key={`${item.label}-${index}`} className={cn('rounded-xl border bg-white/90 px-3 py-2 shadow-sm', chipTone[item.tone ?? 'brand'])}>
+                  <p className="text-sm font-semibold truncate">{item.label}</p>
+                  {item.meta && <p className="mt-0.5 text-[11px] opacity-75">{item.meta}</p>}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="flex justify-between px-8 text-[11px] text-[#86868b]">
+        <span>{xLeft}</span>
+        <span>{xRight}</span>
+      </div>
+    </div>
+  );
+}
+
+export function FiveLookBarList({ title, items }: { title: string; items: FiveLookBarItem[] }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm font-bold text-[#1d1d1f]">{title}</p>
+      <div className="rounded-2xl border border-black/5 bg-white p-4 space-y-3">
+        {items.map((item) => (
+          <div key={item.label}>
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="font-semibold text-[#424245]">{item.label}</span>
+              <span className={cn('font-semibold', toneText[item.tone ?? 'neutral'])}>{item.detail ?? `${item.value}%`}</span>
+            </div>
+            <div className="mt-1.5 h-2 rounded-full bg-[#f5f5f7] overflow-hidden">
+              <div
+                className={cn(
+                  'h-full rounded-full',
+                  item.tone === 'good' ? 'bg-emerald-500' : item.tone === 'warn' ? 'bg-amber-500' : item.tone === 'bad' ? 'bg-rose-500' : 'bg-indigo-500'
+                )}
+                style={{ width: `${Math.max(0, Math.min(100, item.value))}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
