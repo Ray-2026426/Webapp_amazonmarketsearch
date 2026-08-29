@@ -4,7 +4,7 @@ import { getDefaultServerKey, pushServerKeys } from './serverKeys';
 
 // AI Provider Configuration & Unified Call Layer
 
-export type AiProvider = 'gemini' | 'openai' | 'claude' | 'deepseek' | 'qwen' | 'moonshot' | 'zhipu' | 'doubao';
+export type AiProvider = 'gemini' | 'openai' | 'claude' | 'deepseek' | 'qwen' | 'moonshot' | 'zhipu' | 'doubao' | 'custom';
 
 export interface AiProviderConfig {
   id: AiProvider;
@@ -79,6 +79,14 @@ export const AI_PROVIDERS: AiProviderConfig[] = [
     defaultModel: 'doubao-seed-1-6-flash-250615',
     models: ['doubao-seed-1-6-flash-250615', 'doubao-seed-1-6-thinking-250715', 'doubao-1-5-pro-32k-250115', 'doubao-1-5-lite-32k-250115'],
     apiKeyPlaceholder: 'Volcengine Ark API Key',
+  },
+  {
+    id: 'custom',
+    name: '\u81ea\u5b9a\u4e49 / \u4e2d\u8f6c API',
+    baseUrl: '',
+    defaultModel: 'gpt-4o-mini',
+    models: ['gpt-4o-mini'],
+    apiKeyPlaceholder: '\u586b\u5199\u4e2d\u8f6c\u7ad9 API Key',
   },
 ];
 
@@ -454,6 +462,16 @@ export function resolveCustomApiUrl(url: string, provider: AiProvider): string {
     return cleaned;
   }
 
+  if (provider === 'custom') {
+    if (/\/chat\/completions$/i.test(cleaned)) return cleaned;
+    if (/\/v1$/i.test(cleaned)) return `${cleaned}/chat/completions`;
+    try {
+      const path = new URL(cleaned).pathname.replace(/\/+$/, '') || '/';
+      if (path === '/' || path === '') return `${cleaned}/v1/chat/completions`;
+    } catch {}
+    return cleaned;
+  }
+
   // 中转 API 常见：.../v1 → 只补 /chat/completions
   if (/\/v1$/i.test(cleaned)) return `${cleaned}/chat/completions`;
 
@@ -519,6 +537,9 @@ export function buildEndpoint(settings: AiSettings, provider: AiProvider): strin
   }
   if (provider === 'deepseek') {
     return `${baseUrl}/chat/completions`;
+  }
+  if (provider === 'custom') {
+    return `${baseUrl || '/api-proxy/openai'}/v1/chat/completions`;
   }
   return `${baseUrl}/v1/chat/completions`;
 }

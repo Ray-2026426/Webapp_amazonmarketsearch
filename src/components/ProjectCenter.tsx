@@ -70,6 +70,8 @@ const MARKETPLACES: { code: string; label: string }[] = [
 
 const OBJECTIVES = ['新品开发', '市场进入', '存量优化', '产品迭代', '竞品突破', '利润验证'];
 
+const POPULAR_MARKETPLACES = ['US', 'UK', 'DE', 'CA', 'JP', 'AU'];
+
 const STATUS_LABELS: Record<ResearchProject['status'], string> = {
   draft: '草稿',
   researching: '研究中',
@@ -316,7 +318,13 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
       )}
 
       {/* 底部：未完成统计（工作型信息，非营销 Hero） */}
-      {!loading && projects.filter((p) => p.status !== 'archived').length > 0 && (
+      <ProjectCenterGuide
+        show={!loading && projects.filter((p) => p.status !== 'archived').length > 0}
+        incompleteLooks={incompleteLooks}
+        onMarketplacePick={setMarketplace}
+      />
+
+      {false && !loading && projects.filter((p) => p.status !== 'archived').length > 0 && (
         <Card className="mt-6 p-5">
           <p className="text-sm font-semibold text-[#1d1d1f] mb-3">五看完成度总览（活跃项目）</p>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -422,6 +430,59 @@ function searchProjectsSync(
     }
     return true;
   });
+}
+
+function ProjectCenterGuide({
+  show,
+  incompleteLooks,
+  onMarketplacePick,
+}: {
+  show: boolean;
+  incompleteLooks: Record<FiveLookId, number>;
+  onMarketplacePick: (code: string) => void;
+}) {
+  if (!show) return null;
+  const mostBlocked = [...FIVE_LOOKS].sort((a, b) => incompleteLooks[b] - incompleteLooks[a])[0];
+  return (
+    <Card className="mt-6 p-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-5">
+        <div>
+          <p className="text-sm font-semibold text-[#1d1d1f] mb-3">五看完成度总览（活跃项目）</p>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {FIVE_LOOKS.map((look) => (
+              <div key={look} className="rounded-2xl border border-black/5 bg-[#fafafa] px-4 py-3">
+                <p className="text-xs text-[#86868b]">{FIVE_LOOK_LABELS[look]}</p>
+                <p className="text-xl font-bold text-[#1d1d1f] mt-1">{incompleteLooks[look]}</p>
+                <p className="text-[11px] text-[#aeaeb2]">未完成</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-black/5 bg-[#fafafa] p-4">
+          <p className="text-sm font-semibold text-[#1d1d1f]">今日建议</p>
+          <div className="mt-3 space-y-2 text-xs text-[#424245] leading-5">
+            <p>先补齐“看用户”和“看市场”，再进入竞品三列对比。</p>
+            <p>当前最需要推进：{FIVE_LOOK_LABELS[mostBlocked]}。</p>
+          </div>
+          <div className="mt-4">
+            <p className="text-[11px] font-semibold text-[#86868b] mb-2">常用站点筛选</p>
+            <div className="flex flex-wrap gap-2">
+              {POPULAR_MARKETPLACES.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => onMarketplacePick(code)}
+                  className="px-2.5 py-1.5 rounded-lg border border-black/8 bg-white text-xs font-semibold text-[#86868b] hover:text-indigo-600 hover:border-indigo-200"
+                >
+                  {code}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 function ProjectCard({
@@ -557,8 +618,8 @@ function CreateProjectModal({
   onCreated: (p: ResearchProject) => void;
 }) {
   const [name, setName] = useState('');
-  const [marketplace, setMarketplace] = useState('US');
-  const [objective, setObjective] = useState('新品开发');
+  const [marketplace, setMarketplace] = useState('');
+  const [objective, setObjective] = useState('');
   const [description, setDescription] = useState('');
   const [coreKeywords, setCoreKeywords] = useState('');
   const [seedAsins, setSeedAsins] = useState('');
@@ -626,6 +687,11 @@ function CreateProjectModal({
                 className={inputCls}
                 placeholder="选择或输入站点"
               />
+              <PresetChips
+                items={POPULAR_MARKETPLACES.map((code) => ({ value: code, label: MARKETPLACES.find((m) => m.code === code)?.label ?? code }))}
+                value={marketplace}
+                onPick={setMarketplace}
+              />
               <datalist id="create-project-marketplaces">
                 {MARKETPLACES.map((m) => (
                   <option key={m.code} value={m.code}>{m.label}</option>
@@ -639,6 +705,11 @@ function CreateProjectModal({
                 list="create-project-objectives"
                 className={inputCls}
                 placeholder="选择或输入研究目标"
+              />
+              <PresetChips
+                items={OBJECTIVES.map((item) => ({ value: item, label: item }))}
+                value={objective}
+                onPick={setObjective}
               />
               <datalist id="create-project-objectives">
                 {OBJECTIVES.map((item) => (
@@ -753,6 +824,36 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+function PresetChips({
+  items,
+  value,
+  onPick,
+}: {
+  items: { value: string; label: string }[];
+  value: string;
+  onPick: (value: string) => void;
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          onClick={() => onPick(item.value)}
+          className={cn(
+            'px-2 py-1 rounded-lg border text-[11px] font-semibold transition-all',
+            value === item.value
+              ? 'bg-indigo-600 text-white border-indigo-600'
+              : 'bg-white text-[#86868b] border-black/8 hover:text-indigo-600 hover:border-indigo-200'
+          )}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

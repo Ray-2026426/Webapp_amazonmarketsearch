@@ -181,6 +181,7 @@ export function ProjectMembersModal({
                 members.map((m) => {
                   const Icon = ROLE_ICONS[m.role] ?? Eye;
                   const isSelf = m.user_id === currentUserId;
+                  const isPending = Boolean(m.pending);
                   const busy = busyUserId === m.user_id;
                   return (
                     <div key={m.user_id} className="flex items-center gap-3 rounded-2xl border border-black/8 p-3 bg-white">

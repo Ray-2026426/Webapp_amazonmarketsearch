@@ -2025,6 +2025,8 @@ export default function App() {
             onSave={handleSaveAiSettings}
             onClose={() => setIsAiSettingsOpen(false)}
             onFeatureFlagsChange={setFeatureFlags}
+            currentUser={currentUser}
+            onAccountSaved={setCurrentUser}
           />
         </React.Suspense>
       )}

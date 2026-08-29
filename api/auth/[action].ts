@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getPublicSupabase, getServiceSupabase, isAdminEmail, localAccountUser, signToken, json } from './_shared.js';
+import { getPublicSupabase, getServiceSupabase, getUserSupabase, isAdminEmail, localAccountUser, signToken, verifyToken, json } from './_shared.js';
 import { accountError, normalizeAccount } from './account.js';
 
 async function login(req: VercelRequest, res: VercelResponse, body: Record<string, unknown>) {
@@ -117,9 +117,33 @@ async function register(req: VercelRequest, res: VercelResponse, body: Record<st
   });
 }
 
+async function password(req: VercelRequest, res: VercelResponse, body: Record<string, unknown>) {
+  const auth = verifyToken(String(body.token || ''));
+  const nextPassword = String(body.password || '');
+  if (!auth) return json(res, 401, { ok: false, error: '未登录' });
+  if (nextPassword.length < 6) return json(res, 400, { ok: false, error: '密码至少 6 位' });
+
+  const service = getServiceSupabase();
+  if (service) {
+    const { error } = await service.auth.admin.updateUserById(auth.userId, { password: nextPassword });
+    if (error) return json(res, 500, { ok: false, error: error.message || '修改密码失败' });
+    return json(res, 200, { ok: true });
+  }
+
+  const userSupabase = getUserSupabase(String(body.supabaseAccessToken || ''));
+  if (userSupabase) {
+    const { error } = await userSupabase.auth.updateUser({ password: nextPassword });
+    if (error) return json(res, 500, { ok: false, error: error.message || '修改密码失败' });
+    return json(res, 200, { ok: true });
+  }
+
+  return json(res, 200, { ok: true, localOnly: true });
+}
+
 const handlers: Record<string, (req: VercelRequest, res: VercelResponse, body: Record<string, unknown>) => Promise<void>> = {
   login,
   register,
+  password,
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

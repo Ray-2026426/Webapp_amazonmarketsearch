@@ -226,6 +226,25 @@ export function clearCreds(): void {
   localStorage.removeItem(SAVED_CREDS_KEY);
 }
 
+export async function changePassword(password: string): Promise<{ ok: boolean; error?: string }> {
+  const next = password.trim();
+  if (next.length < 6) return { ok: false, error: '密码至少 6 位' };
+  try {
+    const token = getAuthToken();
+    if (!token) return { ok: false, error: '未登录' };
+    const res = await fetch('/api/auth/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, supabaseAccessToken: getSupabaseAccessToken(), password: next }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !body.ok) return { ok: false, error: body.error || '修改密码失败' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : '修改密码失败' };
+  }
+}
+
 export function updateUserAvatar(
   userId: string,
   dataUrl: string | null

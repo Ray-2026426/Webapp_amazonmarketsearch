@@ -21,6 +21,7 @@ const MARKETPLACES = [
 ];
 
 const OBJECTIVES = ['新品开发', '市场进入', '存量优化', '产品迭代', '竞品突破', '利润验证'];
+const POPULAR_MARKETPLACES = ['US', 'UK', 'DE', 'CA', 'JP', 'AU'];
 
 function splitList(s: string): string[] | undefined {
   const list = s.split(/[,，\n]/).map((x) => x.trim()).filter(Boolean);
@@ -99,6 +100,11 @@ export function EditProjectModal({
                 className={inputCls}
                 placeholder="选择或输入站点"
               />
+              <PresetChips
+                items={POPULAR_MARKETPLACES.map((code) => ({ value: code, label: MARKETPLACES.find((m) => m.code === code)?.label ?? code }))}
+                value={marketplace}
+                onPick={setMarketplace}
+              />
               <datalist id="edit-project-marketplaces">
                 {MARKETPLACES.map((m) => (
                   <option key={m.code} value={m.code}>{m.label}</option>
@@ -112,6 +118,11 @@ export function EditProjectModal({
                 list="edit-project-objectives"
                 className={inputCls}
                 placeholder="选择或输入研究目标"
+              />
+              <PresetChips
+                items={OBJECTIVES.map((o) => ({ value: o, label: o }))}
+                value={objective}
+                onPick={setObjective}
               />
               <datalist id="edit-project-objectives">
                 {OBJECTIVES.map((o) => (
@@ -151,6 +162,36 @@ function Field({ label, required, children }: { label: string; required?: boolea
       </span>
       {children}
     </label>
+  );
+}
+
+function PresetChips({
+  items,
+  value,
+  onPick,
+}: {
+  items: { value: string; label: string }[];
+  value: string;
+  onPick: (value: string) => void;
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          onClick={() => onPick(item.value)}
+          className={cn(
+            'px-2 py-1 rounded-lg border text-[11px] font-semibold transition-all',
+            value === item.value
+              ? 'bg-indigo-600 text-white border-indigo-600'
+              : 'bg-white text-[#86868b] border-black/8 hover:text-indigo-600 hover:border-indigo-200'
+          )}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

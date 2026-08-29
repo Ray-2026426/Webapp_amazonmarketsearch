@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText, Plus, Globe, CloudDownload, ToggleLeft, UserRound } from 'lucide-react';
+import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText, Plus, Globe, CloudDownload, ToggleLeft, UserRound, Shield, ImagePlus, Moon, Sun } from 'lucide-react';
 import {
   AI_PROVIDERS,
   AiProvider,
@@ -39,8 +39,9 @@ import { testMcpProvider } from '../utils/sellerspriteApi';
 import { toast } from 'sonner';
 import { AiPromptManager } from './AiPromptManager';
 import { Select } from './ui/Select';
+import { changePassword, updateAccountProfile, type SessionUser } from '../utils/auth';
 
-type SettingsTab = 'api' | 'profile' | 'mcp' | 'features' | 'prompts';
+type SettingsTab = 'account' | 'api' | 'profile' | 'mcp' | 'features' | 'prompts';
 
 interface AiSettingsPanelProps {
   settings: AiSettings | null;
@@ -48,6 +49,8 @@ interface AiSettingsPanelProps {
   onClose: () => void;
   /** 功能开关变更时同步到主界面（如市场准入评估显隐） */
   onFeatureFlagsChange?: (flags: AppFeatureFlags) => void;
+  currentUser?: SessionUser | null;
+  onAccountSaved?: (user: SessionUser) => void;
 }
 
 export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
@@ -55,6 +58,8 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   onSave,
   onClose,
   onFeatureFlagsChange,
+  currentUser,
+  onAccountSaved,
 }) => {
   const initialProvider = settings?.provider ?? 'deepseek';
   const initialCfg = getProviderConfig(initialProvider);
@@ -63,7 +68,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     ? settings.model
     : initialCfg.defaultModel;
 
-  const [tab, setTab] = useState<SettingsTab>('api');
+  const [tab, setTab] = useState<SettingsTab>('account');
   const [provider, setProvider] = useState<AiProvider>(initialProvider);
   const [model, setModel] = useState<string>(initialModel);
   const [apiKey, setApiKey] = useState(settings?.apiKey ?? '');
@@ -72,6 +77,14 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   const [newCustomModelName, setNewCustomModelName] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [accountName, setAccountName] = useState(currentUser?.nickname || currentUser?.username || '');
+  const [accountAvatar, setAccountAvatar] = useState<string | undefined>(currentUser?.avatarDataUrl);
+  const [newPassword, setNewPassword] = useState('');
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
+    const saved = localStorage.getItem('amzdev_theme');
+    return saved === 'dark' || saved === 'system' ? saved : 'light';
+  });
 
   const [mcpProviders, setMcpProviders] = useState<McpProviderEntry[]>(() => {
     const loaded = loadMcpSettings().providers;
@@ -116,6 +129,19 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     setTestResult(null);
   }, [settings]);
 
+  useEffect(() => {
+    setAccountName(currentUser?.nickname || currentUser?.username || '');
+    setAccountAvatar(currentUser?.avatarDataUrl);
+  }, [currentUser]);
+
+  useEffect(() => {
+    localStorage.setItem('amzdev_theme', theme);
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+    root.classList.toggle('dark', theme === 'dark' || (theme === 'system' && prefersDark));
+  }, [theme]);
+
   const cfg = getProviderConfig(provider);
   const currentApiUrl = apiUrls[provider] ?? '';
   const currentCustomModels = customModels[provider] ?? [];
@@ -152,6 +178,36 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     }));
     if (model === name) {
       setModel(cfg.defaultModel);
+    }
+  };
+
+  const handleFetchModels = async () => {
+    if (!apiKey.trim()) { toast.error('请先填写 API Key'); return; }
+    if (provider === 'custom' && !currentApiUrl.trim()) { toast.error('自定义供应商需要先填写 API 地址'); return; }
+    setIsFetchingModels(true);
+    try {
+      const endpoint = buildEndpoint({ provider, apiKey: apiKey.trim(), model, apiUrls, customModels }, provider);
+      const modelsUrl = endpoint.replace(/\/chat\/completions$/i, '/models');
+      const res = await fetch(modelsUrl, {
+        headers: { Authorization: `Bearer ${apiKey.trim()}` },
+      });
+      const body = (await res.json().catch(() => ({}))) as { data?: { id?: unknown }[]; error?: { message?: string }; message?: string };
+      if (!res.ok) throw new Error(body.error?.message || body.message || `HTTP ${res.status}`);
+      const fetched: string[] = Array.isArray(body.data)
+        ? body.data.map((item) => String(item.id || '').trim()).filter(Boolean)
+        : [];
+      const next: string[] = [...new Set(fetched)].filter((name) => !cfg.models.includes(name));
+      if (next.length === 0) {
+        toast.info('没有获取到新的模型，已保留当前模型列表');
+        return;
+      }
+      setCustomModels((prev) => ({ ...prev, [provider]: [...new Set([...(prev[provider] ?? []), ...next])] }));
+      setModel((prev) => (prev && [...cfg.models, ...next].includes(prev) ? prev : next[0]));
+      toast.success(`已获取 ${next.length} 个模型`);
+    } catch (e) {
+      toast.error(`获取模型失败：${e instanceof Error ? e.message : '未知错误'}`);
+    } finally {
+      setIsFetchingModels(false);
     }
   };
 
@@ -234,11 +290,57 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     onFeatureFlagsChange?.(next);
   };
 
-  const handleSave = () => {
+  const persistAccount = async () => {
+    if (!currentUser || currentUser.id === 'guest') return true;
+    const profile = updateAccountProfile(currentUser.id, {
+      nickname: accountName.trim() || currentUser.username,
+      avatarDataUrl: accountAvatar,
+    });
+    if (!profile.ok) {
+      toast.error(profile.error || '账号信息保存失败');
+      return false;
+    }
+    if (newPassword.trim()) {
+      const changed = await changePassword(newPassword);
+      if (!changed.ok) {
+        toast.error(changed.error || '密码修改失败');
+        return false;
+      }
+      setNewPassword('');
+    }
+    if (profile.user) onAccountSaved?.(profile.user);
+    return true;
+  };
+
+  const handleAvatarFile = async (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('请选择图片文件');
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error('图片请小于 4MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setAccountAvatar(typeof reader.result === 'string' ? reader.result : undefined);
+    reader.onerror = () => toast.error('头像读取失败');
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = async () => {
     persistMcp();
     persistProfile();
     saveFeatureFlags(featureFlags);
     onFeatureFlagsChange?.(featureFlags);
+
+    if (tab === 'account') {
+      const ok = await persistAccount();
+      if (!ok) return;
+      toast.success(newPassword.trim() ? '账号信息和密码已保存' : '账号信息已保存');
+      onClose();
+      return;
+    }
 
     if (tab === 'mcp' || tab === 'features' || tab === 'profile') {
       const msg =
@@ -274,6 +376,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   const suggestedApiUrl = trimmedApiUrl ? suggestFullApiUrl(currentApiUrl, provider) : '';
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'account', label: '账号', icon: <UserRound className="w-4 h-4" /> },
     { id: 'api', label: 'API 与模型', icon: <Cpu className="w-4 h-4" /> },
     { id: 'profile', label: '背景信息', icon: <UserRound className="w-4 h-4" /> },
     { id: 'mcp', label: 'MCP 数据', icon: <CloudDownload className="w-4 h-4" /> },
@@ -315,6 +418,93 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
         </div>
 
         <div className="p-6 flex-1 min-h-0 flex flex-col overflow-hidden">
+          {tab === 'account' && (
+            <div className="space-y-5 overflow-y-auto">
+              <div className="rounded-2xl border border-black/10 bg-[#fafafa] p-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-2xl overflow-hidden bg-indigo-600 flex items-center justify-center text-white text-xl font-bold border border-black/10 shrink-0">
+                    {accountAvatar ? (
+                      <img src={accountAvatar} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      (accountName || currentUser?.username || '?')[0]?.toUpperCase()
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-[#1d1d1f]">账号资料</p>
+                    <p className="text-xs text-[#86868b] mt-1 truncate">{currentUser?.email || currentUser?.username || '当前账号'}</p>
+                    <label className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-black/10 bg-white text-sm font-medium text-[#424245] hover:bg-[#f5f5f7] cursor-pointer">
+                      <ImagePlus className="w-4 h-4" />
+                      更换头像
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => void handleAvatarFile(e.target.files?.[0])} />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-[#86868b]">昵称</span>
+                  <input
+                    value={accountName}
+                    onChange={(e) => setAccountName(e.target.value)}
+                    placeholder="用于项目负责人和协作展示"
+                    className="w-full px-3 py-2.5 bg-[#f5f5f7] border border-black/5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-[#86868b]">账号</span>
+                  <input
+                    value={currentUser?.username || ''}
+                    disabled
+                    className="w-full px-3 py-2.5 bg-[#f5f5f7] border border-black/5 rounded-xl text-sm text-[#86868b]"
+                  />
+                </label>
+              </div>
+
+              <div className="rounded-2xl border border-black/10 bg-white p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-indigo-600" />
+                  <p className="text-sm font-bold text-[#1d1d1f]">安全</p>
+                </div>
+                <label className="space-y-1 block">
+                  <span className="text-xs font-semibold text-[#86868b]">新密码</span>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="留空则不修改，至少 6 位"
+                    className="w-full px-3 py-2.5 bg-[#f5f5f7] border border-black/5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                  />
+                </label>
+              </div>
+
+              <div className="rounded-2xl border border-black/10 bg-white p-4 space-y-3">
+                <p className="text-sm font-bold text-[#1d1d1f]">外观</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    ['light', '日间', <Sun className="w-4 h-4" />],
+                    ['dark', '夜间', <Moon className="w-4 h-4" />],
+                    ['system', '跟随系统', <ToggleLeft className="w-4 h-4" />],
+                  ] as const).map(([id, label, icon]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setTheme(id)}
+                      className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold ${
+                        theme === id
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-[#f5f5f7] text-[#424245] border-black/5 hover:bg-indigo-50'
+                      }`}
+                    >
+                      {icon}
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {tab === 'api' && (
             <div className="space-y-6 overflow-y-auto">
               <div className="space-y-3">
@@ -342,22 +532,33 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                   模型
                 </label>
                 <p className="text-xs text-[#86868b]">不同模型在速度、成本与能力上不同，请按供应商文档选择。</p>
-                <Select
-                  value={model}
-                  onChange={(v) => { setModel(v); setTestResult(null); }}
-                  options={cfg.models.map((m) => ({ value: m, label: m }))}
-                  groups={
-                    currentCustomModels.length > 0
-                      ? [{
-                          label: '自定义模型',
-                          options: currentCustomModels.map((m) => ({ value: m, label: m })),
-                        }]
-                      : undefined
-                  }
-                  size="md"
-                  className="w-full"
-                  aria-label="模型"
-                />
+                <div className="flex gap-2">
+                  <Select
+                    value={model}
+                    onChange={(v) => { setModel(v); setTestResult(null); }}
+                    options={cfg.models.map((m) => ({ value: m, label: m }))}
+                    groups={
+                      currentCustomModels.length > 0
+                        ? [{
+                            label: '自定义模型',
+                            options: currentCustomModels.map((m) => ({ value: m, label: m })),
+                          }]
+                        : undefined
+                    }
+                    size="md"
+                    className="flex-1"
+                    aria-label="模型"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleFetchModels}
+                    disabled={isFetchingModels}
+                    className="px-3 py-2 bg-white border border-black/10 rounded-xl text-sm font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] disabled:opacity-50 whitespace-nowrap flex items-center gap-1.5"
+                  >
+                    {isFetchingModels ? <span className="animate-spin">⟳</span> : <CloudDownload className="w-4 h-4" />}
+                    获取模型
+                  </button>
+                </div>
 
                 <div className="mt-2 p-3 bg-[#f5f5f7] rounded-xl border border-black/5">
                   <div className="flex items-center gap-2">
@@ -462,6 +663,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                       moonshot: 'https://platform.moonshot.cn/console/api-keys',
                       zhipu: 'https://open.bigmodel.cn/usercenter/apikeys',
                       doubao: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
+                      custom: '#',
                     }[provider]}
                     target="_blank"
                     rel="noopener noreferrer"

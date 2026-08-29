@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, ImageIcon, Layers, Loader2, Sparkles, Star, Upload } from 'lucide-react';
+import { BarChart3, ChevronLeft, ChevronRight, ImageIcon, Layers, Loader2, Sparkles, Star, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, cn } from './ui/Card';
 import { FiveLookSummaryShell } from './five-look/FiveLookSummaryShell';
@@ -344,6 +344,101 @@ async function blobsToPreviewUrls(blobs: Blob[], limit: number): Promise<string[
   return blobs.slice(0, limit).map((blob) => URL.createObjectURL(blob));
 }
 
+function MediaCarousel({
+  asin,
+  title,
+  mainImage,
+  pack,
+  onZipUpload,
+}: {
+  asin: string;
+  title: string;
+  mainImage: string;
+  pack?: AssetPack;
+  onZipUpload: (file: File) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [index, setIndex] = useState(0);
+  const media = useMemo(
+    () => [
+      ...(mainImage ? [{ url: mainImage, label: '主图' }] : []),
+      ...(pack?.secondaryPreviewUrls ?? []).map((url, i) => ({ url, label: `附图 ${i + 1}` })),
+      ...(pack?.aplusPreviewUrls ?? []).map((url, i) => ({ url, label: `A+ ${i + 1}` })),
+    ],
+    [mainImage, pack?.aplusPreviewUrls, pack?.secondaryPreviewUrls]
+  );
+  const current = media[index];
+
+  useEffect(() => {
+    if (index >= media.length) setIndex(0);
+  }, [index, media.length]);
+
+  const move = (delta: number) => {
+    if (media.length <= 1) return;
+    setIndex((prev) => (prev + delta + media.length) % media.length);
+  };
+
+  return (
+    <div className="relative aspect-[4/3] rounded-xl border border-black/5 bg-[#f5f5f7] overflow-hidden flex items-center justify-center group">
+      {current ? (
+        <img src={current.url} alt={`${title || asin} ${current.label}`} className="w-full h-full object-contain bg-white" referrerPolicy="no-referrer" />
+      ) : (
+        <div className="flex flex-col items-center gap-2 text-[#aeaeb2]">
+          <ImageIcon className="w-9 h-9 text-[#c7c7cc]" />
+          <span className="text-xs">暂无图片</span>
+        </div>
+      )}
+      <div className="absolute left-2 right-2 top-2 flex items-center justify-between gap-2">
+        <span className="px-2 py-1 rounded-lg bg-white/90 border border-black/5 text-[11px] font-semibold text-[#424245] shadow-sm">
+          {current ? `${current.label} ${index + 1}/${media.length}` : '主图 / 图包'}
+        </span>
+        <button
+          type="button"
+          disabled={!asin}
+          onClick={() => inputRef.current?.click()}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/90 border border-black/5 text-[11px] font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50 disabled:opacity-50"
+        >
+          <Upload className="w-3 h-3" />
+          上传图包
+        </button>
+      </div>
+      {media.length > 1 && (
+        <>
+          <button
+            type="button"
+            title="上一张"
+            aria-label="上一张"
+            onClick={() => move(-1)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 border border-black/5 text-[#424245] shadow-sm flex items-center justify-center hover:bg-white"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            title="下一张"
+            aria-label="下一张"
+            onClick={() => move(1)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 border border-black/5 text-[#424245] shadow-sm flex items-center justify-center hover:bg-white"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".zip,application/zip"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) onZipUpload(file);
+        }}
+      />
+    </div>
+  );
+}
+
 function CompetitorColumn({
   role,
   asin,
@@ -401,13 +496,7 @@ function CompetitorColumn({
           ) : null}
         </div>
 
-        <div className="aspect-[4/3] rounded-xl border border-black/5 bg-[#f5f5f7] overflow-hidden flex items-center justify-center">
-          {image ? (
-            <img src={image} alt={title || asin} className="w-full h-full object-contain bg-white" referrerPolicy="no-referrer" />
-          ) : (
-            <ImageIcon className="w-9 h-9 text-[#c7c7cc]" />
-          )}
-        </div>
+        <MediaCarousel asin={asin} title={title} mainImage={image} pack={pack} onZipUpload={onZipUpload} />
 
         <div>
           <p className="text-sm font-semibold text-[#1d1d1f] line-clamp-3">{title}</p>
@@ -436,7 +525,6 @@ function CompetitorColumn({
           ].filter(Boolean)}
         />
 
-        <AssetUploader asin={asin} pack={pack} onZipUpload={onZipUpload} />
         <Section title="产品力判断" items={[productJudgement]} tone="good" />
         <Section title="运营力判断" items={[operationJudgement]} tone="brand" />
         <Section title="可攻击缝隙" items={[gapJudgement]} tone="warn" />
@@ -561,64 +649,6 @@ function TinyMetric({ label, value }: { label: string; value?: string | number }
     <div className="rounded-lg bg-white/80 px-2 py-1.5">
       <p className="text-[10px] text-[#86868b]">{label}</p>
       <p className="text-[11px] font-semibold text-[#1d1d1f] truncate">{value || '-'}</p>
-    </div>
-  );
-}
-
-function AssetUploader({
-  asin,
-  pack,
-  onZipUpload,
-}: {
-  asin: string;
-  pack?: AssetPack;
-  onZipUpload: (file: File) => void;
-}) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  return (
-    <div className="rounded-xl border border-black/5 bg-[#fafafa] p-3">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <p className="text-xs font-semibold text-[#424245]">附图 / A+ 图包</p>
-        <button
-          type="button"
-          disabled={!asin}
-          onClick={() => inputRef.current?.click()}
-          className="inline-flex items-center gap-1 rounded-lg border border-black/8 bg-white px-2 py-1 text-[11px] font-semibold text-[#424245] hover:text-indigo-600 hover:border-indigo-200 disabled:opacity-40"
-        >
-          <Upload className="w-3 h-3" /> 上传
-        </button>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".zip"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) onZipUpload(file);
-            event.currentTarget.value = '';
-          }}
-        />
-      </div>
-      <p className="text-[11px] text-[#86868b] mb-2">{pack?.zipName || '主图由一键分析抓取；这里上传附图和 A+ zip。'}</p>
-      <ImageStrip title="附图" urls={pack?.secondaryPreviewUrls ?? []} />
-      <ImageStrip title="A+" urls={pack?.aplusPreviewUrls ?? []} />
-    </div>
-  );
-}
-
-function ImageStrip({ title, urls }: { title: string; urls: string[] }) {
-  return (
-    <div className="mt-2">
-      <p className="text-[11px] font-semibold text-[#86868b] mb-1">{title} {urls.length}</p>
-      {urls.length ? (
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {urls.slice(0, 8).map((url, index) => (
-            <img key={`${url}-${index}`} src={url} alt="" className="w-12 h-12 rounded-lg object-cover border border-black/5 bg-white shrink-0" />
-          ))}
-        </div>
-      ) : (
-        <p className="text-[11px] text-[#c7c7cc]">暂无图片</p>
-      )}
     </div>
   );
 }
