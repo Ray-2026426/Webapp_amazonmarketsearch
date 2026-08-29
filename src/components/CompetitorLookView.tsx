@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, ChevronLeft, ChevronRight, ImageIcon, Layers, Loader2, Sparkles, Star, Upload } from 'lucide-react';
+import { ArrowUpRight, BarChart3, ChevronLeft, ChevronRight, ImageIcon, Layers, Loader2, Sparkles, Star, Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import { Card, cn } from './ui/Card';
+import { Card } from './ui/Card';
 import { FiveLookSummaryShell } from './five-look/FiveLookSummaryShell';
 import { CompetitorPickerPanel } from './CompetitorPickerPanel';
 import {
@@ -16,7 +16,6 @@ import { updateLookProgress } from '../utils/projectStore';
 import { parseSingleCompetitorZip } from '../utils/competitorArchiveParser';
 import {
   fetchAsinDetailFromMcp,
-  fetchAsinSalesTrendFromMcp,
   fetchParentMatrixFromMcp,
   fetchTrafficKeywordsDetailedFromMcp,
   fetchTrafficStatFromMcp,
@@ -27,9 +26,9 @@ import {
   type TrafficStatSnapshot,
 } from '../utils/sellerspriteApi';
 import { LOOK_STATUS_LABELS, type ResearchProject } from '../types/researchProject';
-import type { Product } from '../utils/parser';
+import type { HistoryRecord, Product } from '../utils/parser';
 
-const COMPETITOR_ROLES = ['细分头部', '强力跟随者', '新上架链接'] as const;
+const COMPETITOR_ROLES = ['细分头部', '强力跟随者', '新品机会'] as const;
 
 interface AssetPack {
   zipName: string;
@@ -45,6 +44,7 @@ export function CompetitorLookView({
   project,
   competitorContext,
   products = [],
+  history = [],
   onProjectChange,
   onOpenCompetitorTool,
 }: {
@@ -52,6 +52,7 @@ export function CompetitorLookView({
   project: ResearchProject;
   competitorContext: CompetitorContext;
   products?: Product[];
+  history?: HistoryRecord[];
   onProjectChange: (updated: ResearchProject) => void;
   onOpenCompetitorTool?: () => void;
   onNavigateSelf?: () => void;
@@ -59,7 +60,6 @@ export function CompetitorLookView({
   const [data, setData] = useState<CompetitorLookData | null>(null);
   const [marketLook, setMarketLook] = useState<MarketLookData | null>(null);
   const [details, setDetails] = useState<Record<string, AsinDetailSnapshot>>({});
-  const [trends, setTrends] = useState<Record<string, AsinSalesTrendSnapshot>>({});
   const [trafficStats, setTrafficStats] = useState<Record<string, TrafficStatSnapshot>>({});
   const [topKeywords, setTopKeywords] = useState<Record<string, TrafficKeywordDetail[]>>({});
   const [matrices, setMatrices] = useState<Record<string, ParentMatrixSnapshot>>({});
@@ -123,33 +123,22 @@ export function CompetitorLookView({
 
   const slots = normalizeSlots(data);
   const filledSlots = slots.filter(Boolean).length;
-  const gaps = data.gaps.filter(Boolean);
-  const productFindings = data.productPowerFindings.filter(Boolean);
-  const operationFindings = data.operationPowerFindings.filter(Boolean);
   const selectedSegment = marketLook.selectedOpportunitySegment?.trim() || '';
   const progress = project.fiveLookProgress.competitor;
   const marketplace = competitorContext.marketplace || project.marketplace || 'US';
   const judgement = filledSlots === 3
-    ? `已形成三列竞品对比，可继续一键抓取 Listing、流量、销量趋势和产品矩阵。`
+    ? '竞品样本已就绪，可以继续补充 Listing、流量、产品矩阵和结论。'
     : selectedSegment
-      ? `已选择「${selectedSegment}」，需要补齐头部、跟随者、新链接三类竞品 ASIN。`
+      ? `已选择「${selectedSegment}」，请补齐头部、跟随者、新品三类竞品 ASIN。`
       : '还没有从看市场带入目标细分市场，竞品对比缺少聚焦对象。';
 
   const setSlot = (index: number, value: string) => {
-    const asin = value.trim().toUpperCase();
     const nextSlots = [...slots];
-    nextSlots[index] = asin;
-    const samplePool = [...data.samplePool];
-    const benchmarkAsins = [...data.benchmarkAsins];
-    benchmarkAsins[0] = nextSlots[0] || '';
-    benchmarkAsins[1] = nextSlots[1] || '';
-    samplePool[0] = nextSlots[0] || '';
-    samplePool[1] = nextSlots[1] || '';
-    samplePool[2] = nextSlots[2] || '';
+    nextSlots[index] = value.trim().toUpperCase();
     updateData({
       ...data,
-      samplePool: samplePool.filter((item, i) => item || i < 3),
-      benchmarkAsins: benchmarkAsins.filter((item, i) => item || i < 2),
+      samplePool: nextSlots.filter(Boolean),
+      benchmarkAsins: nextSlots.slice(0, 2).filter(Boolean),
     });
   };
 
@@ -169,16 +158,15 @@ export function CompetitorLookView({
       return;
     }
     setAnalysisState('running');
-    setProgressText('开始抓取竞品数据...');
+    setProgressText('开始补充竞品数据...');
     const nextDetails = { ...details };
-    const nextTrends = { ...trends };
     const nextTraffic = { ...trafficStats };
     const nextKeywords = { ...topKeywords };
     const nextMatrices = { ...matrices };
 
     for (let i = 0; i < asins.length; i += 1) {
       const asin = asins[i];
-      setProgressText(`(${i + 1}/${asins.length}) 抓取 ${asin} Listing 与主图...`);
+      setProgressText(`(${i + 1}/${asins.length}) 补充 ${asin} Listing 与主图...`);
       try {
         nextDetails[asin] = await fetchAsinDetailFromMcp(asin, marketplace);
         setDetails({ ...nextDetails });
@@ -186,16 +174,7 @@ export function CompetitorLookView({
         toast.warning(`${asin} Listing 拉取失败：${error instanceof Error ? error.message : ''}`);
       }
 
-      setProgressText(`(${i + 1}/${asins.length}) 抓取 ${asin} 销量趋势...`);
-      try {
-        nextTrends[asin] = await fetchAsinSalesTrendFromMcp(asin, marketplace);
-        setTrends({ ...nextTrends });
-      } catch {
-        nextTrends[asin] = { asin: nextDetails[asin] ?? null, points: [], raw: {} };
-        setTrends({ ...nextTrends });
-      }
-
-      setProgressText(`(${i + 1}/${asins.length}) 抓取 ${asin} 流量结构...`);
+      setProgressText(`(${i + 1}/${asins.length}) 补充 ${asin} 流量结构...`);
       try {
         nextTraffic[asin] = await fetchTrafficStatFromMcp(asin, marketplace);
         setTrafficStats({ ...nextTraffic });
@@ -203,7 +182,7 @@ export function CompetitorLookView({
         toast.warning(`${asin} 流量结构拉取失败：${error instanceof Error ? error.message : ''}`);
       }
 
-      setProgressText(`(${i + 1}/${asins.length}) 抓取 ${asin} 核心流量词...`);
+      setProgressText(`(${i + 1}/${asins.length}) 补充 ${asin} 核心流量词...`);
       try {
         nextKeywords[asin] = (await fetchTrafficKeywordsDetailedFromMcp({ asin, marketplace, pageSize: 50, maxPages: 2 })).slice(0, 12);
         setTopKeywords({ ...nextKeywords });
@@ -212,7 +191,7 @@ export function CompetitorLookView({
         setTopKeywords({ ...nextKeywords });
       }
 
-      setProgressText(`(${i + 1}/${asins.length}) 抓取 ${asin} 产品矩阵...`);
+      setProgressText(`(${i + 1}/${asins.length}) 补充 ${asin} 产品矩阵...`);
       try {
         nextMatrices[asin] = await fetchParentMatrixFromMcp(asin, marketplace, (msg) => setProgressText(`(${i + 1}/${asins.length}) ${msg}`));
         setMatrices({ ...nextMatrices });
@@ -221,7 +200,13 @@ export function CompetitorLookView({
       }
     }
 
-    setProgressText('竞品数据抓取完成');
+    updateData({
+      ...data,
+      productPowerFindings: asins.map((asin) => buildProductFinding(asin, productByAsin.get(asin), nextDetails[asin])),
+      operationPowerFindings: asins.map((asin) => buildOperationFinding(asin, productByAsin.get(asin), nextDetails[asin], nextTraffic[asin])),
+      gaps: asins.map((asin) => buildGapFinding(asin, productByAsin.get(asin), nextDetails[asin])),
+    });
+    setProgressText('竞品分析已完成');
     setAnalysisState('idle');
     toast.success('竞品一键分析完成');
   };
@@ -256,9 +241,9 @@ export function CompetitorLookView({
     <div className="space-y-4">
       <FiveLookSummaryShell
         eyebrow="Five Looks / Competitor"
-        title="看竞品 · 三列对比"
+        title="看竞品"
         judgement={judgement}
-        description="三列结构不变：每列对应一个竞品，内部承载 Listing、流量分析、产品矩阵、附图/A+和销量趋势。"
+        description="填入 ASIN 后会自动读取上传表格中的历史月数据展示销量趋势；一键分析用于补充 Listing、流量、矩阵和判断结论。"
         statusBadge={
           <span className="rounded-full border border-black/5 bg-[#f5f5f7] px-2.5 py-1 text-[11px] font-semibold text-[#86868b]">
             {LOOK_STATUS_LABELS[progress.status]} · {progress.completionPercent}%
@@ -313,16 +298,17 @@ export function CompetitorLookView({
             key={`${COMPETITOR_ROLES[index]}-${asin || index}`}
             role={COMPETITOR_ROLES[index]}
             asin={asin}
+            marketplace={marketplace}
             product={asin ? productByAsin.get(asin) : undefined}
             detail={asin ? details[asin] : undefined}
-            trend={asin ? trends[asin] : undefined}
+            trend={asin ? buildTrendFromHistory(asin, history, details[asin]) : undefined}
             traffic={asin ? trafficStats[asin] : undefined}
             keywords={asin ? topKeywords[asin] ?? [] : []}
             matrix={asin ? matrices[asin] : undefined}
             pack={asin ? packs[asin] : undefined}
-            productFindings={productFindings}
-            operationFindings={operationFindings}
-            gaps={gaps}
+            productFindings={data.productPowerFindings.filter(Boolean)}
+            operationFindings={data.operationPowerFindings.filter(Boolean)}
+            gaps={data.gaps.filter(Boolean)}
             fallbackIndex={index}
             onZipUpload={(file) => void handleZipUpload(asin, file)}
           />
@@ -342,6 +328,60 @@ function normalizeSlots(data: CompetitorLookData): string[] {
 
 async function blobsToPreviewUrls(blobs: Blob[], limit: number): Promise<string[]> {
   return blobs.slice(0, limit).map((blob) => URL.createObjectURL(blob));
+}
+
+function buildTrendFromHistory(asin: string, history: HistoryRecord[], detail?: AsinDetailSnapshot): AsinSalesTrendSnapshot {
+  const record = history.find((h) => h.asin.toUpperCase() === asin.toUpperCase());
+  const points = record
+    ? Object.entries(record.history)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, row]) => ({
+        month,
+        price: row.price || 0,
+        averagePrice: row.price || 0,
+        parentUnitSales: row.sales || 0,
+        childUnitSales: row.sales || 0,
+        parentSalesRevenue: row.revenue || 0,
+        childSalesRevenue: row.revenue || 0,
+      }))
+    : [];
+  return { asin: detail ?? null, points, raw: { source: 'uploaded-history' } };
+}
+
+function amazonUrl(asin: string, marketplace: string): string {
+  const domains: Record<string, string> = {
+    US: 'amazon.com',
+    UK: 'amazon.co.uk',
+    DE: 'amazon.de',
+    FR: 'amazon.fr',
+    IT: 'amazon.it',
+    ES: 'amazon.es',
+    CA: 'amazon.ca',
+    JP: 'amazon.co.jp',
+    AU: 'amazon.com.au',
+  };
+  const domain = domains[marketplace.toUpperCase()] || (marketplace.includes('.') ? marketplace : 'amazon.com');
+  return `https://www.${domain}/dp/${encodeURIComponent(asin)}`;
+}
+
+function buildProductFinding(asin: string, product?: Product, detail?: AsinDetailSnapshot): string {
+  const title = detail?.title || product?.title || asin;
+  const rating = detail?.rating || product?.rating || 0;
+  const reviews = detail?.ratings || product?.reviewCount || 0;
+  return `${asin}：${title}。评分 ${rating ? rating.toFixed(1) : '-'}，评论 ${reviews ? reviews.toLocaleString() : '-'}，用于判断功能、体验和评价壁垒。`;
+}
+
+function buildOperationFinding(asin: string, product?: Product, detail?: AsinDetailSnapshot, traffic?: TrafficStatSnapshot): string {
+  const revenue = product?.monthlyRevenue || 0;
+  const lqs = detail?.lqs ? `，LQS ${detail.lqs}` : '';
+  const trafficText = traffic ? `，覆盖 ${traffic.keywords} 个流量词` : '';
+  return `${asin}：月销售额 ${revenue ? `$${Math.round(revenue).toLocaleString()}` : '-'}${lqs}${trafficText}。`;
+}
+
+function buildGapFinding(asin: string, product?: Product, detail?: AsinDetailSnapshot): string {
+  const reviewCount = detail?.ratings || product?.reviewCount || 0;
+  if (reviewCount > 1000) return `${asin} 评论壁垒较高，需要寻找差评痛点、价格带或功能组合上的切入口。`;
+  return `${asin} 壁垒相对可验证，下一步重点查看差评、图包和变体矩阵中的未满足需求。`;
 }
 
 function MediaCarousel({
@@ -404,22 +444,10 @@ function MediaCarousel({
       </div>
       {media.length > 1 && (
         <>
-          <button
-            type="button"
-            title="上一张"
-            aria-label="上一张"
-            onClick={() => move(-1)}
-            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 border border-black/5 text-[#424245] shadow-sm flex items-center justify-center hover:bg-white"
-          >
+          <button type="button" title="上一张" aria-label="上一张" onClick={() => move(-1)} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 border border-black/5 text-[#424245] shadow-sm flex items-center justify-center hover:bg-white">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <button
-            type="button"
-            title="下一张"
-            aria-label="下一张"
-            onClick={() => move(1)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 border border-black/5 text-[#424245] shadow-sm flex items-center justify-center hover:bg-white"
-          >
+          <button type="button" title="下一张" aria-label="下一张" onClick={() => move(1)} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 border border-black/5 text-[#424245] shadow-sm flex items-center justify-center hover:bg-white">
             <ChevronRight className="w-4 h-4" />
           </button>
         </>
@@ -442,6 +470,7 @@ function MediaCarousel({
 function CompetitorColumn({
   role,
   asin,
+  marketplace,
   product,
   detail,
   trend,
@@ -457,6 +486,7 @@ function CompetitorColumn({
 }: {
   role: string;
   asin: string;
+  marketplace: string;
   product?: Product;
   detail?: AsinDetailSnapshot;
   trend?: AsinSalesTrendSnapshot;
@@ -470,9 +500,9 @@ function CompetitorColumn({
   fallbackIndex: number;
   onZipUpload: (file: File) => void;
 }) {
-  const productJudgement = productFindings[fallbackIndex] || productFindings[0] || '暂无产品力判断。';
-  const operationJudgement = operationFindings[fallbackIndex] || operationFindings[0] || '暂无运营力判断。';
-  const gapJudgement = gaps[fallbackIndex] || gaps[0] || '暂无明确可攻击缝隙。';
+  const productJudgement = productFindings[fallbackIndex] || (asin ? buildProductFinding(asin, product, detail) : '暂无产品力判断。');
+  const operationJudgement = operationFindings[fallbackIndex] || (asin ? buildOperationFinding(asin, product, detail, traffic) : '暂无运营力判断。');
+  const gapJudgement = gaps[fallbackIndex] || (asin ? buildGapFinding(asin, product, detail) : '暂无明确可攻击缝隙。');
   const title = detail?.title || product?.title || '暂无 Listing 标题';
   const image = detail?.zoomImageUrl || detail?.imageUrl || product?.image || '';
   const price = detail?.price || product?.price || 0;
@@ -487,7 +517,13 @@ function CompetitorColumn({
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold text-indigo-600">{role}</p>
-            <p className="text-sm font-semibold text-[#1d1d1f] mt-0.5">{asin || '待选择 ASIN'}</p>
+            {asin ? (
+              <a href={amazonUrl(asin, marketplace)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1d1d1f] mt-0.5 hover:text-indigo-600">
+                {asin}<ArrowUpRight className="w-3.5 h-3.5" />
+              </a>
+            ) : (
+              <p className="text-sm font-semibold text-[#1d1d1f] mt-0.5">待选择 ASIN</p>
+            )}
           </div>
           {rating ? (
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600">
@@ -499,7 +535,7 @@ function CompetitorColumn({
         <MediaCarousel asin={asin} title={title} mainImage={image} pack={pack} onZipUpload={onZipUpload} />
 
         <div>
-          <p className="text-sm font-semibold text-[#1d1d1f] line-clamp-3">{title}</p>
+          <p className="text-sm font-semibold text-[#1d1d1f] leading-5">{title}</p>
           <div className="grid grid-cols-2 gap-2 mt-3">
             <Metric label="价格" value={price ? `$${price.toFixed(2)}` : '-'} />
             <Metric label="月销量" value={sales ? Math.round(sales).toLocaleString() : '-'} />
@@ -514,16 +550,13 @@ function CompetitorColumn({
         <TrafficBlock traffic={traffic} keywords={keywords} />
         <MatrixBlock matrix={matrix} />
 
-        <Section
-          title="Listing 信息"
-          items={[
-            detail?.brand || product?.brand ? `品牌：${detail?.brand || product?.brand}` : '',
-            detail?.categoryPath || product?.subCategory ? `类目：${detail?.categoryPath || product?.subCategory}` : '',
-            detail?.fulfillment ? `配送：${detail.fulfillment}` : '',
-            detail?.sellerName ? `卖家：${detail.sellerName}` : '',
-            detail?.features?.length ? `五点：${detail.features.slice(0, 2).join(' / ')}` : '',
-          ].filter(Boolean)}
-        />
+        <Section title="Listing 信息" items={[
+          detail?.brand || product?.brand ? `品牌：${detail?.brand || product?.brand}` : '',
+          detail?.categoryPath || product?.subCategory ? `类目：${detail?.categoryPath || product?.subCategory}` : '',
+          detail?.fulfillment ? `配送：${detail.fulfillment}` : '',
+          detail?.sellerName ? `卖家：${detail.sellerName}` : '',
+          detail?.features?.length ? `五点：${detail.features.slice(0, 2).join(' / ')}` : '',
+        ].filter(Boolean)} />
 
         <Section title="产品力判断" items={[productJudgement]} tone="good" />
         <Section title="运营力判断" items={[operationJudgement]} tone="brand" />
@@ -577,7 +610,7 @@ function TrendMiniChart({ trend }: { trend?: AsinSalesTrendSnapshot }) {
           <p className="text-[11px] text-[#86868b] truncate">{points[0]?.month} - {points[points.length - 1]?.month}</p>
         </>
       ) : (
-        <p className="text-xs text-[#aeaeb2] leading-5">暂无趋势数据，一键分析后显示。</p>
+        <p className="text-xs text-[#aeaeb2] leading-5">上传历史月数据后，填入对应 ASIN 会自动显示。</p>
       )}
     </div>
   );
@@ -589,7 +622,7 @@ function TrafficBlock({ traffic, keywords }: { traffic?: TrafficStatSnapshot; ke
     <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-[#424245]">流量分析</p>
-        <span className="text-[11px] text-indigo-700">{traffic ? `广告依赖 ${adRate}%` : '待抓取'}</span>
+        <span className="text-[11px] text-indigo-700">{traffic ? `广告依赖 ${adRate}%` : '待分析'}</span>
       </div>
       <div className="grid grid-cols-3 gap-1.5 mb-2">
         <TinyMetric label="流量词" value={traffic?.keywords} />
@@ -669,7 +702,7 @@ function Section({
     warn: 'bg-amber-50/70 border-amber-100',
   }[tone];
   return (
-    <div className={cn('rounded-xl border p-3', toneCls)}>
+    <div className={`rounded-xl border p-3 ${toneCls}`}>
       <p className="text-xs font-semibold text-[#424245] mb-1.5">{title}</p>
       {items.length ? (
         items.map((item, index) => (

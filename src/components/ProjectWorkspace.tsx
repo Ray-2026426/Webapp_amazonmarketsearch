@@ -29,7 +29,7 @@ import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
 import type { CompetitorContext } from '../utils/competitorLook';
-import type { Product } from '../utils/parser';
+import type { Product, HistoryRecord } from '../utils/parser';
 import {
   FIVE_LOOK_LABELS,
   FIVE_LOOKS,
@@ -108,6 +108,7 @@ export function ProjectWorkspace({
   userContext,
   competitorContext,
   products = [],
+  history = [],
   onBack,
   onOpenTool,
   onProjectChange,
@@ -119,6 +120,7 @@ export function ProjectWorkspace({
   userContext: UserContext;
   competitorContext: CompetitorContext;
   products?: Product[];
+  history?: HistoryRecord[];
   onBack: () => void;
   onOpenTool: (view: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit') => void;
   onProjectChange: (updated: ResearchProject) => void;
@@ -305,6 +307,7 @@ export function ProjectWorkspace({
           project={p}
           competitorContext={competitorContext}
           products={products}
+          history={history}
           onProjectChange={applyProjectUpdate}
           onOpenCompetitorTool={() => onOpenTool('competitors')}
           onNavigateSelf={() => void switchToLook('self')}

@@ -1676,6 +1676,7 @@ export default function App() {
                 userContext={userContext}
                 competitorContext={competitorContext}
                 products={products}
+                history={history}
                 onBack={() => setActiveProject(null)}
                 onOpenTool={(view) => setActiveView(view)}
                 onProjectChange={(updated) => setActiveProject(updated)}

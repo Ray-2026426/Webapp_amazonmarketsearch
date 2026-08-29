@@ -328,6 +328,7 @@ export async function duplicateProject(
     createdAt: now,
     updatedAt: now,
     version: 1,
+    cloudRevision: undefined,
     fiveLookProgress: emptyFiveLookProgress(),
   };
   list.unshift(copy);
