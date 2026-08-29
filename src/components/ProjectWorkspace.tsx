@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -29,7 +29,9 @@ import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
 import type { CompetitorContext } from '../utils/competitorLook';
-import type { Product, HistoryRecord } from '../utils/parser';
+import type { Product, HistoryRecord, Keyword, Review } from '../utils/parser';
+import type { AiInsight } from './KeywordAnalysis';
+import type { UserInsightsWorkspaceState } from '../utils/userInsightsHistory';
 import {
   FIVE_LOOK_LABELS,
   FIVE_LOOKS,
@@ -109,6 +111,21 @@ export function ProjectWorkspace({
   competitorContext,
   products = [],
   history = [],
+  reviews,
+  setReviews,
+  persona,
+  setPersona,
+  keywords,
+  setKeywords,
+  marketplaceCode,
+  keywordInsight,
+  keywordInsightRestoreKey,
+  onKeywordInsightSync,
+  vocInitialDeepReport,
+  userInsightsWorkspace,
+  userInsightsRestoreKey,
+  userInsightsRestorePayload,
+  onUserInsightsWorkspaceSync,
   onBack,
   onOpenTool,
   onProjectChange,
@@ -121,6 +138,21 @@ export function ProjectWorkspace({
   competitorContext: CompetitorContext;
   products?: Product[];
   history?: HistoryRecord[];
+  reviews?: Review[];
+  setReviews?: Dispatch<SetStateAction<Review[]>>;
+  persona?: { people: string; scenarios: string; needs: string } | null;
+  setPersona?: Dispatch<SetStateAction<{ people: string; scenarios: string; needs: string } | null>>;
+  keywords?: Keyword[];
+  setKeywords?: Dispatch<SetStateAction<Keyword[]>>;
+  marketplaceCode?: string;
+  keywordInsight?: AiInsight | null;
+  keywordInsightRestoreKey?: number;
+  onKeywordInsightSync?: (state: AiInsight | null) => void;
+  vocInitialDeepReport?: string | null;
+  userInsightsWorkspace?: UserInsightsWorkspaceState | null;
+  userInsightsRestoreKey?: number;
+  userInsightsRestorePayload?: UserInsightsWorkspaceState | null;
+  onUserInsightsWorkspaceSync?: (state: UserInsightsWorkspaceState) => void;
   onBack: () => void;
   onOpenTool: (view: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit') => void;
   onProjectChange: (updated: ResearchProject) => void;
@@ -296,6 +328,24 @@ export function ProjectWorkspace({
           userId={userId}
           project={p}
           userContext={userContext}
+          products={products}
+          reviews={reviews}
+          setReviews={setReviews}
+          persona={persona}
+          setPersona={setPersona}
+          keywords={keywords}
+          setKeywords={setKeywords}
+          marketplaceCode={marketplaceCode}
+          suggestAsins={products.slice(0, 8).map((item) => item.asin).filter(Boolean)}
+          keywordInitialInsight={keywordInsight}
+          keywordPersistedInsight={keywordInsight}
+          keywordInsightRestoreKey={keywordInsightRestoreKey}
+          onKeywordInsightSync={onKeywordInsightSync}
+          vocInitialDeepReport={vocInitialDeepReport}
+          userInsightsWorkspace={userInsightsWorkspace}
+          userInsightsRestoreKey={userInsightsRestoreKey}
+          userInsightsRestorePayload={userInsightsRestorePayload}
+          onUserInsightsWorkspaceSync={onUserInsightsWorkspaceSync}
           onProjectChange={applyProjectUpdate}
           onOpenKeywordTool={() => onOpenTool('keywords')}
           onOpenVocTool={() => onOpenTool('insights')}

@@ -1,14 +1,39 @@
-import { useEffect, useState } from 'react';
-import { Loader2, MessageSquareText, Search } from 'lucide-react';
+import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { ArrowLeft, Loader2, MessageSquareText, Search } from 'lucide-react';
 import { Card } from './ui/Card';
 import { FiveLookSummaryShell } from './five-look/FiveLookSummaryShell';
+import { KeywordAnalysis, type AiInsight } from './KeywordAnalysis';
+import { UserInsights } from './UserInsights';
 import { loadUserLook, type UserContext, type UserLookData } from '../utils/userLook';
+import type { UserInsightsWorkspaceState } from '../utils/userInsightsHistory';
+import type { Keyword, Product, Review } from '../utils/parser';
 import { LOOK_STATUS_LABELS, type ResearchProject } from '../types/researchProject';
+
+type UserDetailPage = 'summary' | 'keywords' | 'voc';
+type Persona = { people: string; scenarios: string; needs: string };
 
 export function UserLookView({
   userId,
   project,
   userContext,
+  products = [],
+  reviews,
+  setReviews,
+  persona,
+  setPersona,
+  keywords,
+  setKeywords,
+  marketplaceCode,
+  suggestAsins = [],
+  keywordInitialInsight = null,
+  keywordPersistedInsight = null,
+  keywordInsightRestoreKey = 0,
+  onKeywordInsightSync,
+  vocInitialDeepReport = null,
+  userInsightsWorkspace = null,
+  userInsightsRestoreKey = 0,
+  userInsightsRestorePayload = null,
+  onUserInsightsWorkspaceSync,
   onOpenKeywordTool,
   onOpenVocTool,
 }: {
@@ -16,11 +41,30 @@ export function UserLookView({
   project: ResearchProject;
   userContext: UserContext;
   onProjectChange: (updated: ResearchProject) => void;
+  products?: Product[];
+  reviews?: Review[];
+  setReviews?: Dispatch<SetStateAction<Review[]>>;
+  persona?: Persona | null;
+  setPersona?: Dispatch<SetStateAction<Persona | null>>;
+  keywords?: Keyword[];
+  setKeywords?: Dispatch<SetStateAction<Keyword[]>>;
+  marketplaceCode?: string;
+  suggestAsins?: string[];
+  keywordInitialInsight?: AiInsight | null;
+  keywordPersistedInsight?: AiInsight | null;
+  keywordInsightRestoreKey?: number;
+  onKeywordInsightSync?: (state: AiInsight | null) => void;
+  vocInitialDeepReport?: string | null;
+  userInsightsWorkspace?: UserInsightsWorkspaceState | null;
+  userInsightsRestoreKey?: number;
+  userInsightsRestorePayload?: UserInsightsWorkspaceState | null;
+  onUserInsightsWorkspaceSync?: (state: UserInsightsWorkspaceState) => void;
   onOpenKeywordTool?: () => void;
   onOpenVocTool?: () => void;
   onNavigateMarket?: () => void;
 }) {
   const [data, setData] = useState<UserLookData | null>(null);
+  const [detailPage, setDetailPage] = useState<UserDetailPage>('summary');
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +81,64 @@ export function UserLookView({
       <div className="flex items-center justify-center py-20 text-sm text-[#aeaeb2]">
         <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载看用户结论...
       </div>
+    );
+  }
+
+  if (detailPage === 'keywords') {
+    return (
+      <UserDetailShell
+        title="关键词分析"
+        subtitle="完整复用关键词详情里的搜索意图、JTBD、场景、人群、痛点和 AI 结论。"
+        onBack={() => setDetailPage('summary')}
+        externalLabel="打开全局关键词工具"
+        onExternal={onOpenKeywordTool}
+      >
+        {keywords && setKeywords ? (
+          <KeywordAnalysis
+            keywords={keywords}
+            setKeywords={setKeywords}
+            marketplaceCode={marketplaceCode}
+            suggestAsins={suggestAsins}
+            initialInsight={keywordInitialInsight}
+            persistedInsight={keywordPersistedInsight}
+            insightRestoreKey={keywordInsightRestoreKey}
+            onInsightSync={onKeywordInsightSync}
+          />
+        ) : (
+          <DetailEmptyState text="当前项目还没有可用于关键词详情页的数据。" />
+        )}
+      </UserDetailShell>
+    );
+  }
+
+  if (detailPage === 'voc') {
+    return (
+      <UserDetailShell
+        title="VOC 分析"
+        subtitle="完整复用评论 / VOC 详情里的情绪、痛点、需求旅程和 AI 深度报告。"
+        onBack={() => setDetailPage('summary')}
+        externalLabel="打开全局 VOC 工具"
+        onExternal={onOpenVocTool}
+      >
+        {reviews && setReviews && setPersona ? (
+          <UserInsights
+            products={products}
+            reviews={reviews}
+            setReviews={setReviews}
+            persona={persona ?? null}
+            setPersona={setPersona}
+            insightsUiActive
+            marketplaceCode={marketplaceCode}
+            initialDeepReport={vocInitialDeepReport}
+            workspaceFromParent={userInsightsWorkspace}
+            workspaceRestoreKey={userInsightsRestoreKey}
+            restorePayload={userInsightsRestorePayload}
+            onWorkspaceSync={onUserInsightsWorkspaceSync}
+          />
+        ) : (
+          <DetailEmptyState text="当前项目还没有可用于 VOC 详情页的数据。" />
+        )}
+      </UserDetailShell>
     );
   }
 
@@ -67,7 +169,7 @@ export function UserLookView({
         eyebrow="Five Looks / User"
         title="看用户 · 需求结论"
         judgement={judgement}
-        description="这里只呈现用户需求的核心结论：他们怎么搜、怎么决策、现有产品满足了什么、还有哪些需求没有被充分满足。"
+        description="这里呈现用户需求的核心结论：他们怎么搜索、怎么决策、现有产品满足了什么、还有哪些需求没有被充分满足。"
         statusBadge={
           <span className="rounded-full border border-black/5 bg-[#f5f5f7] px-2.5 py-1 text-[11px] font-semibold text-[#86868b]">
             {LOOK_STATUS_LABELS[progress.status]} · {progress.completionPercent}%
@@ -89,6 +191,7 @@ export function UserLookView({
           subtitle="用户如何搜索、比较和表达需求"
           actionLabel="打开关键词工具"
           onAction={onOpenKeywordTool}
+          onOpenDetail={() => setDetailPage('keywords')}
           items={keywordSignals}
           emptyText="还没有形成搜索路径结论。请先在关键词工具中补充关键词样本、意图和场景。"
         />
@@ -98,6 +201,7 @@ export function UserLookView({
           subtitle="评论里反复出现的满意点、抱怨点和期待落差"
           actionLabel="打开评论 / VOC 工具"
           onAction={onOpenVocTool}
+          onOpenDetail={() => setDetailPage('voc')}
           items={vocSignals}
           emptyText="还没有形成 VOC 结论。请先在评论工具中补充评论样本和痛点归纳。"
         />
@@ -112,20 +216,34 @@ function InsightPanel({
   subtitle,
   actionLabel,
   onAction,
+  onOpenDetail,
   items,
   emptyText,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   subtitle: string;
   actionLabel: string;
   onAction?: () => void;
+  onOpenDetail?: () => void;
   items: string[];
   emptyText: string;
 }) {
   return (
     <Card>
-      <div className="p-5 space-y-4">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onOpenDetail}
+        onKeyDown={(event) => {
+          if (!onOpenDetail) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onOpenDetail();
+          }
+        }}
+        className="p-5 space-y-4 cursor-pointer rounded-[inherit] transition-colors hover:bg-[#fafafa]"
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
@@ -139,7 +257,10 @@ function InsightPanel({
           {onAction && (
             <button
               type="button"
-              onClick={onAction}
+              onClick={(event) => {
+                event.stopPropagation();
+                onAction();
+              }}
               className="shrink-0 px-3 py-1.5 rounded-xl border border-black/8 bg-white text-xs font-semibold text-[#424245] hover:text-indigo-600 hover:border-indigo-200 transition-all"
             >
               {actionLabel}
@@ -160,6 +281,61 @@ function InsightPanel({
           </div>
         )}
       </div>
+    </Card>
+  );
+}
+
+function UserDetailShell({
+  title,
+  subtitle,
+  externalLabel,
+  onBack,
+  onExternal,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  externalLabel: string;
+  onBack: () => void;
+  onExternal?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-1 shrink-0 w-9 h-9 rounded-xl border border-black/8 bg-white text-[#86868b] hover:text-indigo-600 hover:border-indigo-200 transition-all flex items-center justify-center"
+            title="返回看用户"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <div className="min-w-0">
+            <h3 className="text-xl font-bold text-[#1d1d1f]">{title}</h3>
+            <p className="text-sm text-[#86868b] mt-1 leading-6">{subtitle}</p>
+          </div>
+        </div>
+        {onExternal && (
+          <button
+            type="button"
+            onClick={onExternal}
+            className="shrink-0 px-3 py-2 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-all"
+          >
+            {externalLabel}
+          </button>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function DetailEmptyState({ text }: { text: string }) {
+  return (
+    <Card>
+      <div className="px-4 py-8 text-center text-sm text-[#86868b]">{text}</div>
     </Card>
   );
 }

@@ -1677,6 +1677,21 @@ export default function App() {
                 competitorContext={competitorContext}
                 products={products}
                 history={history}
+                reviews={reviews}
+                setReviews={setReviews}
+                persona={persona}
+                setPersona={setPersona}
+                keywords={keywords}
+                setKeywords={setKeywords}
+                marketplaceCode={marketplace.code}
+                keywordInsight={keywordInsight}
+                keywordInsightRestoreKey={keywordInsightRestoreKey}
+                onKeywordInsightSync={handleKeywordInsightSync}
+                vocInitialDeepReport={isDemoData ? getDemoData().vocDeepReportHtml : null}
+                userInsightsWorkspace={userInsightsWorkspace}
+                userInsightsRestoreKey={userInsightsRestoreKey}
+                userInsightsRestorePayload={userInsightsRestorePayload}
+                onUserInsightsWorkspaceSync={handleUserInsightsWorkspaceSync}
                 onBack={() => setActiveProject(null)}
                 onOpenTool={(view) => setActiveView(view)}
                 onProjectChange={(updated) => setActiveProject(updated)}
