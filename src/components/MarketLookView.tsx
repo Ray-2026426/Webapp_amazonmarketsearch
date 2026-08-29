@@ -85,10 +85,10 @@ export function MarketLookView({
   const evidence = data.keyEvidences.filter(Boolean);
   const risks = data.risks.filter(Boolean);
   const questions = data.openQuestions.filter(Boolean);
-  const judgement = selectedSegment
-    ? `已锁定「${selectedSegment}」作为目标细分市场。`
-    : data.attractiveness.trim()
-      ? '已有市场总结，但还没有选择目标细分市场。'
+  const judgement = data.attractiveness.trim()
+    ? data.attractiveness.trim()
+    : selectedSegment
+      ? `${selectedSegment} 细分市场已选中。`
       : '还没有形成可用于机会判断的细分市场结论。';
 
   return (
@@ -97,7 +97,7 @@ export function MarketLookView({
         eyebrow="Five Looks / Market"
         title="看市场 · 细分市场结论"
         judgement={judgement}
-        description={data.attractiveness || '选择一个细分市场后，下方会显示基于 8 维市场准入模型的进入判断、关键证据与待验证风险。'}
+        description=""
         statusBadge={
           <span className="rounded-full border border-black/5 bg-[#f5f5f7] px-2.5 py-1 text-[11px] font-semibold text-[#86868b]">
             {LOOK_STATUS_LABELS[progress.status]} · {progress.completionPercent}%

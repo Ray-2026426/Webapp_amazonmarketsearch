@@ -1644,7 +1644,7 @@ function TrafficView({
         return (
           <Card key={asin}>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">{asin} · 核心流量词明细（按流量占比）</CardTitle>
+              <CardTitle className="text-sm font-semibold">{asin} · 核心流量词明细（流量占比 + 排名）</CardTitle>
               <CardDescription className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
                 <span>流量占比<Tip text="这个词给该 ASIN 贡献了多少搜索流量，百分比越高越重要。" /></span>
                 <span>ABA排名<Tip text="亚马逊品牌分析里的搜索热度排名，数字越小说明词越热门。" /></span>
@@ -1659,6 +1659,7 @@ function TrafficView({
                 <table className="w-full text-xs min-w-[880px]">
                   <thead>
                     <tr className="text-left text-[#86868b] border-b border-black/5">
+                      <th className="py-2 pr-2">词序</th>
                       <th className="py-2 pr-2">关键词</th>
                       <th className="py-2 pr-2">流量占比</th>
                       <th className="py-2 pr-2">ABA排名</th>
@@ -1670,8 +1671,9 @@ function TrafficView({
                     </tr>
                   </thead>
                   <tbody>
-                    {kws.slice(0, 20).map((k) => (
+                    {kws.slice(0, 20).map((k, index) => (
                       <tr key={k.keyword} className="border-b border-black/5 align-top">
+                        <td className="py-2 pr-2 font-semibold text-[#86868b]">#{index + 1}</td>
                         <td className="py-2 pr-2">
                           <div className="font-medium text-[#1d1d1f]">{k.keyword}</div>
                           {k.translation ? <div className="text-[10px] text-[#86868b]">{k.translation}</div> : null}
