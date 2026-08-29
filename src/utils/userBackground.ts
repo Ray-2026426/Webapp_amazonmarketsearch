@@ -78,10 +78,37 @@ function profileStorageKey(user?: SessionUser | null): string {
   return u?.id ? `${PROFILE_KEY_PREFIX}${u.id}` : LEGACY_PROFILE_KEY;
 }
 
+const OG_HUHU_ADMIN_BACKGROUND: UserBackgroundProfile = {
+  displayName: 'Ray',
+  role: 'OG&huhu 团队负责人 / 亚马逊市场调研与选品决策负责人',
+  company: 'OG&huhu 团队',
+  brands: 'OG&huhu 团队项目、Kairo 亚马逊市场调研工具',
+  categories: '亚马逊新品开发、市场细分、关键词机会、评论 VOC、竞品拆解、Listing 优化、利润与供应链评估',
+  marketplaces: 'US / UK / DE 等亚马逊站点，按项目数据决定重点市场',
+  experience: '团队长期围绕亚马逊市场调研、选品验证、竞品分析和周/月度复盘推进业务，强调从真实数据、周报和月总结中沉淀方法论。',
+  goals:
+    '把 Kairo 打造成 OG&huhu 团队日常可用的市场调研和选品决策工作台；帮助团队从周报、月总结、上传表格和项目过程数据中识别机会、风险、执行优先级和复盘事项。',
+  constraints:
+    '结论必须有数据证据、样本口径和置信度说明；避免空泛建议；优先结合团队现有供应链、执行成本、MOQ、毛利、FBA 成本、广告预算、合规风险和项目节奏来判断。',
+  analysisStyle:
+    '中文输出，结论先行，直接务实；先给判断和必要性，再给证据、风险和行动清单；需要指出数据不足、口径偏差和下一步验证动作。',
+  extraNotes:
+    '默认站在 OG&huhu 团队的经营视角，不把用户当成泛泛的个人卖家；分析时参考团队周报/月总结沉淀的项目推进、问题复盘、市场判断和执行优先级。',
+};
+
 function defaultProfileFor(user?: SessionUser | null): UserBackgroundProfile {
   return isAdminSession(user ?? getCurrentUser())
-    ? { ...ADMIN_DEFAULT_USER_BACKGROUND }
+    ? { ...OG_HUHU_ADMIN_BACKGROUND }
     : { ...EMPTY_USER_BACKGROUND };
+}
+
+function shouldRefreshAdminDefaultProfile(
+  profile: Partial<UserBackgroundProfile> | null,
+  user?: SessionUser | null
+): boolean {
+  if (!profile || !isAdminSession(user ?? getCurrentUser())) return false;
+  const values = Object.values(profile).map((value) => String(value || '')).join(' ');
+  return /Kairo|OG/i.test(values) && !/huhu/i.test(values);
 }
 
 function normalizeProfile(
@@ -96,10 +123,22 @@ export function loadUserBackground(user?: SessionUser | null): UserBackgroundPro
   try {
     const key = profileStorageKey(user);
     const accountProfile = readProfile(key);
-    if (accountProfile) return normalizeProfile(accountProfile, defaults);
+    if (accountProfile) {
+      if (shouldRefreshAdminDefaultProfile(accountProfile, user)) {
+        localStorage.setItem(key, JSON.stringify(defaults));
+        return defaults;
+      }
+      return normalizeProfile(accountProfile, defaults);
+    }
 
     const legacyProfile = readProfile(LEGACY_PROFILE_KEY);
     if (legacyProfile) {
+      if (shouldRefreshAdminDefaultProfile(legacyProfile, user)) {
+        if (key !== LEGACY_PROFILE_KEY) {
+          localStorage.setItem(key, JSON.stringify(defaults));
+        }
+        return defaults;
+      }
       const migrated = normalizeProfile(legacyProfile, defaults);
       if (key !== LEGACY_PROFILE_KEY) {
         localStorage.setItem(key, JSON.stringify(migrated));

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText, Plus, Globe, CloudDownload, ToggleLeft, UserRound, Shield, ImagePlus, Moon, Sun } from 'lucide-react';
+import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText, Plus, Globe, CloudDownload, ToggleLeft, UserRound, Shield, ImagePlus, Moon, Sun, Users } from 'lucide-react';
 import {
   AI_PROVIDERS,
   AiProvider,
@@ -38,10 +38,11 @@ import {
 import { testMcpProvider } from '../utils/sellerspriteApi';
 import { toast } from 'sonner';
 import { AiPromptManager } from './AiPromptManager';
+import { TeamSettingsPanel } from './TeamSettingsPanel';
 import { Select } from './ui/Select';
 import { changePassword, updateAccountProfile, type SessionUser } from '../utils/auth';
 
-type SettingsTab = 'account' | 'api' | 'profile' | 'mcp' | 'features' | 'prompts';
+type SettingsTab = 'account' | 'team' | 'api' | 'profile' | 'mcp' | 'features' | 'prompts';
 
 interface AiSettingsPanelProps {
   settings: AiSettings | null;
@@ -100,7 +101,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   const [mcpTestResults, setMcpTestResults] = useState<Record<string, 'ok' | 'fail'>>({});
 
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
-  const [userBackground, setUserBackground] = useState<UserBackgroundProfile>(() => loadUserBackground());
+  const [userBackground, setUserBackground] = useState<UserBackgroundProfile>(() => loadUserBackground(currentUser));
 
   function loadDisplayMcpProviders(): McpProviderEntry[] {
     return loadMcpSettings().providers.map((p) => ({
@@ -132,6 +133,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   useEffect(() => {
     setAccountName(currentUser?.nickname || currentUser?.username || '');
     setAccountAvatar(currentUser?.avatarDataUrl);
+    setUserBackground(loadUserBackground(currentUser));
   }, [currentUser]);
 
   useEffect(() => {
@@ -281,7 +283,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   };
 
   const persistProfile = () => {
-    saveUserBackground(userBackground);
+    saveUserBackground(userBackground, currentUser);
   };
 
   const persistFeatures = (next: AppFeatureFlags) => {
@@ -342,9 +344,10 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
       return;
     }
 
-    if (tab === 'mcp' || tab === 'features' || tab === 'profile') {
+    if (tab === 'mcp' || tab === 'features' || tab === 'profile' || tab === 'team') {
       const msg =
         tab === 'mcp' ? 'MCP 设置已保存' :
+        tab === 'team' ? '团队设置已保存' :
         tab === 'profile' ? '背景信息已保存，后续 AI 分析会参考这些信息' :
         '功能开关已保存';
       toast.success(msg);
@@ -377,6 +380,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
     { id: 'account', label: '账号', icon: <UserRound className="w-4 h-4" /> },
+    { id: 'team', label: '团队', icon: <Users className="w-4 h-4" /> },
     { id: 'api', label: 'API 与模型', icon: <Cpu className="w-4 h-4" /> },
     { id: 'profile', label: '背景信息', icon: <UserRound className="w-4 h-4" /> },
     { id: 'mcp', label: 'MCP 数据', icon: <CloudDownload className="w-4 h-4" /> },
@@ -699,6 +703,10 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                 </div>
               </div>
             </div>
+          )}
+
+          {tab === 'team' && (
+            <TeamSettingsPanel currentUser={currentUser ?? null} />
           )}
 
           {tab === 'profile' && (
