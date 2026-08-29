@@ -34,9 +34,30 @@ async function listMembers(s: SupabaseClient, projectId: string): Promise<Member
 }
 
 async function resolveUserIdByEmail(s: SupabaseClient, email: string): Promise<string | null> {
-  const { data, error } = await s.rpc('find_user_id_by_email', { target_email: email.trim().toLowerCase() });
-  if (error) throw new Error(error.message);
-  return (data as string | null) ?? null;
+  const target = email.trim().toLowerCase();
+  const { data, error } = await s.rpc('find_user_id_by_email', { target_email: target });
+  if (!error && data) return data as string;
+
+  const service = getServiceSupabase();
+  if (!service) {
+    if (error) throw new Error(error.message);
+    return null;
+  }
+
+  for (let page = 1; page <= 20; page += 1) {
+    const { data: usersPage, error: usersError } = await service.auth.admin.listUsers({ page, perPage: 100 });
+    if (usersError) throw new Error(usersError.message);
+    const users = usersPage.users as unknown as { id: string; email?: string; user_metadata?: { account?: unknown } }[];
+    const found = users.find((user) => {
+      const userEmail = String(user.email || '').trim().toLowerCase();
+      const account = String(user.user_metadata?.account || '').trim().toLowerCase();
+      return userEmail === target || account === target;
+    });
+    if (found) return found.id;
+    if (usersPage.users.length < 100) break;
+  }
+
+  return null;
 }
 
 async function upsertMember(s: SupabaseClient, projectId: string, userId: string, role: MemberRole): Promise<void> {

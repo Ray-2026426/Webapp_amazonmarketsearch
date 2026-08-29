@@ -22,7 +22,8 @@ import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { Select } from './ui/Select';
-import { recordPendingCloudDeletion } from '../utils/cloudDeletionStore';
+import { loadPendingCloudDeletions, recordPendingCloudDeletion } from '../utils/cloudDeletionStore';
+import { dropPendingDeletions } from '../utils/cloudSync';
 import { purgeProjectAssets } from '../utils/projectAssets';
 import { getAuthToken } from '../utils/auth';
 import { syncUserProjectsToCloud, type ProjectCloudSyncResult } from '../utils/projectCloudAutosync';
@@ -148,8 +149,13 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await loadProjects(userId);
-      setProjects(list);
+      const [list, pendingDeletionIds] = await Promise.all([
+        loadProjects(userId),
+        loadPendingCloudDeletions(userId),
+      ]);
+      const visible = dropPendingDeletions(list, pendingDeletionIds);
+      if (visible.length !== list.length) await persistProjects(userId, visible);
+      setProjects(visible);
     } catch {
       toast.error('项目列表读取失败');
     } finally {
@@ -625,6 +631,8 @@ function CreateProjectModal({
   const [seedAsins, setSeedAsins] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
+  const [objectiveOpen, setObjectiveOpen] = useState(false);
 
   const owner = username.trim() || '当前用户';
   const canSave = name.trim().length > 0 && marketplace.trim().length > 0 && objective.trim().length > 0;
@@ -680,42 +688,24 @@ function CreateProjectModal({
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="站点" required>
-              <input
+              <PresetDropdownInput
                 value={marketplace}
-                onChange={(e) => setMarketplace(e.target.value)}
-                list="create-project-marketplaces"
-                className={inputCls}
                 placeholder="选择或输入站点"
+                open={marketplaceOpen}
+                onOpenChange={setMarketplaceOpen}
+                onChange={setMarketplace}
+                items={MARKETPLACES.map((m) => ({ value: m.code, label: m.label }))}
               />
-              <PresetChips
-                items={POPULAR_MARKETPLACES.map((code) => ({ value: code, label: MARKETPLACES.find((m) => m.code === code)?.label ?? code }))}
-                value={marketplace}
-                onPick={setMarketplace}
-              />
-              <datalist id="create-project-marketplaces">
-                {MARKETPLACES.map((m) => (
-                  <option key={m.code} value={m.code}>{m.label}</option>
-                ))}
-              </datalist>
             </Field>
             <Field label="研究目标" required>
-              <input
+              <PresetDropdownInput
                 value={objective}
-                onChange={(e) => setObjective(e.target.value)}
-                list="create-project-objectives"
-                className={inputCls}
                 placeholder="选择或输入研究目标"
-              />
-              <PresetChips
+                open={objectiveOpen}
+                onOpenChange={setObjectiveOpen}
+                onChange={setObjective}
                 items={OBJECTIVES.map((item) => ({ value: item, label: item }))}
-                value={objective}
-                onPick={setObjective}
               />
-              <datalist id="create-project-objectives">
-                {OBJECTIVES.map((item) => (
-                  <option key={item} value={item} />
-                ))}
-              </datalist>
             </Field>
           </div>
 
@@ -827,32 +817,64 @@ function Field({
   );
 }
 
-function PresetChips({
+function PresetDropdownInput({
   items,
   value,
-  onPick,
+  placeholder,
+  open,
+  onOpenChange,
+  onChange,
 }: {
   items: { value: string; label: string }[];
   value: string;
-  onPick: (value: string) => void;
+  placeholder: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onChange: (value: string) => void;
 }) {
+  const visibleItems = items.filter((item) => {
+    const kw = value.trim().toLowerCase();
+    if (!kw) return true;
+    return item.value.toLowerCase().includes(kw) || item.label.toLowerCase().includes(kw);
+  });
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {items.map((item) => (
-        <button
-          key={item.value}
-          type="button"
-          onClick={() => onPick(item.value)}
-          className={cn(
-            'px-2 py-1 rounded-lg border text-[11px] font-semibold transition-all',
-            value === item.value
-              ? 'bg-indigo-600 text-white border-indigo-600'
-              : 'bg-white text-[#86868b] border-black/8 hover:text-indigo-600 hover:border-indigo-200'
+    <div className="relative">
+      <input
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          onOpenChange(true);
+        }}
+        onFocus={() => onOpenChange(true)}
+        onBlur={() => window.setTimeout(() => onOpenChange(false), 120)}
+        className={inputCls}
+        placeholder={placeholder}
+      />
+      {open && (
+        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-auto rounded-xl border border-black/8 bg-white shadow-xl p-1">
+          {visibleItems.length ? (
+            visibleItems.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(item.value);
+                  onOpenChange(false);
+                }}
+                className={cn(
+                  'w-full text-left px-3 py-2 rounded-lg text-sm transition-all',
+                  value === item.value ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#424245] hover:bg-[#f5f5f7]'
+                )}
+              >
+                {item.label}
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-xs text-[#86868b]">按当前输入作为自定义值保存</div>
           )}
-        >
-          {item.label}
-        </button>
-      ))}
+        </div>
+      )}
     </div>
   );
 }

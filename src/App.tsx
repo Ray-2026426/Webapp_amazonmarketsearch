@@ -154,6 +154,15 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
+    const message = `${error.message}\n${error.stack || ''}`;
+    if (/Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk/i.test(message)) {
+      const key = 'amzdev_chunk_reload_once';
+      if (sessionStorage.getItem(key) !== '1') {
+        sessionStorage.setItem(key, '1');
+        window.location.reload();
+        return;
+      }
+    }
     this.setState({ errorMessage: error.message + '\n' + error.stack });
   }
 
@@ -212,6 +221,15 @@ export default function App() {
   const [isAvatarSettingsOpen, setIsAvatarSettingsOpen] = useState(false);
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
   const [activeProject, setActiveProject] = useState<ResearchProject | null>(null);
+
+  useEffect(() => {
+    sessionStorage.removeItem('amzdev_chunk_reload_once');
+    const saved = localStorage.getItem('amzdev_theme');
+    const theme = saved === 'dark' || saved === 'system' ? saved : 'light';
+    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.classList.toggle('dark', theme === 'dark' || (theme === 'system' && prefersDark));
+  }, []);
 
   // 管理员登录后：拉取服务器 Key，再初始化 MCP/AI 默认值
   useEffect(() => {

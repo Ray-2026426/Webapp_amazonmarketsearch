@@ -46,6 +46,11 @@ function savePendingInvites(projectId: string, invites: ProjectMemberInfo[]): vo
   localStorage.setItem(pendingKey(projectId), JSON.stringify(invites));
 }
 
+function clearPendingInvite(projectId: string, email: string): void {
+  const normalized = email.trim().toLowerCase();
+  savePendingInvites(projectId, readPendingInvites(projectId).filter((m) => (m.email || '').toLowerCase() !== normalized));
+}
+
 function mergePending(projectId: string, members: ProjectMemberInfo[]): ProjectMemberInfo[] {
   const registeredEmails = new Set(members.map((m) => (m.email || '').toLowerCase()).filter(Boolean));
   return [
@@ -97,6 +102,7 @@ export async function inviteProjectMember(
       { projectId, action: 'invite', email: normalizedEmail, role }
     );
     if (!body.ok) return { ok: false, members: [], myRole: null, error: body.error };
+    clearPendingInvite(projectId, normalizedEmail);
     return { ok: true, members: mergePending(projectId, body.members ?? []), myRole: body.myRole ?? null };
   } catch (e) {
     const message = e instanceof Error ? e.message : '邀请失败';

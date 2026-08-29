@@ -21,8 +21,6 @@ const MARKETPLACES = [
 ];
 
 const OBJECTIVES = ['新品开发', '市场进入', '存量优化', '产品迭代', '竞品突破', '利润验证'];
-const POPULAR_MARKETPLACES = ['US', 'UK', 'DE', 'CA', 'JP', 'AU'];
-
 function splitList(s: string): string[] | undefined {
   const list = s.split(/[,，\n]/).map((x) => x.trim()).filter(Boolean);
   return list.length ? list : undefined;
@@ -46,6 +44,8 @@ export function EditProjectModal({
   const [coreKeywords, setCoreKeywords] = useState((project.coreKeywords ?? []).join(', '));
   const [seedAsins, setSeedAsins] = useState((project.seedAsins ?? []).join(', '));
   const [saving, setSaving] = useState(false);
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
+  const [objectiveOpen, setObjectiveOpen] = useState(false);
 
   const canSave = name.trim().length > 0 && marketplace.trim().length > 0 && objective.trim().length > 0;
 
@@ -93,42 +93,24 @@ export function EditProjectModal({
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="站点" required>
-              <input
+              <PresetDropdownInput
                 value={marketplace}
-                onChange={(e) => setMarketplace(e.target.value)}
-                list="edit-project-marketplaces"
-                className={inputCls}
                 placeholder="选择或输入站点"
+                open={marketplaceOpen}
+                onOpenChange={setMarketplaceOpen}
+                onChange={setMarketplace}
+                items={MARKETPLACES.map((m) => ({ value: m.code, label: m.label }))}
               />
-              <PresetChips
-                items={POPULAR_MARKETPLACES.map((code) => ({ value: code, label: MARKETPLACES.find((m) => m.code === code)?.label ?? code }))}
-                value={marketplace}
-                onPick={setMarketplace}
-              />
-              <datalist id="edit-project-marketplaces">
-                {MARKETPLACES.map((m) => (
-                  <option key={m.code} value={m.code}>{m.label}</option>
-                ))}
-              </datalist>
             </Field>
             <Field label="研究目标" required>
-              <input
+              <PresetDropdownInput
                 value={objective}
-                onChange={(e) => setObjective(e.target.value)}
-                list="edit-project-objectives"
-                className={inputCls}
                 placeholder="选择或输入研究目标"
-              />
-              <PresetChips
+                open={objectiveOpen}
+                onOpenChange={setObjectiveOpen}
+                onChange={setObjective}
                 items={OBJECTIVES.map((o) => ({ value: o, label: o }))}
-                value={objective}
-                onPick={setObjective}
               />
-              <datalist id="edit-project-objectives">
-                {OBJECTIVES.map((o) => (
-                  <option key={o} value={o} />
-                ))}
-              </datalist>
             </Field>
           </div>
           <Field label="核心关键词（逗号分隔）">
@@ -165,32 +147,64 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
-function PresetChips({
+function PresetDropdownInput({
   items,
   value,
-  onPick,
+  placeholder,
+  open,
+  onOpenChange,
+  onChange,
 }: {
   items: { value: string; label: string }[];
   value: string;
-  onPick: (value: string) => void;
+  placeholder: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onChange: (value: string) => void;
 }) {
+  const visibleItems = items.filter((item) => {
+    const kw = value.trim().toLowerCase();
+    if (!kw) return true;
+    return item.value.toLowerCase().includes(kw) || item.label.toLowerCase().includes(kw);
+  });
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {items.map((item) => (
-        <button
-          key={item.value}
-          type="button"
-          onClick={() => onPick(item.value)}
-          className={cn(
-            'px-2 py-1 rounded-lg border text-[11px] font-semibold transition-all',
-            value === item.value
-              ? 'bg-indigo-600 text-white border-indigo-600'
-              : 'bg-white text-[#86868b] border-black/8 hover:text-indigo-600 hover:border-indigo-200'
+    <div className="relative">
+      <input
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          onOpenChange(true);
+        }}
+        onFocus={() => onOpenChange(true)}
+        onBlur={() => window.setTimeout(() => onOpenChange(false), 120)}
+        className={inputCls}
+        placeholder={placeholder}
+      />
+      {open && (
+        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-auto rounded-xl border border-black/8 bg-white shadow-xl p-1">
+          {visibleItems.length ? (
+            visibleItems.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(item.value);
+                  onOpenChange(false);
+                }}
+                className={cn(
+                  'w-full text-left px-3 py-2 rounded-lg text-sm transition-all',
+                  value === item.value ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#424245] hover:bg-[#f5f5f7]'
+                )}
+              >
+                {item.label}
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-xs text-[#86868b]">按当前输入作为自定义值保存</div>
           )}
-        >
-          {item.label}
-        </button>
-      ))}
+        </div>
+      )}
     </div>
   );
 }
