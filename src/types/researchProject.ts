@@ -16,6 +16,40 @@ export type ProjectStatus =
 
 export type OpportunityDecision = 'enter' | 'validate_first' | 'hold' | 'reject' | 'undecided';
 
+export type OpportunityType = 'market_growth' | 'competitor_gap';
+
+export type OpportunityReviewStatus = 'ai_candidate' | 'confirmed';
+
+export type OpportunityConfidence = 'high' | 'medium' | 'low';
+
+export interface OpportunityScoreBreakdown {
+  demandStrength: number;
+  marketOpportunity: number;
+  competitorGap: number;
+  selfFit: number;
+  evidenceConfidence: number;
+}
+
+export interface OpportunityEvidenceRef {
+  id: string;
+  look: 'user' | 'market' | 'competitor' | 'self';
+  sourceType: 'keyword' | 'review' | 'segment' | 'asin' | 'profile' | 'analysis';
+  label: string;
+  excerpt: string;
+  sourceId?: string;
+}
+
+export interface OpportunityReasoningStep {
+  evidenceIds: string[];
+  judgement: string;
+  conclusion: string;
+}
+
+export interface OpportunityEditRecord {
+  at: string;
+  summary: string;
+}
+
 export type UnmetNeedStatus = 'candidate' | 'validated' | 'rejected';
 
 export const FIVE_LOOKS: FiveLookId[] = ['user', 'market', 'competitor', 'self', 'opportunity'];
@@ -23,7 +57,7 @@ export const FIVE_LOOKS: FiveLookId[] = ['user', 'market', 'competitor', 'self',
 export const FIVE_LOOK_LABELS: Record<FiveLookId, string> = {
   market: '看市场',
   user: '看用户',
-  competitor: '看竞品',
+  competitor: '看竞对',
   self: '看自己',
   opportunity: '看机会',
 };
@@ -166,6 +200,17 @@ export interface OpportunityCard {
   profitAssumption?: ProfitAssumption;
   risks: RiskItem[];
   validationActions: ValidationAction[];
+  /** Phase 0 只保留兼容字段，不在 UI 中管理验证任务。 */
+  opportunityType?: OpportunityType;
+  reviewStatus?: OpportunityReviewStatus;
+  confidence?: OpportunityConfidence;
+  scoreBreakdown?: OpportunityScoreBreakdown;
+  evidenceRefs?: OpportunityEvidenceRef[];
+  reasoning?: OpportunityReasoningStep[];
+  counterEvidence?: string[];
+  missingEvidence?: string[];
+  aiOriginalSnapshot?: string;
+  humanEdits?: OpportunityEditRecord[];
   /** 确定性公式计算的基础分，0-100；AI 只解释，不修改 */
   score: number;
   /** 数据覆盖度，0-1，独立展示，不纳入 100 分 */

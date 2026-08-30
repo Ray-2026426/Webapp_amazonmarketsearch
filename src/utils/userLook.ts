@@ -33,6 +33,13 @@ export interface UnmetNeedCandidate {
   needStatement: string;
   currentAlternative: string;
   evidenceStrength: EvidenceStrength;
+  /** 需求分类名称；作为后续看市场的细分索引。 */
+  category?: string;
+  decisionPath?: string;
+  satisfiedPart?: string;
+  unmetPart?: string;
+  selectedForSegmentation?: boolean;
+  evidenceNotes?: string[];
 }
 
 export interface UserLookData {
@@ -64,6 +71,12 @@ export function emptyUnmetNeedCandidate(): UnmetNeedCandidate {
     needStatement: '',
     currentAlternative: '',
     evidenceStrength: 'medium',
+    category: '',
+    decisionPath: '',
+    satisfiedPart: '',
+    unmetPart: '',
+    selectedForSegmentation: false,
+    evidenceNotes: [],
   };
 }
 
@@ -88,7 +101,24 @@ export async function loadUserLook(userId: string, projectId: string): Promise<U
         ...defaultUserLook(projectId),
         ...raw,
         satisfiedNeeds: Array.isArray(raw.satisfiedNeeds) ? raw.satisfiedNeeds : [],
-        unmetNeedCandidates: Array.isArray(raw.unmetNeedCandidates) ? raw.unmetNeedCandidates : [],
+        unmetNeedCandidates: Array.isArray(raw.unmetNeedCandidates)
+          ? raw.unmetNeedCandidates.map((candidate) => ({
+              ...candidate,
+              id: candidate.id || createUnmetNeedId(),
+              targetUser: candidate.targetUser ?? '',
+              scenario: candidate.scenario ?? '',
+              jobToBeDone: candidate.jobToBeDone ?? '',
+              needStatement: candidate.needStatement ?? '',
+              currentAlternative: candidate.currentAlternative ?? '',
+              evidenceStrength: candidate.evidenceStrength === 'high' || candidate.evidenceStrength === 'low' ? candidate.evidenceStrength : 'medium',
+              category: candidate.category ?? '',
+              decisionPath: candidate.decisionPath ?? '',
+              satisfiedPart: candidate.satisfiedPart ?? '',
+              unmetPart: candidate.unmetPart ?? candidate.needStatement ?? '',
+              selectedForSegmentation: candidate.selectedForSegmentation ?? false,
+              evidenceNotes: Array.isArray(candidate.evidenceNotes) ? candidate.evidenceNotes : [],
+            }))
+          : [],
       };
     }
   } catch {
@@ -118,17 +148,19 @@ export function makeUserEvidence(ctx: UserContext): UserEvidence {
 export function computeUserProgress(
   data: UserLookData
 ): Pick<FiveLookProgress, 'status' | 'completionPercent' | 'missingRequirements'> {
-  const hasTarget = data.targetUser.trim().length > 0;
-  const hasScenario = data.scenario.trim().length > 0;
-  const hasJtbd = data.jobToBeDone.trim().length > 0;
-  const hasSatisfied = data.satisfiedNeeds.some((s) => s.trim().length > 0);
-  const hasUnmet = data.unmetNeedCandidates.length > 0;
+  const candidates = data.unmetNeedCandidates;
+  const hasTarget = data.targetUser.trim().length > 0 || candidates.some((item) => item.targetUser.trim());
+  const hasScenario = data.scenario.trim().length > 0 || candidates.some((item) => item.scenario.trim());
+  const hasJtbd = data.jobToBeDone.trim().length > 0 || candidates.some((item) => item.jobToBeDone.trim());
+  const hasSatisfied = data.satisfiedNeeds.some((s) => s.trim().length > 0) || candidates.some((item) => item.satisfiedPart?.trim());
+  const hasUnmet = candidates.some((item) => (item.unmetPart || item.needStatement).trim());
+  const hasSelectedTaxonomy = candidates.some((item) => item.selectedForSegmentation && (item.category || item.needStatement).trim());
 
-  const filled = (hasTarget ? 1 : 0) + (hasScenario ? 1 : 0) + (hasJtbd ? 1 : 0) + (hasSatisfied ? 1 : 0) + (hasUnmet ? 1 : 0);
-  const completionPercent = Math.round((filled / 5) * 100);
+  const filled = (hasTarget ? 1 : 0) + (hasScenario ? 1 : 0) + (hasJtbd ? 1 : 0) + (hasSatisfied ? 1 : 0) + (hasUnmet ? 1 : 0) + (hasSelectedTaxonomy ? 1 : 0);
+  const completionPercent = Math.round((filled / 6) * 100);
   let status: FiveLookProgress['status'] = 'not_started';
   if (filled > 0 && filled < 5) status = 'in_progress';
-  else if (filled === 5) status = 'completed';
+  else if (filled === 6) status = 'completed';
 
   const missingRequirements: string[] = [];
   if (!hasTarget) missingRequirements.push('缺少「目标用户」');
@@ -136,6 +168,7 @@ export function computeUserProgress(
   if (!hasJtbd) missingRequirements.push('缺少「用户任务 / JTBD」');
   if (!hasSatisfied) missingRequirements.push('缺少「已满足需求」');
   if (!hasUnmet) missingRequirements.push('缺少「未满足需求候选」');
+  if (!hasSelectedTaxonomy) missingRequirements.push('尚未选择用于看市场的需求分类');
 
   return { status, completionPercent, missingRequirements };
 }

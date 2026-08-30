@@ -161,11 +161,16 @@ export interface UserAnalysisOutput {
   jobToBeDone?: string;
   satisfiedNeeds?: string[];
   unmetNeedCandidates?: {
+    category?: string;
     targetUser?: string;
     scenario?: string;
     jobToBeDone?: string;
+    decisionPath?: string;
     needStatement?: string;
     currentAlternative?: string;
+    satisfiedPart?: string;
+    unmetPart?: string;
+    evidenceNotes?: string[];
     evidenceStrength?: 'high' | 'medium' | 'low';
   }[];
 }
@@ -226,7 +231,10 @@ export async function runLookAnalysis(
   "openQuestions": ["对看用户/看竞品的待验证问题（2-4条）"]
 }
 数据：
-${summary}`;
+${summary}
+
+当前项目正在验证的需求与细分（必须围绕它下结论）：
+${JSON.stringify(extra ?? {})}`;
   } else if (look === 'user') {
     if (data.reviews.length === 0 && data.keywords.length === 0) {
       return { ok: false, error: '尚未加载评论或关键词数据，请先到「关键词分析」或「评论/VOC」加载。' };
@@ -238,12 +246,12 @@ ${summary}`;
   "jobToBeDone": "用户要完成的 JTBD（任务）",
   "satisfiedNeeds": ["已满足的需求（2-4条）"],
   "unmetNeedCandidates": [
-    {"targetUser":"","scenario":"","jobToBeDone":"","needStatement":"未满足需求（含证据）","currentAlternative":"用户目前替代方案及代价","evidenceStrength":"high|medium|low"}
+    {"category":"可用于市场细分的需求分类名","targetUser":"","scenario":"","jobToBeDone":"","decisionPath":"发现→比较→购买的关键路径","needStatement":"具体未满足需求","currentAlternative":"用户目前替代方案及代价","satisfiedPart":"现有方案已满足什么","unmetPart":"仍未满足什么","evidenceNotes":["来源与重复信号摘要"],"evidenceStrength":"high|medium|low"}
   ]
 }
 要点：
 1) 把「市场细分」里的人群(people)/场景(scenarios)/需求(needs) 与评论/关键词交叉，形成更具体的用户分类，并在输出中体现这些细分视角。
-2) 未满足需求候选 1-4 条，必须来自重复出现的问题/差评/关键词，并说明替代方案。
+2) 未满足需求候选 1-4 条，必须来自重复出现的问题/差评/关键词，并说明替代方案；category 应能直接作为后续市场细分标准。
 数据：
 ${summary}`;
   } else if (look === 'competitor') {

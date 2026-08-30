@@ -13,6 +13,7 @@ import {
   type CompetitorLookData,
 } from '../utils/competitorLook';
 import { loadMarketLook, type MarketLookData } from '../utils/marketLook';
+import { loadUserLook, type UserLookData } from '../utils/userLook';
 import { updateLookProgress } from '../utils/projectStore';
 import { parseSingleCompetitorZip } from '../utils/competitorArchiveParser';
 import {
@@ -43,9 +44,12 @@ interface AssetPack {
 type AnalysisState = 'idle' | 'running';
 
 interface CompetitorAiFindings {
+  targetUsers: string[];
   productPowerFindings: string[];
   operationPowerFindings: string[];
   gaps: string[];
+  barriers: string;
+  winningStrategy: string;
 }
 
 export function CompetitorLookView({
@@ -56,6 +60,7 @@ export function CompetitorLookView({
   history = [],
   onProjectChange,
   onOpenCompetitorTool,
+  onNavigateSelf,
 }: {
   userId: string;
   project: ResearchProject;
@@ -68,6 +73,7 @@ export function CompetitorLookView({
 }) {
   const [data, setData] = useState<CompetitorLookData | null>(null);
   const [marketLook, setMarketLook] = useState<MarketLookData | null>(null);
+  const [userLook, setUserLook] = useState<UserLookData | null>(null);
   const [details, setDetails] = useState<Record<string, AsinDetailSnapshot>>({});
   const [trafficStats, setTrafficStats] = useState<Record<string, TrafficStatSnapshot>>({});
   const [topKeywords, setTopKeywords] = useState<Record<string, TrafficKeywordDetail[]>>({});
@@ -79,10 +85,11 @@ export function CompetitorLookView({
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([loadCompetitorLook(userId, project.id), loadMarketLook(userId, project.id)]).then(([d, m]) => {
+    void Promise.all([loadCompetitorLook(userId, project.id), loadMarketLook(userId, project.id), loadUserLook(userId, project.id)]).then(([d, m, u]) => {
       if (cancelled) return;
       setData(d);
       setMarketLook(m);
+      setUserLook(u);
     });
     return () => {
       cancelled = true;
@@ -122,10 +129,25 @@ export function CompetitorLookView({
     [persist]
   );
 
-  if (!data || !marketLook) {
+  useEffect(() => {
+    if (!data || !userLook || (data.needSatisfactionRows?.length ?? 0) > 0) return;
+    const needs = userLook.unmetNeedCandidates.filter((need) => need.selectedForSegmentation);
+    if (!needs.length) return;
+    updateData({
+      ...data,
+      needSatisfactionRows: needs.map((need) => ({
+        needId: need.id,
+        needLabel: need.category || need.needStatement || '未命名需求',
+        scores: {},
+        notes: {},
+      })),
+    });
+  }, [data, userLook, updateData]);
+
+  if (!data || !marketLook || !userLook) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-[#aeaeb2]">
-        <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载看竞品...
+        <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载看竞对...
       </div>
     );
   }
@@ -222,6 +244,7 @@ export function CompetitorLookView({
         matrices: nextMatrices,
         history,
         productByAsin,
+        demandNeeds: userLook.unmetNeedCandidates.filter((need) => need.selectedForSegmentation),
       });
     } catch (error) {
       toast.warning(`AI 判断未生成：${error instanceof Error ? error.message : '请检查 AI 设置'}`);
@@ -232,6 +255,11 @@ export function CompetitorLookView({
       productPowerFindings: aiFindings?.productPowerFindings ?? [],
       operationPowerFindings: aiFindings?.operationPowerFindings ?? [],
       gaps: aiFindings?.gaps ?? [],
+      barriers: aiFindings?.barriers ?? data.barriers,
+      targetUsers: aiFindings ? Object.fromEntries(asins.map((asin, index) => [asin, aiFindings?.targetUsers[index] || ''])) : data.targetUsers,
+      winningStrategy: aiFindings?.winningStrategy || (aiFindings?.gaps?.length
+        ? `优先攻击：${aiFindings.gaps.filter(Boolean).slice(0, 2).join('；')}。以被选中的用户需求为产品定义约束，不复制头部的全部功能。`
+        : data.winningStrategy),
     });
     setProgressText(aiFindings ? '竞品分析已完成' : '基础数据已补齐，AI 判断未生成');
     setAnalysisState('idle');
@@ -268,7 +296,7 @@ export function CompetitorLookView({
     <div className="space-y-4">
       <FiveLookSummaryShell
         eyebrow="Five Looks / Competitor"
-        title="看竞品"
+        title="看竞对 · 如何赢"
         judgement={judgement}
         description="填入 ASIN 后会自动读取上传表格中的历史月数据展示销量趋势；一键分析用于补充 Listing、流量、矩阵和判断结论。"
         statusBadge={
@@ -346,6 +374,7 @@ export function CompetitorLookView({
             matrix={asin ? matrices[asin] : undefined}
             pack={asin ? packs[asin] : undefined}
             productFindings={data.productPowerFindings.filter(Boolean)}
+            targetUser={asin ? data.targetUsers?.[asin] || '' : ''}
             operationFindings={data.operationPowerFindings.filter(Boolean)}
             gaps={data.gaps.filter(Boolean)}
             fallbackIndex={index}
@@ -353,6 +382,88 @@ export function CompetitorLookView({
           />
         ))}
       </div>
+
+      <Card>
+        <div className="p-5 space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-[#1d1d1f]">需求满足矩阵</p>
+            <p className="text-xs text-[#86868b] mt-1">行来自“看用户”已选需求，列固定为头部、跟随者、新进入者；0=完全未满足，5=充分满足。</p>
+          </div>
+          {(data.needSatisfactionRows ?? []).length ? (
+            <div className="overflow-x-auto rounded-xl border border-black/8">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead className="bg-[#fafafa] text-xs text-[#86868b]">
+                  <tr>
+                    <th className="px-3 py-2.5 text-left">需求维度</th>
+                    {COMPETITOR_ROLES.map((role, index) => <th key={role} className="px-3 py-2.5 text-left">{role}<span className="block font-normal">{slots[index] || '待选 ASIN'}</span></th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.needSatisfactionRows ?? []).map((row) => (
+                    <tr key={row.needId} className="border-t border-black/5">
+                      <td className="px-3 py-3 font-semibold text-[#424245]">{row.needLabel}</td>
+                      {COMPETITOR_ROLES.map((role, index) => {
+                        const asin = slots[index] || role;
+                        return (
+                          <td key={role} className="px-3 py-3">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="range"
+                                min="0"
+                                max="5"
+                                value={row.scores[asin] ?? 0}
+                                onChange={(event) => updateData({
+                                  ...data,
+                                  needSatisfactionRows: (data.needSatisfactionRows ?? []).map((item) => item.needId === row.needId ? { ...item, scores: { ...item.scores, [asin]: Number(event.target.value) } } : item),
+                                })}
+                                className="w-24 accent-indigo-600"
+                              />
+                              <span className="w-5 text-center font-semibold text-indigo-700">{row.scores[asin] ?? 0}</span>
+                            </div>
+                            <input
+                              value={row.notes[asin] ?? ''}
+                              onChange={(event) => updateData({
+                                ...data,
+                                needSatisfactionRows: (data.needSatisfactionRows ?? []).map((item) => item.needId === row.needId ? { ...item, notes: { ...item.notes, [asin]: event.target.value } } : item),
+                              })}
+                              placeholder="证据/表现"
+                              className="mt-2 w-full rounded-lg border border-black/8 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-black/10 bg-[#fafafa] p-6 text-center text-sm text-[#86868b]">请先在“看用户”勾选至少一条需求作为细分标准。</div>
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <div className="p-5">
+          <p className="text-sm font-semibold text-[#1d1d1f]">我们如何赢</p>
+          <p className="text-xs text-[#86868b] mt-1 mb-3">必须同时说明攻击哪条未满足需求、避开什么竞对壁垒，以及凭什么我们能做到。</p>
+          <div className="mb-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2.5 text-sm text-amber-900">
+            <span className="font-semibold">难复制壁垒：</span>{data.barriers || '尚未形成，需要在一键分析后结合品牌、评价、流量和供应链判断。'}
+          </div>
+          <textarea
+            rows={4}
+            value={data.winningStrategy ?? ''}
+            onChange={(event) => updateData({ ...data, winningStrategy: event.target.value })}
+            placeholder="例如：不与头部比全功能，聚焦……用户在……场景下的……缺口，通过……能力形成更低使用成本。"
+            className="w-full rounded-xl border border-black/8 bg-[#fafafa] px-3 py-2.5 text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-none"
+          />
+          {onNavigateSelf && data.winningStrategy?.trim() && (
+            <div className="flex justify-end mt-3">
+              <button type="button" onClick={onNavigateSelf} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white">去判断我们能否做到 <ArrowRight className="w-3.5 h-3.5" /></button>
+            </div>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }
@@ -397,6 +508,7 @@ async function generateCompetitorAiFindings({
   matrices,
   history,
   productByAsin,
+  demandNeeds,
 }: {
   asins: string[];
   marketplace: string;
@@ -407,6 +519,7 @@ async function generateCompetitorAiFindings({
   matrices: Record<string, ParentMatrixSnapshot>;
   history: HistoryRecord[];
   productByAsin: Map<string, Product>;
+  demandNeeds: UserLookData['unmetNeedCandidates'];
 }): Promise<CompetitorAiFindings> {
   const settings = loadAiSettings();
   if (!settings?.apiKey) throw new Error('请先在设置中配置 AI API Key');
@@ -489,25 +602,32 @@ async function generateCompetitorAiFindings({
 
 请只使用下面 JSON 证据，不要补充未给出的事实。输出必须是合法 JSON，格式如下：
 {
+  "targetUsers": ["每个 ASIN 的核心目标用户与场景，按输入 ASIN 顺序"],
   "productPowerFindings": ["每个 ASIN 一条，按输入 ASIN 顺序"],
   "operationPowerFindings": ["每个 ASIN 一条，按输入 ASIN 顺序"],
-  "gaps": ["每个 ASIN 一条，按输入 ASIN 顺序"]
+  "gaps": ["每个 ASIN 一条，按输入 ASIN 顺序"],
+  "barriers": "这些竞对最难复制的共同或个别壁垒",
+  "winningStrategy": "我们如何围绕明确未满足需求避开壁垒并形成差异"
 }
 
 要求：
 - 产品力判断关注功能、材质/规格、五点卖点、价格带、评分评论、变体矩阵和差异化。
+- 目标用户必须对照项目已选需求，说明该 ASIN 主要满足谁、在哪个场景使用；证据不足要明说。
 - 运营力判断关注 Listing 完整度、LQS、配送/卖家、自然/广告流量结构、关键词排名、价格和历史销量/销售额趋势。
 - 缺口判断必须写成可验证的机会或风险，无法判断时写“数据不足，需要补充 XXX”。
 - 每条结论 80 字以内，中文。
 
 上下文：
-${JSON.stringify({ marketplace, selectedSegment, evidence }, null, 2)}`;
+${JSON.stringify({ marketplace, selectedSegment, demandNeeds, evidence }, null, 2)}`;
   const raw = await generateText(prompt, settings);
   const parsed = parseAiJson(raw);
   return {
+    targetUsers: normalizeAiList(parsed.targetUsers, asins.length),
     productPowerFindings: normalizeAiList(parsed.productPowerFindings, asins.length),
     operationPowerFindings: normalizeAiList(parsed.operationPowerFindings, asins.length),
     gaps: normalizeAiList(parsed.gaps, asins.length),
+    barriers: String(parsed.barriers || '').trim(),
+    winningStrategy: String(parsed.winningStrategy || '').trim(),
   };
 }
 
@@ -641,6 +761,7 @@ function CompetitorColumn({
   matrix,
   pack,
   productFindings,
+  targetUser,
   operationFindings,
   gaps,
   fallbackIndex,
@@ -657,6 +778,7 @@ function CompetitorColumn({
   matrix?: ParentMatrixSnapshot;
   pack?: AssetPack;
   productFindings: string[];
+  targetUser: string;
   operationFindings: string[];
   gaps: string[];
   fallbackIndex: number;
@@ -732,6 +854,7 @@ function CompetitorColumn({
           ...(detail?.features?.length ? detail.features.map((feature, i) => `五点 ${i + 1}：${feature}`) : []),
         ].filter(Boolean)} />
 
+        <Section title="目标用户与使用场景" items={[targetUser].filter(Boolean)} />
         <Section title="产品力判断" items={[productJudgement]} tone="good" />
         <Section title="运营力判断" items={[operationJudgement]} tone="brand" />
         <Section title="可攻击缝隙" items={[gapJudgement]} tone="warn" />

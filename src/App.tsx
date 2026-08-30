@@ -1375,7 +1375,9 @@ export default function App() {
     months,
     sourceLabel: historySourceLabel,
     isDemo: isDemoData,
-  }), [isDataLoaded, marketplace.code, products.length, months, historySourceLabel, isDemoData]);
+    domain: marketplace.domain,
+    asinToSegment,
+  }), [isDataLoaded, marketplace.code, marketplace.domain, products.length, months, historySourceLabel, isDemoData, asinToSegment]);
 
   const userContext = useMemo<UserContext>(() => ({
     keywordsCount: keywords.length,
@@ -1548,7 +1550,7 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-black/5 px-8 py-4 flex items-center justify-between z-10 sticky top-0">
+        <header className={`bg-white/80 backdrop-blur-md border-b border-black/5 px-8 py-4 items-center justify-between z-10 sticky top-0 ${activeView === 'projects' && activeProject ? 'hidden' : 'flex'}`}>
           <div className="flex items-center space-x-4">
             {activeProject && activeView !== 'projects' && (
               <button

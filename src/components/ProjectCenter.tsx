@@ -17,6 +17,9 @@ import {
   CloudOff,
   CheckCircle2,
   AlertTriangle,
+  SlidersHorizontal,
+  ArrowRight,
+  MoreHorizontal,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
@@ -38,14 +41,10 @@ import {
   loadProjects,
   persistProjects,
   restoreProject,
+  setActiveLook,
 } from '../utils/projectStore';
-import {
-  FIVE_LOOK_LABELS,
-  FIVE_LOOKS,
-  type FiveLookId,
-  type LookStatus,
-  type ResearchProject,
-} from '../types/researchProject';
+import { type ResearchProject } from '../types/researchProject';
+import { loadProjectDecisionSummary, type ProjectDecisionSummary } from '../utils/projectDecision';
 
 const MARKETPLACES: { code: string; label: string }[] = [
   { code: 'US', label: 'US · 美国' },
@@ -71,8 +70,6 @@ const MARKETPLACES: { code: string; label: string }[] = [
 
 const OBJECTIVES = ['新品开发', '市场进入', '存量优化', '产品迭代', '竞品突破', '利润验证'];
 
-const POPULAR_MARKETPLACES = ['US', 'UK', 'DE', 'CA', 'JP', 'AU'];
-
 const STATUS_LABELS: Record<ResearchProject['status'], string> = {
   draft: '草稿',
   researching: '研究中',
@@ -80,20 +77,6 @@ const STATUS_LABELS: Record<ResearchProject['status'], string> = {
   approved: '已通过',
   rejected: '已驳回',
   archived: '已归档',
-};
-
-const LOOK_STATUS_COLOR: Record<LookStatus, string> = {
-  not_started: 'bg-[#c7c7cc]',
-  in_progress: 'bg-amber-500',
-  completed: 'bg-emerald-500',
-  stale: 'bg-rose-500',
-};
-
-const LOOK_STATUS_TEXT: Record<LookStatus, string> = {
-  not_started: 'text-[#aeaeb2]',
-  in_progress: 'text-amber-600',
-  completed: 'text-emerald-600',
-  stale: 'text-rose-600',
 };
 
 function formatDate(iso?: string): string {
@@ -129,6 +112,8 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   const syncInFlight = useRef(false);
   const [syncState, setSyncState] = useState<ProjectCloudSyncResult | null>(null);
   const [syncTouched, setSyncTouched] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [createdProjectId, setCreatedProjectId] = useState('');
 
   const queueCloudSync = async () => {
     if (!getAuthToken()) return;
@@ -211,55 +196,50 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
     return searchProjectsSync(projects, { keyword, marketplace, status });
   }, [projects, keyword, marketplace, status]);
 
-  const incompleteLooks = useMemo(() => {
-    const active = projects.filter((p) => p.status !== 'archived');
-    const counts: Record<FiveLookId, number> = { market: 0, user: 0, competitor: 0, self: 0, opportunity: 0 };
-    for (const p of active) {
-      for (const look of FIVE_LOOKS) {
-        if (p.fiveLookProgress[look].status !== 'completed') counts[look] += 1;
-      }
-    }
-    return counts;
-  }, [projects]);
-
   return (
     <div className="max-w-6xl mx-auto w-full">
       {/* 顶部：标题 + 新建 */}
-      <div className="flex items-end justify-between gap-4 mb-6">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-5">
         <div>
-          <h2 className="text-2xl font-bold text-[#1d1d1f]">项目中心</h2>
-          <p className="text-sm text-[#86868b] mt-1">
-            用一次市调项目承载「看市场 → 看用户 → 看竞品 → 看自己 → 看/找机会」全流程
-          </p>
+          <p className="text-base font-semibold text-[#1d1d1f]">最近研究</p>
+          <p className="text-sm text-[#86868b] mt-1">从用户需求出发，继续完成品类机会判断。</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 text-white text-sm font-semibold shadow-lg shadow-indigo-200 hover:from-indigo-600 hover:to-violet-600 transition-all active:scale-[0.98]"
-        >
-          <Plus className="w-4 h-4" />
-          新建项目
-        </button>
-      </div>
-
-      {/* 云同步状态（诊断） */}
-      <div className="mb-4">
-        {syncState ? (
-          <CloudSyncStatusBanner state={syncState} onRetry={() => void handleSync()} />
-        ) : (
+        <div className="flex items-center gap-2">
+          {getAuthToken() && (
+            <button
+              type="button"
+              onClick={() => void handleSync()}
+              title={syncState?.ok ? '云同步正常，点击刷新' : syncState?.error || '检查云同步'}
+              aria-label={syncState?.ok ? '云同步正常' : '检查云同步'}
+              className={cn(
+                'w-10 h-10 rounded-xl border flex items-center justify-center transition-all',
+                syncState?.ok ? 'border-emerald-100 bg-emerald-50 text-emerald-600' : syncState ? 'border-amber-100 bg-amber-50 text-amber-600' : 'border-black/8 bg-white text-[#86868b]'
+              )}
+            >
+              {syncState?.ok ? <Cloud className="w-4 h-4" /> : <CloudOff className="w-4 h-4" />}
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => void handleSync()}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-black/8 bg-white text-xs font-medium text-[#86868b] hover:text-indigo-600 hover:border-indigo-200 transition-all"
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 text-white text-sm font-semibold shadow-lg shadow-indigo-200 hover:from-indigo-600 hover:to-violet-600 transition-all active:scale-[0.98]"
           >
-            <RefreshCw className="w-3.5 h-3.5" /> 点此测试云同步
+            <Plus className="w-4 h-4" />
+            新建项目
           </button>
-        )}
+        </div>
       </div>
+
+      {/* 云同步仅在失败或未启用时展开；成功状态收进顶部图标。 */}
+      {syncState && !syncState.ok && (
+        <div className="mb-4">
+          <CloudSyncStatusBanner state={syncState} onRetry={() => void handleSync()} />
+        </div>
+      )}
 
       {/* 搜索与筛选 */}
       <div className="flex flex-wrap items-center gap-2 mb-5">
-        <div className="relative flex-1 min-w-[220px] max-w-sm">
+        <div className="relative flex-1 min-w-[220px]">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#aeaeb2]" />
           <input
             value={keyword}
@@ -268,23 +248,16 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
             className="w-full pl-9 pr-3 py-2 rounded-xl border border-black/8 bg-white text-sm text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 transition-all"
           />
         </div>
-        <Select
-          value={marketplace}
-          onChange={setMarketplace}
-          options={[{ value: '', label: '全部站点' }, ...MARKETPLACES.map((m) => ({ value: m.code, label: m.label }))]}
-          placeholder="全部站点"
-        />
-        <Select
-          value={status}
-          onChange={setStatus}
-          options={[
-            { value: 'active', label: '活跃项目' },
-            { value: 'archived', label: '已归档' },
-            { value: 'all', label: '全部' },
-          ]}
-          placeholder="状态"
-        />
+        <button type="button" onClick={() => setFiltersOpen((open) => !open)} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-black/8 bg-white text-sm font-medium text-[#86868b] hover:text-indigo-600 hover:border-indigo-200">
+          <SlidersHorizontal className="w-4 h-4" /> 筛选
+        </button>
       </div>
+      {filtersOpen && (
+        <div className="flex flex-wrap items-center gap-2 mb-5 rounded-2xl border border-black/5 bg-[#fafafa] p-3">
+          <Select value={marketplace} onChange={setMarketplace} options={[{ value: '', label: '全部站点' }, ...MARKETPLACES.map((m) => ({ value: m.code, label: m.label }))]} placeholder="全部站点" />
+          <Select value={status} onChange={setStatus} options={[{ value: 'active', label: '活跃项目' }, { value: 'archived', label: '已归档' }, { value: 'all', label: '全部' }]} placeholder="状态" />
+        </div>
+      )}
 
       {/* 列表 */}
       {loading ? (
@@ -308,13 +281,15 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
           </button>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {filtered.map((p) => (
             <ProjectCard
               key={p.id}
+              userId={userId}
               project={p}
               username={username}
-              onOpen={() => onOpenProject(p)}
+              highlighted={p.id === createdProjectId}
+              onOpen={(override) => onOpenProject(override ?? p)}
               onDuplicate={() => handleDuplicate(p)}
               onArchive={() => handleArchive(p)}
               onDelete={() => setDeleteTarget(p)}
@@ -323,36 +298,14 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
         </div>
       )}
 
-      {/* 底部：未完成统计（工作型信息，非营销 Hero） */}
-      <ProjectCenterGuide
-        show={!loading && projects.filter((p) => p.status !== 'archived').length > 0}
-        incompleteLooks={incompleteLooks}
-        onMarketplacePick={setMarketplace}
-      />
-
-      {false && !loading && projects.filter((p) => p.status !== 'archived').length > 0 && (
-        <Card className="mt-6 p-5">
-          <p className="text-sm font-semibold text-[#1d1d1f] mb-3">五看完成度总览（活跃项目）</p>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {FIVE_LOOKS.map((look) => (
-              <div key={look} className="rounded-2xl border border-black/5 bg-[#fafafa] px-4 py-3">
-                <p className="text-xs text-[#86868b]">{FIVE_LOOK_LABELS[look]}</p>
-                <p className="text-xl font-bold text-[#1d1d1f] mt-1">{incompleteLooks[look]}</p>
-                <p className="text-[11px] text-[#aeaeb2]">未完成</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
       {createOpen && (
         <CreateProjectModal
           userId={userId}
           username={username}
           onClose={() => setCreateOpen(false)}
-          onCreated={async () => {
+          onCreated={async (project) => {
             setCreateOpen(false);
-            // 需求：新建后留在项目中心，不自动跳进项目内部
+            setCreatedProjectId(project.id);
             await refresh();
             await queueCloudSync();
           }}
@@ -438,82 +391,40 @@ function searchProjectsSync(
   });
 }
 
-function ProjectCenterGuide({
-  show,
-  incompleteLooks,
-  onMarketplacePick,
-}: {
-  show: boolean;
-  incompleteLooks: Record<FiveLookId, number>;
-  onMarketplacePick: (code: string) => void;
-}) {
-  if (!show) return null;
-  const mostBlocked = [...FIVE_LOOKS].sort((a, b) => incompleteLooks[b] - incompleteLooks[a])[0];
-  return (
-    <Card className="mt-6 p-5">
-      <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-5">
-        <div>
-          <p className="text-sm font-semibold text-[#1d1d1f] mb-3">五看完成度总览（活跃项目）</p>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {FIVE_LOOKS.map((look) => (
-              <div key={look} className="rounded-2xl border border-black/5 bg-[#fafafa] px-4 py-3">
-                <p className="text-xs text-[#86868b]">{FIVE_LOOK_LABELS[look]}</p>
-                <p className="text-xl font-bold text-[#1d1d1f] mt-1">{incompleteLooks[look]}</p>
-                <p className="text-[11px] text-[#aeaeb2]">未完成</p>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-2xl border border-black/5 bg-[#fafafa] p-4">
-          <p className="text-sm font-semibold text-[#1d1d1f]">今日建议</p>
-          <div className="mt-3 space-y-2 text-xs text-[#424245] leading-5">
-            <p>先补齐“看用户”和“看市场”，再进入竞品三列对比。</p>
-            <p>当前最需要推进：{FIVE_LOOK_LABELS[mostBlocked]}。</p>
-          </div>
-          <div className="mt-4">
-            <p className="text-[11px] font-semibold text-[#86868b] mb-2">常用站点筛选</p>
-            <div className="flex flex-wrap gap-2">
-              {POPULAR_MARKETPLACES.map((code) => (
-                <button
-                  key={code}
-                  type="button"
-                  onClick={() => onMarketplacePick(code)}
-                  className="px-2.5 py-1.5 rounded-lg border border-black/8 bg-white text-xs font-semibold text-[#86868b] hover:text-indigo-600 hover:border-indigo-200"
-                >
-                  {code}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 function ProjectCard({
+  userId,
   project,
   username,
+  highlighted,
   onOpen,
   onDuplicate,
   onArchive,
   onDelete,
 }: {
+  userId: string;
   project: ResearchProject;
   username: string;
-  onOpen: () => void;
+  highlighted?: boolean;
+  onOpen: (override?: ResearchProject) => void;
   onDuplicate: () => void;
   onArchive: () => void;
   onDelete: () => void;
 }) {
   const isArchived = project.status === 'archived';
   const ownerLabel = project.ownerId ? username : '—';
+  const [summary, setSummary] = useState<ProjectDecisionSummary | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void loadProjectDecisionSummary(userId, project).then((value) => { if (!cancelled) setSummary(value); });
+    return () => { cancelled = true; };
+  }, [userId, project]);
 
   return (
-    <Card className="flex flex-col">
+    <Card className={cn('flex flex-col transition-all', highlighted && 'ring-2 ring-indigo-400/40 border-indigo-200 bg-indigo-50/20')}>
       <div className="p-5 pb-4">
         <div className="flex items-start justify-between gap-2">
-          <button type="button" onClick={onOpen} className="text-left group flex-1 min-w-0">
+          <button type="button" onClick={() => onOpen()} className="text-left group flex-1 min-w-0">
             <h3 className="font-semibold text-[#1d1d1f] truncate group-hover:text-indigo-600 transition-colors">
               {project.name}
             </h3>
@@ -528,11 +439,12 @@ function ProjectCard({
                   : 'bg-emerald-50 text-emerald-700 border-emerald-100'
             )}
           >
-            {STATUS_LABELS[project.status]}
+            {summary?.stageLabel || STATUS_LABELS[project.status]}
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-[#86868b]">
+        <p className="text-sm text-[#424245] leading-6 mt-3">研究目标：{project.objective || '尚未设置'}</p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-[#86868b]">
           <span className="inline-flex items-center gap-1">
             <Globe className="w-3.5 h-3.5" /> {marketplaceLabel(project.marketplace)}
           </span>
@@ -545,41 +457,39 @@ function ProjectCard({
         </div>
       </div>
 
-      {/* 五看状态：5 段状态，不用线性步骤编号 */}
-      <div className="px-5 pb-4 border-t border-black/5 pt-3">
-        <div className="flex items-center justify-between">
-          {FIVE_LOOKS.map((look) => {
-            const s = project.fiveLookProgress[look].status;
-            return (
-              <div key={look} className="flex flex-col items-center gap-1 flex-1">
-                <span className={cn('w-2 h-2 rounded-full', LOOK_STATUS_COLOR[s])} />
-                <span className={cn('text-[10px] font-medium', LOOK_STATUS_TEXT[s])}>
-                  {FIVE_LOOK_LABELS[look]}
-                </span>
-              </div>
-            );
-          })}
+      <div className="mx-5 mb-4 rounded-2xl border border-black/5 bg-[#fafafa] p-4">
+        <p className="text-sm font-semibold text-[#1d1d1f] leading-6">{summary?.judgement || '正在读取最近业务结论…'}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#86868b]">
+          <span>进度：{summary?.completedLooks ?? 0}/5 个视角已有完整结论</span>
+          {summary?.selectedSegment && <span>目标细分：{summary.selectedSegment}</span>}
+          {!!summary?.confirmedOpportunities && <span className="text-emerald-700">已确认机会：{summary.confirmedOpportunities}</span>}
         </div>
+        <p className="mt-2 text-xs text-amber-700">当前缺口：{summary?.largestGap || '正在判断…'}</p>
       </div>
 
       {/* 操作区 */}
       <div className="px-5 pb-5 mt-auto flex items-center gap-1.5">
         <button
           type="button"
-          onClick={onOpen}
+          onClick={async () => {
+            const nextLook = summary?.nextLook ?? (highlighted ? 'user' : project.activeLook);
+            const updated = await setActiveLook(userId, project.id, nextLook);
+            onOpen(updated ?? project);
+          }}
           className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]"
         >
-          <FolderOpen className="w-3.5 h-3.5" /> 打开项目
+          {highlighted ? '开始看用户' : summary?.nextAction || '继续研究'} <ArrowRight className="w-3.5 h-3.5" />
         </button>
-        <IconButton title="复制" onClick={onDuplicate}>
-          <Copy className="w-3.5 h-3.5" />
-        </IconButton>
-        <IconButton title={isArchived ? '恢复' : '归档'} onClick={onArchive}>
-          {isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-        </IconButton>
-        <IconButton title="删除" danger onClick={onDelete}>
-          <Trash2 className="w-3.5 h-3.5" />
-        </IconButton>
+        <div className="relative">
+          <IconButton title="更多项目操作" onClick={() => setMenuOpen((open) => !open)}><MoreHorizontal className="w-3.5 h-3.5" /></IconButton>
+          {menuOpen && (
+            <div className="absolute right-0 bottom-10 z-20 w-36 rounded-xl border border-black/8 bg-white p-1 shadow-xl">
+              <button type="button" onClick={() => { setMenuOpen(false); onDuplicate(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-[#424245] hover:bg-[#f5f5f7]"><Copy className="w-3.5 h-3.5" />复制项目</button>
+              <button type="button" onClick={() => { setMenuOpen(false); onArchive(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-[#424245] hover:bg-[#f5f5f7]">{isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}{isArchived ? '恢复项目' : '归档项目'}</button>
+              <button type="button" onClick={() => { setMenuOpen(false); onDelete(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-rose-600 hover:bg-rose-50"><Trash2 className="w-3.5 h-3.5" />删除项目</button>
+            </div>
+          )}
+        </div>
       </div>
     </Card>
   );
@@ -626,33 +536,27 @@ function CreateProjectModal({
   const [name, setName] = useState('');
   const [marketplace, setMarketplace] = useState('');
   const [objective, setObjective] = useState('');
-  const [description, setDescription] = useState('');
-  const [coreKeywords, setCoreKeywords] = useState('');
-  const [seedAsins, setSeedAsins] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [objectiveOpen, setObjectiveOpen] = useState(false);
 
   const owner = username.trim() || '当前用户';
-  const canSave = name.trim().length > 0 && marketplace.trim().length > 0 && objective.trim().length > 0;
+  const canSave = marketplace.trim().length > 0 && objective.trim().length > 0;
 
   const submit = async () => {
     if (!canSave) {
-      setError('请填写项目名称、站点和研究目标');
+      setError('请选择站点并填写研究目标');
       return;
     }
     setSaving(true);
     setError('');
     try {
       const p = await createProject(userId, {
-        name: name.trim(),
+        name: name.trim() || `${marketplace.trim()} · ${objective.trim()}机会研究`,
         marketplace: marketplace.trim(),
         objective: objective.trim(),
         ownerId: userId,
-        description: description.trim() || undefined,
-        coreKeywords: splitList(coreKeywords),
-        seedAsins: splitList(seedAsins),
       });
       onCreated(p);
     } catch (e) {
@@ -668,7 +572,7 @@ function CreateProjectModal({
         <div className="flex items-center justify-between px-7 pt-6">
           <div>
             <h3 className="text-xl font-bold text-[#1d1d1f]">新建项目</h3>
-            <p className="text-sm text-[#86868b] mt-0.5">先定类目、站点和对标对象，再从任意一看开始</p>
+            <p className="text-sm text-[#86868b] mt-0.5">只需研究目标和站点，创建后从“看用户”开始</p>
           </div>
           <button type="button" onClick={onClose} className="w-8 h-8 rounded-full hover:bg-[#f5f5f7] flex items-center justify-center text-[#86868b]">
             <X className="w-4 h-4" />
@@ -676,17 +580,17 @@ function CreateProjectModal({
         </div>
 
         <div className="px-7 py-5 space-y-4">
-          <Field label="项目名称" required>
+          <Field label="项目名称（选填）">
             <input
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="例如：美国站 薄枕头 新品机会调研"
+              placeholder="留空将根据站点和研究目标自动生成"
               className={inputCls}
             />
           </Field>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="站点" required>
               <PresetDropdownInput
                 value={marketplace}
@@ -709,39 +613,9 @@ function CreateProjectModal({
             </Field>
           </div>
 
-          <Field label="负责人">
-              <div className="w-full px-3 py-2.5 rounded-xl border border-black/8 bg-[#f5f5f7] text-sm text-[#1d1d1f]">
-                {owner}
-              </div>
-          </Field>
-
-          <Field label="核心关键词（逗号分隔，选填）">
-            <input
-              value={coreKeywords}
-              onChange={(e) => setCoreKeywords(e.target.value)}
-              placeholder="例如：thin pillow, side sleeper"
-              className={inputCls}
-            />
-          </Field>
-
-          <Field label="对标 ASIN（逗号分隔，选填）">
-            <input
-              value={seedAsins}
-              onChange={(e) => setSeedAsins(e.target.value)}
-              placeholder="例如：B0XXXXXXX, B0YYYYYYY"
-              className={inputCls}
-            />
-          </Field>
-
-          <Field label="项目说明（选填）">
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              placeholder="研究边界、目标用户、期望结论等"
-              className={cn(inputCls, 'resize-none')}
-            />
-          </Field>
+          <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-800 leading-6">
+            创建后可在项目内补充关键词、ASIN 和研究说明。系统会先引导你形成需求分类，再进入市场、竞对和机会判断。
+          </div>
 
           {error && <p className="text-xs text-rose-600">{error}</p>}
         </div>

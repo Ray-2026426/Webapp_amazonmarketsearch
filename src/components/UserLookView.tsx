@@ -1,10 +1,21 @@
-import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
-import { ArrowLeft, Loader2, MessageSquareText, Search } from 'lucide-react';
+import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { ArrowLeft, ArrowRight, Loader2, MessageSquareText, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card } from './ui/Card';
 import { FiveLookSummaryShell } from './five-look/FiveLookSummaryShell';
 import { KeywordAnalysis, type AiInsight } from './KeywordAnalysis';
 import { UserInsights } from './UserInsights';
-import { loadUserLook, type UserContext, type UserLookData } from '../utils/userLook';
+import {
+  computeUserProgress,
+  emptyUnmetNeedCandidate,
+  loadUserLook,
+  saveUserLook,
+  type UnmetNeedCandidate,
+  type UserContext,
+  type UserLookData,
+} from '../utils/userLook';
+import { updateLookProgress } from '../utils/projectStore';
+import { runLookAnalysis } from '../utils/lookAi';
 import type { UserInsightsWorkspaceState } from '../utils/userInsightsHistory';
 import type { Keyword, Product, Review } from '../utils/parser';
 import { LOOK_STATUS_LABELS, type ResearchProject } from '../types/researchProject';
@@ -36,6 +47,8 @@ export function UserLookView({
   onUserInsightsWorkspaceSync,
   onOpenKeywordTool,
   onOpenVocTool,
+  onProjectChange,
+  onNavigateMarket,
 }: {
   userId: string;
   project: ResearchProject;
@@ -65,6 +78,9 @@ export function UserLookView({
 }) {
   const [data, setData] = useState<UserLookData | null>(null);
   const [detailPage, setDetailPage] = useState<UserDetailPage>('summary');
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,6 +91,76 @@ export function UserLookView({
       cancelled = true;
     };
   }, [userId, project.id]);
+
+  const persist = async (next: UserLookData) => {
+    setSaving(true);
+    const stamped = { ...next, updatedAt: new Date().toISOString() };
+    setData(stamped);
+    await saveUserLook(userId, project.id, stamped);
+    const progress = computeUserProgress(stamped);
+    const updated = await updateLookProgress(userId, project.id, 'user', {
+      ...project.fiveLookProgress.user,
+      ...progress,
+      updatedAt: stamped.updatedAt,
+    });
+    if (updated) onProjectChange(updated);
+    setSaving(false);
+  };
+
+  const updateCandidate = (id: string, patch: Partial<UnmetNeedCandidate>) => {
+    if (!data) return;
+    const next = {
+      ...data,
+      unmetNeedCandidates: data.unmetNeedCandidates.map((candidate) =>
+        candidate.id === id ? { ...candidate, ...patch } : candidate
+      ),
+    };
+    setData(next);
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => void persist(next), 450);
+  };
+
+  const generateNeeds = async () => {
+    if (!data) return;
+    setGenerating(true);
+    try {
+      const result = await runLookAnalysis('user');
+      if (!result.ok || !result.data) throw new Error(result.error || 'AI 未返回有效需求分类');
+      const raw = Array.isArray(result.data.unmetNeedCandidates) ? result.data.unmetNeedCandidates : [];
+      const candidates = raw.map((item) => {
+        const value = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+        const strength = value.evidenceStrength === 'high' || value.evidenceStrength === 'low' ? value.evidenceStrength : 'medium';
+        return {
+          ...emptyUnmetNeedCandidate(),
+          category: String(value.category || ''),
+          targetUser: String(value.targetUser || ''),
+          scenario: String(value.scenario || ''),
+          jobToBeDone: String(value.jobToBeDone || ''),
+          decisionPath: String(value.decisionPath || ''),
+          needStatement: String(value.needStatement || value.unmetPart || ''),
+          currentAlternative: String(value.currentAlternative || ''),
+          satisfiedPart: String(value.satisfiedPart || ''),
+          unmetPart: String(value.unmetPart || value.needStatement || ''),
+          evidenceNotes: Array.isArray(value.evidenceNotes) ? value.evidenceNotes.map(String).filter(Boolean) : [],
+          evidenceStrength: strength,
+        } satisfies UnmetNeedCandidate;
+      }).filter((candidate) => candidate.needStatement || candidate.category);
+      if (!candidates.length) throw new Error('AI 没有形成可用需求分类，请检查关键词或 VOC 数据。');
+      await persist({
+        ...data,
+        targetUser: String(result.data.targetUser || ''),
+        scenario: String(result.data.scenario || ''),
+        jobToBeDone: String(result.data.jobToBeDone || ''),
+        satisfiedNeeds: Array.isArray(result.data.satisfiedNeeds) ? result.data.satisfiedNeeds.map(String).filter(Boolean) : [],
+        unmetNeedCandidates: candidates,
+      });
+      toast.success(`已生成 ${candidates.length} 类需求，请人工确认并选择细分标准`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '生成需求分类失败');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   if (!data) {
     return (
@@ -206,7 +292,148 @@ export function UserLookView({
           emptyText="还没有形成 VOC 结论。请先在评论工具中补充评论样本和痛点归纳。"
         />
       </div>
+
+      <Card>
+        <div className="p-5 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-[#1d1d1f]">需求分类 · 后续分析主线</p>
+                {saving && <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />}
+              </div>
+              <p className="text-xs text-[#86868b] mt-1 leading-5">
+                每一行都描述“谁在什么场景下，要完成什么任务，哪里仍未被满足”。勾选后，它会成为看市场的细分标准、看竞对的满足矩阵行和看机会的证据起点。
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => void generateNeeds()} disabled={generating} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}AI 生成需求分类
+              </button>
+              <button
+                type="button"
+                onClick={() => void persist({ ...data, unmetNeedCandidates: [...data.unmetNeedCandidates, emptyUnmetNeedCandidate()] })}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+              >
+                <Plus className="w-3.5 h-3.5" /> 添加需求
+              </button>
+            </div>
+          </div>
+
+          {data.unmetNeedCandidates.length ? (
+            <div className="space-y-3">
+              {data.unmetNeedCandidates.map((candidate, index) => (
+                <div key={candidate.id} className="rounded-2xl border border-black/8 bg-[#fafafa] p-4">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#424245]">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(candidate.selectedForSegmentation)}
+                        onChange={(event) => updateCandidate(candidate.id, { selectedForSegmentation: event.target.checked })}
+                        className="accent-indigo-600"
+                      />
+                      作为细分标准
+                    </label>
+                    <div className="flex items-center gap-1">
+                      {index > 0 && <button type="button" onClick={() => {
+                        const previous = data.unmetNeedCandidates[index - 1];
+                        const merged: UnmetNeedCandidate = {
+                          ...previous,
+                          category: previous.category || candidate.category,
+                          targetUser: [previous.targetUser, candidate.targetUser].filter(Boolean).join('；'),
+                          scenario: [previous.scenario, candidate.scenario].filter(Boolean).join('；'),
+                          jobToBeDone: [previous.jobToBeDone, candidate.jobToBeDone].filter(Boolean).join('；'),
+                          needStatement: [previous.needStatement, candidate.needStatement].filter(Boolean).join('；'),
+                          unmetPart: [previous.unmetPart, candidate.unmetPart].filter(Boolean).join('；'),
+                          evidenceNotes: [...new Set([...(previous.evidenceNotes ?? []), ...(candidate.evidenceNotes ?? [])])],
+                          selectedForSegmentation: Boolean(previous.selectedForSegmentation || candidate.selectedForSegmentation),
+                        };
+                        void persist({ ...data, unmetNeedCandidates: data.unmetNeedCandidates.map((item) => item.id === previous.id ? merged : item).filter((item) => item.id !== candidate.id) });
+                      }} className="rounded-lg px-2 py-1.5 text-[11px] font-semibold text-[#86868b] hover:text-indigo-600 hover:bg-indigo-50">合并到上一类</button>}
+                      <button type="button" onClick={() => {
+                        const copy = { ...candidate, id: emptyUnmetNeedCandidate().id, category: `${candidate.category || '需求'}（拆分）`, selectedForSegmentation: false };
+                        const next = [...data.unmetNeedCandidates];
+                        next.splice(index + 1, 0, copy);
+                        void persist({ ...data, unmetNeedCandidates: next });
+                      }} className="rounded-lg px-2 py-1.5 text-[11px] font-semibold text-[#86868b] hover:text-indigo-600 hover:bg-indigo-50">拆分副本</button>
+                      <button
+                        type="button"
+                        title="删除需求"
+                        onClick={() => void persist({ ...data, unmetNeedCandidates: data.unmetNeedCandidates.filter((item) => item.id !== candidate.id) })}
+                        className="w-8 h-8 rounded-lg text-[#aeaeb2] hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <NeedField label="需求分类" value={candidate.category ?? ''} placeholder={`例如：便携收纳 ${index + 1}`} onChange={(value) => updateCandidate(candidate.id, { category: value })} />
+                    <NeedField label="需求强度" value={candidate.evidenceStrength} type="select" onChange={(value) => updateCandidate(candidate.id, { evidenceStrength: value as UnmetNeedCandidate['evidenceStrength'] })} />
+                    <NeedField label="用户画像" value={candidate.targetUser} placeholder="谁最强烈需要它？" onChange={(value) => updateCandidate(candidate.id, { targetUser: value })} />
+                    <NeedField label="使用场景" value={candidate.scenario} placeholder="在什么情境下发生？" onChange={(value) => updateCandidate(candidate.id, { scenario: value })} />
+                    <NeedField label="JTBD" value={candidate.jobToBeDone} placeholder="用户想完成什么任务？" onChange={(value) => updateCandidate(candidate.id, { jobToBeDone: value })} />
+                    <NeedField label="决策路径" value={candidate.decisionPath ?? ''} placeholder="如何发现、比较、购买？" onChange={(value) => updateCandidate(candidate.id, { decisionPath: value })} />
+                    <NeedField label="当前替代方案" value={candidate.currentAlternative} placeholder="现在用什么解决？" onChange={(value) => updateCandidate(candidate.id, { currentAlternative: value })} />
+                    <NeedField label="已经满足" value={candidate.satisfiedPart ?? ''} placeholder="竞品已经做好了什么？" onChange={(value) => updateCandidate(candidate.id, { satisfiedPart: value })} />
+                    <div className="md:col-span-2">
+                      <NeedField label="未满足需求（必须具体）" value={candidate.unmetPart || candidate.needStatement} placeholder="谁，在什么场景下，因为什么不足而无法完成什么任务？" onChange={(value) => updateCandidate(candidate.id, { unmetPart: value, needStatement: value })} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-black/10 bg-[#fafafa] px-4 py-8 text-center text-sm text-[#86868b]">
+              暂无结构化需求。可从关键词/VOC 结论整理，或手动添加第一条。
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-4">
+            <p className="text-xs text-[#86868b]">
+              已选 {data.unmetNeedCandidates.filter((item) => item.selectedForSegmentation).length} 条作为细分标准
+            </p>
+            {onNavigateMarket && (
+              <button
+                type="button"
+                disabled={!data.unmetNeedCandidates.some((item) => item.selectedForSegmentation)}
+                onClick={onNavigateMarket}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
+              >
+                用这些需求看市场 <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      </Card>
     </div>
+  );
+}
+
+function NeedField({
+  label,
+  value,
+  placeholder,
+  type = 'text',
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  type?: 'text' | 'select';
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-[11px] font-semibold text-[#86868b] mb-1">{label}</span>
+      {type === 'select' ? (
+        <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-xl border border-black/8 bg-white px-3 py-2 text-sm text-[#424245] focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
+          <option value="high">高：多源重复出现</option>
+          <option value="medium">中：有明确证据</option>
+          <option value="low">低：仍需补证</option>
+        </select>
+      ) : (
+        <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-xl border border-black/8 bg-white px-3 py-2 text-sm text-[#424245] placeholder:text-[#c7c7cc] focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+      )}
+    </label>
   );
 }
 

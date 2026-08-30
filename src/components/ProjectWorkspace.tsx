@@ -28,6 +28,7 @@ import { setActiveLook } from '../utils/projectStore';
 import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
 import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
+import { loadUserLook } from '../utils/userLook';
 import type { CompetitorContext } from '../utils/competitorLook';
 import type { Product, HistoryRecord, Keyword, Review } from '../utils/parser';
 import type { AiInsight } from './KeywordAnalysis';
@@ -69,7 +70,7 @@ const LOOK_SCOPE: Record<FiveLookId, { question: string; scope: string[]; delive
   market: {
     question: '这个需求所在的市场，规模、趋势和进入环境如何？',
     scope: ['市场规模、销量与销售额', '月度趋势、同比环比与季节性', '价格带与销量/销售额分布', '品牌、ASIN、卖家集中度', '新品老品结构与上架时间分布', 'BSR、评分、评论与卖家类型分布', '市场风险与异常数据提示', '市场判断报告'],
-    deliverables: ['市场吸引力判断', '3–5 条关键证据', '主要市场风险', '对看用户/看竞品的待验证问题'],
+    deliverables: ['市场吸引力判断', '3–5 条关键证据', '主要市场风险', '对看用户/看竞对的待确认问题'],
   },
   user: {
     question: '用户是谁、在什么场景完成什么任务，哪些需求未被满足？',
@@ -162,6 +163,7 @@ export function ProjectWorkspace({
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [editOpen, setEditOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [demandThread, setDemandThread] = useState<string[]>([]);
   const initialSyncKey = useRef(`${project.id}:${project.version}:${project.updatedAt}`);
   const lastQueuedSyncKey = useRef(initialSyncKey.current);
 
@@ -179,6 +181,24 @@ export function ProjectWorkspace({
     }, 1500);
     return () => window.clearTimeout(timer);
   }, [p.id, p.version, p.updatedAt, userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadUserLook(userId, p.id).then((data) => {
+      if (cancelled) return;
+      setDemandThread(data.unmetNeedCandidates
+        .filter((need) => need.selectedForSegmentation)
+        .map((need) => [
+          need.category || need.needStatement,
+          need.targetUser ? `用户：${need.targetUser}` : '',
+          need.scenario ? `场景：${need.scenario}` : '',
+          need.jobToBeDone ? `JTBD：${need.jobToBeDone}` : '',
+          need.currentAlternative ? `替代：${need.currentAlternative}` : '',
+        ].filter(Boolean).join('｜'))
+        .filter(Boolean));
+    });
+    return () => { cancelled = true; };
+  }, [userId, p.id, p.updatedAt]);
 
   const applyProjectUpdate = (updated: ResearchProject) => {
     setP(updated);
@@ -287,7 +307,7 @@ export function ProjectWorkspace({
 
       {/* 非线性五看 Tab（任意顺序进入） */}
       <div className="flex flex-wrap items-center gap-1.5 mb-5 border-b border-black/5 pb-3">
-        <TabButton active={tab === 'overview'} onClick={() => setTab('overview')} label="概览" />
+        <TabButton active={tab === 'overview'} onClick={() => setTab('overview')} label="项目结论" />
         {FIVE_LOOKS.map((look) => {
           const Icon = LOOK_ICONS[look];
           const s = p.fiveLookProgress[look].status;
@@ -302,6 +322,18 @@ export function ProjectWorkspace({
             />
           );
         })}
+      </div>
+
+      <div className="mb-4 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50/80 to-white px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold text-indigo-600">30 分钟研究路径 · 当前需求主线</p>
+          <div className="text-sm text-[#424245] mt-1 space-y-1">
+            {demandThread.length ? demandThread.map((item) => <p key={item} className="leading-5">{item}</p>) : <p>尚未选择需求分类；先完成看用户，后续四看都会围绕同一需求展开。</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 text-[11px] font-semibold text-[#86868b]">
+          {FIVE_LOOKS.map((look, index) => <span key={look} className={cn('rounded-full px-2 py-1', tab === look ? 'bg-indigo-600 text-white' : p.fiveLookProgress[look].status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-white border border-black/5')}>{index + 1} {FIVE_LOOK_LABELS[look].replace('看', '')}</span>)}
+        </div>
       </div>
 
       {/* 内容区 */}
@@ -319,6 +351,8 @@ export function ProjectWorkspace({
           userId={userId}
           project={p}
           marketContext={marketContext}
+          products={products}
+          history={history}
           onProjectChange={applyProjectUpdate}
           onOpenMarketTool={() => onOpenTool('market')}
           onNavigateCompetitor={() => void switchToLook('competitor')}

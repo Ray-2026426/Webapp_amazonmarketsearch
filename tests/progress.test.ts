@@ -8,6 +8,8 @@ import { computeCompetitorProgress, defaultCompetitorLook } from '../src/utils/c
 import { computeOpportunityProgress, scoreOpportunity } from '../src/utils/opportunityStore';
 import { applyLookProgressUpdate, migrateProject } from '../src/utils/projectStore';
 import { reportReuseKey, reuseKeyOf, decideReportSave, type ProjectReport } from '../src/utils/reportStore';
+import { escapeHtml } from '../src/utils/opportunityHtmlReport';
+import { loadPrompts } from '../src/components/AiPromptManager';
 import type { FiveLookProgress, ResearchProject } from '../src/types/researchProject';
 
 let passed = 0;
@@ -72,7 +74,7 @@ test('computeMarketProgress: 空 -> 未开始', () => {
 });
 
 test('computeMarketProgress: 判断+3证据+1风险 -> 完成 100%', () => {
-  const r = computeMarketProgress({ projectId: 'p', attractiveness: '值得进入', keyEvidences: ['a', 'b', 'c'], risks: ['r'], openQuestions: [], evidence: null, updatedAt: '' });
+  const r = computeMarketProgress({ projectId: 'p', selectedNeedId: 'n1', selectedOpportunitySegment: '侧睡支撑', attractiveness: '值得进入', keyEvidences: ['a', 'b', 'c'], risks: ['r'], openQuestions: [], evidence: null, updatedAt: '' });
   assert.equal(r.status, 'completed');
   assert.equal(r.completionPercent, 100);
 });
@@ -80,24 +82,24 @@ test('computeMarketProgress: 判断+3证据+1风险 -> 完成 100%', () => {
 test('defaultMarketLook: 目标细分市场默认为空，兼容旧项目', () => {
   const d = defaultMarketLook('p');
   assert.equal(d.selectedOpportunitySegment, '');
-  const r = computeMarketProgress({ ...d, selectedOpportunitySegment: '高端侧睡', attractiveness: '值得进入', keyEvidences: ['a', 'b', 'c'], risks: ['r'] });
+  const r = computeMarketProgress({ ...d, selectedNeedId: 'n1', selectedOpportunitySegment: '高端侧睡', attractiveness: '值得进入', keyEvidences: ['a', 'b', 'c'], risks: ['r'] });
   assert.equal(r.status, 'completed');
   assert.equal(r.completionPercent, 100);
 });
 
-test('computeUserProgress: 5 项齐全 -> 完成 100%', () => {
+test('computeUserProgress: 需求结构齐全且选为细分标准 -> 完成 100%', () => {
   const r = computeUserProgress({
     projectId: 'p', targetUser: '侧睡人群', scenario: '睡前', jobToBeDone: '保持颈椎中立',
     satisfiedNeeds: ['基础支撑'],
-    unmetNeedCandidates: [{ id: 'n1', targetUser: 'u', scenario: 's', jobToBeDone: 'j', needStatement: 'n', currentAlternative: 'c', evidenceStrength: 'high' }],
+    unmetNeedCandidates: [{ id: 'n1', targetUser: 'u', scenario: 's', jobToBeDone: 'j', needStatement: 'n', currentAlternative: 'c', evidenceStrength: 'high', category: '侧睡支撑', selectedForSegmentation: true }],
     evidence: null, updatedAt: '',
   });
   assert.equal(r.status, 'completed');
   assert.equal(r.completionPercent, 100);
 });
 
-test('computeCompetitorProgress: 4 项齐全 -> 完成 100%', () => {
-  const r = computeCompetitorProgress({ projectId: 'p', samplePool: ['头部款'], benchmarkAsins: ['B0X'], productPowerFindings: [], operationPowerFindings: [], barriers: '评论壁垒', needMatrix: '', gaps: ['缺侧睡设计'], evidence: null, updatedAt: '' });
+test('computeCompetitorProgress: 三类竞对、需求矩阵、如何赢齐全 -> 完成 100%', () => {
+  const r = computeCompetitorProgress({ projectId: 'p', samplePool: ['头部款'], benchmarkAsins: ['B0X'], productPowerFindings: [], operationPowerFindings: [], barriers: '评论壁垒', needMatrix: '', gaps: ['缺侧睡设计'], needSatisfactionRows: [{ needId: 'n1', needLabel: '侧睡', scores: { B0X: 3 }, notes: {} }], winningStrategy: '聚焦侧睡缝隙', evidence: null, updatedAt: '' });
   assert.equal(r.status, 'completed');
   assert.equal(r.completionPercent, 100);
 });
@@ -111,6 +113,8 @@ test('computeCompetitorProgress: 产品力/运营力拆解可替代旧壁垒字�
     productPowerFindings: ['支撑性强但闷热'],
     operationPowerFindings: ['流量集中在品牌词'],
     gaps: ['缺少夏季透气方案'],
+    needSatisfactionRows: [{ needId: 'n1', needLabel: '透气', scores: { B001: 2 }, notes: {} }],
+    winningStrategy: '用供应链材料能力攻击透气缝隙',
   });
   assert.equal(r.status, 'completed');
   assert.equal(r.completionPercent, 100);
@@ -125,13 +129,13 @@ test('computeOpportunityProgress: 无卡 -> 未开始', () => {
 test('computeOpportunityProgress: 有卡+已决策+四看完成 -> 完成 100%', () => {
   const done = makeProgress('completed', 100);
   const project = makeProject({ market: done, user: done, competitor: done, self: done });
-  const card = { id: 'o1', projectId: 'p1', unmetNeedId: 'n1', decision: 'enter' as const };
+  const card = { id: 'o1', projectId: 'p1', unmetNeedId: 'n1', decision: 'enter' as const, reviewStatus: 'confirmed' as const };
   const r = computeOpportunityProgress([card] as any, project);
   assert.equal(r.status, 'completed');
   assert.equal(r.completionPercent, 100);
 });
 
-test('scoreOpportunity: 高证据+全完成 -> 100 分', () => {
+test('scoreOpportunity: 四看绑定到该机会的证据齐全 -> 100 分', () => {
   const done = makeProgress('completed', 100);
   const project = makeProject({ market: done, user: done, competitor: done, self: done });
   const userLook = {
@@ -139,9 +143,17 @@ test('scoreOpportunity: 高证据+全完成 -> 100 分', () => {
     unmetNeedCandidates: [{ id: 'n1', targetUser: 'u', scenario: 's', jobToBeDone: 'j', needStatement: 'n', currentAlternative: 'c', evidenceStrength: 'high' as const }],
     evidence: null, updatedAt: '',
   };
-  const self = { projectId: 'p1', items: [{ id: 'b1', category: 'boundary' as const, label: '最低毛利', status: 'have' as const }], updatedAt: '' };
-  const card = { id: 'o1', projectId: 'p1', unmetNeedId: 'n1', decision: 'enter' as const, profitAssumption: { price: 30, cost: 10, cpc: 2 } };
-  const r = scoreOpportunity(card as any, project, userLook, self);
+  const self = { projectId: 'p1', items: Array.from({ length: 6 }, (_, index) => ({ id: `s${index}`, category: 'capability' as const, label: `能力${index}`, status: 'have' as const })), guidingQuestions: [{ id: 'q1', question: 'MOQ?', type: 'number' as const, reason: '', impactDimension: 'fit' as const, answer: '500' }, { id: 'q2', question: '预算?', type: 'number' as const, reason: '', impactDimension: 'fit' as const, answer: '10万' }], updatedAt: '' };
+  const evidenceRefs = [
+    { id: 'user:n1', look: 'user', sourceType: 'analysis', label: '需求', excerpt: '重复抱怨', sourceId: 'n1' },
+    ...[0, 1, 2, 3].map((index) => ({ id: `market:${index}`, look: 'market', sourceType: 'segment', label: '市场', excerpt: '增长' })),
+    ...[0, 1, 2].map((index) => ({ id: `competitor:gap:${index}`, look: 'competitor', sourceType: 'analysis', label: '缺口', excerpt: '未满足' })),
+    { id: 'self:q1', look: 'self', sourceType: 'analysis', label: '能力', excerpt: '可承接' },
+  ];
+  const card = { id: 'o1', projectId: 'p1', unmetNeedId: 'n1', needStatement: 'n', scenario: 's', decision: 'enter' as const, opportunityType: 'competitor_gap', marketEvidenceIds: ['market:0', 'market:1', 'market:2', 'market:3'], competitorEvidenceIds: ['competitor:gap:0', 'competitor:gap:1', 'competitor:gap:2'], selfAssessmentId: 'q1', evidenceRefs };
+  const market = { ...defaultMarketLook('p1'), selectedOpportunitySegment: 's', selectedNeedId: 'n1', keyEvidences: ['a'] };
+  const competitor = { ...defaultCompetitorLook('p1'), gaps: ['n 未满足'] };
+  const r = scoreOpportunity(card as any, project, userLook, self, market, competitor);
   assert.equal(r.score, 100);
   assert.equal(r.coverage, 1);
 });
@@ -161,7 +173,7 @@ test('migrateProject: 最小对象补齐五看', () => {
 });
 
 
-test('scoreOpportunity: 利润假设低毛利 -> 商业分低', () => {
+test('scoreOpportunity: 五看页面完成但机会未绑定证据，不得获得高分', () => {
   const done = makeProgress('completed', 100);
   const project = makeProject({ market: done, user: done, competitor: done, self: done });
   const userLook = {
@@ -170,13 +182,13 @@ test('scoreOpportunity: 利润假设低毛利 -> 商业分低', () => {
     evidence: null, updatedAt: '',
   };
   const self = { projectId: 'p1', items: [], updatedAt: '' };
-  const card = { id: 'o1', projectId: 'p1', unmetNeedId: 'n1', decision: 'undecided' as const, profitAssumption: { price: 30, cost: 28, cpc: 1 } };
+  const card = { id: 'o1', projectId: 'p1', unmetNeedId: 'n1', needStatement: 'n', scenario: 's', decision: 'undecided' as const, evidenceRefs: [], marketEvidenceIds: [], competitorEvidenceIds: [] };
   const r = scoreOpportunity(card as any, project, userLook, self);
-  // 需求30 + 市场20 + 竞品20 + 自身15 + 商业5 = 90
-  assert.equal(r.score, 90);
+  assert.equal(r.score, 27);
+  assert.equal(r.coverage, 0.25);
 });
 
-test('scoreOpportunity: 无利润假设、无边界 -> 商业分 0', () => {
+test('scoreOpportunity: 低需求证据且无其它绑定证据 -> 仅 11 分', () => {
   const done = makeProgress('completed', 100);
   const project = makeProject({ market: done, user: done, competitor: done, self: done });
   const userLook = {
@@ -185,10 +197,9 @@ test('scoreOpportunity: 无利润假设、无边界 -> 商业分 0', () => {
     evidence: null, updatedAt: '',
   };
   const self = { projectId: 'p1', items: [], updatedAt: '' };
-  const card = { id: 'o1', projectId: 'p1', unmetNeedId: 'n1', decision: 'undecided' as const };
+  const card = { id: 'o1', projectId: 'p1', unmetNeedId: 'n1', needStatement: 'n', scenario: 's', decision: 'undecided' as const, evidenceRefs: [], marketEvidenceIds: [], competitorEvidenceIds: [] };
   const r = scoreOpportunity(card as any, project, userLook, self);
-  // 需求10 + 市场20 + 竞品20 + 自身15 + 商业0 = 65
-  assert.equal(r.score, 65);
+  assert.equal(r.score, 11);
 });
 
 test('computeOpportunityProgress: 有卡但未决策、四看完成 -> 进行中 67%', () => {
@@ -198,6 +209,28 @@ test('computeOpportunityProgress: 有卡但未决策、四看完成 -> 进行中
   const r = computeOpportunityProgress([card] as any, project);
   assert.equal(r.status, 'in_progress');
   assert.equal(r.completionPercent, 67);
+});
+
+test('computeOpportunityProgress: 人工确认无机会也是合法完成结果', () => {
+  const done = makeProgress('completed', 100);
+  const project = makeProject({ market: done, user: done, competitor: done, self: done });
+  const r = computeOpportunityProgress([], project, { resultStatus: 'no_opportunity', reasons: ['竞对已充分满足需求'], reviewed: true, updatedAt: '' });
+  assert.equal(r.status, 'completed');
+  assert.equal(r.completionPercent, 100);
+});
+
+test('HTML 报告转义用户输入，避免脚本注入', () => {
+  assert.equal(escapeHtml('<script>alert("x")</script>'), '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;');
+});
+
+test('Phase 0 四个 Prompt 预设存在且带版本标识', () => {
+  const prompts = loadPrompts();
+  const ids = ['self_category_questions', 'five_look_opportunity', 'opportunity_counter_review', 'opportunity_review_summary'];
+  for (const id of ids) {
+    const prompt = prompts.find((item) => item.id === id);
+    assert.ok(prompt, `缺少 ${id}`);
+    assert.equal(prompt?.version, 'phase0-v1');
+  }
 });
 
 test('migrateProject: 缺失部分五看自动补齐', () => {
@@ -219,6 +252,24 @@ test('applyLookProgressUpdate: 来源数据更新后机会变为需复核', () =
   assert.deepEqual(result.fiveLookProgress.market.staleReasons, []);
   assert.equal(result.fiveLookProgress.opportunity.status, 'stale');
   assert.equal(result.fiveLookProgress.opportunity.staleReasons.length, 1);
+});
+
+test('applyLookProgressUpdate: 看用户更新会链式使已开始的下游结论过期', () => {
+  const done = makeProgress('completed', 100);
+  const project = makeProject({ user: done, market: done, competitor: done, self: done, opportunity: done });
+  const result = applyLookProgressUpdate(project, 'user', { ...done, look: 'user' });
+  assert.equal(result.fiveLookProgress.market.status, 'stale');
+  assert.equal(result.fiveLookProgress.competitor.status, 'stale');
+  assert.equal(result.fiveLookProgress.self.status, 'stale');
+  assert.equal(result.fiveLookProgress.opportunity.status, 'stale');
+});
+
+test('applyLookProgressUpdate: 上游更新不应把尚未开始的下游伪装成需复核', () => {
+  const done = makeProgress('completed', 100);
+  const project = makeProject({ user: done });
+  const result = applyLookProgressUpdate(project, 'user', { ...done, look: 'user' });
+  assert.equal(result.fiveLookProgress.market.status, 'not_started');
+  assert.equal(result.fiveLookProgress.opportunity.status, 'not_started');
 });
 
 test('applyLookProgressUpdate: 待评审项目在来源变化后退回研究中', () => {
