@@ -2,5 +2,10 @@ node_modules/
 dist/
 .env.local
 .vercel/
+.vercel-local/
+.npm-cache/
 .DS_Store
 *.log
+
+.vercel
+.env*

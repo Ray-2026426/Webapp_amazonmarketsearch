@@ -7,7 +7,7 @@ interface MarkdownReportProps {
 }
 
 export const MarkdownReport: React.FC<MarkdownReportProps> = ({ children }) => (
-  <div className="prose prose-sm max-w-none text-[#1d1d1f] leading-relaxed">
+  <div className="max-w-none text-[#1d1d1f] leading-relaxed">
     <Markdown
       remarkPlugins={[remarkGfm]}
       components={{

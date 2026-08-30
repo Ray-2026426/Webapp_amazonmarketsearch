@@ -1,24 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer, CheckSquare, Crosshair } from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, FolderKanban, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer, CheckSquare, Crosshair } from 'lucide-react';
 import { MetricCard } from './components/MetricCard';
-import { MarketTrendChart } from './components/MarketTrendChart';
-import { PriceDistributionChart } from './components/PriceDistributionChart';
-import { SellerTypeChart } from './components/SellerTypeChart';
-import { BrandLeaderboard } from './components/BrandLeaderboard';
-import { TopProductsTable } from './components/TopProductsTable';
-import { LaunchDateChart } from './components/LaunchDateChart';
-import { NewVsOldChart } from './components/NewVsOldChart';
-import { RatingDistributionChart } from './components/RatingDistributionChart';
-import { SellerLocationChart } from './components/SellerLocationChart';
-import { SegmentShareChart } from './components/SegmentShareChart';
-import { FileUpload } from './components/FileUpload';
 import { DateRangeSelector } from './components/DateRangeSelector';
-import { SegmentationManager } from './components/SegmentationManager';
-import { UserInsights } from './components/UserInsights';
-import { KeywordAnalysis, type AiInsight } from './components/KeywordAnalysis';
-import { ProfitCalculator } from './components/ProfitCalculator';
-import { MarketAnalysisReport } from './components/MarketAnalysisReport';
-import { MarketHistoryModal } from './components/MarketHistoryModal';
+import type { AiInsight } from './components/KeywordAnalysis';
 import { saveMarketSnapshot, suggestMarketSnapshotTitle, type MarketHistorySnapshot } from './utils/marketHistory';
 import type { CompetitorWorkspaceState } from './utils/competitorHistory';
 import {
@@ -26,31 +10,29 @@ import {
   type UserInsightsWorkspaceState,
 } from './utils/userInsightsHistory';
 import { clearWorkspaceIndexedDb } from './utils/workspaceIdb';
-import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, formatRevenue, computeMarketReportFingerprint } from './utils/parser';
+import type { Product, HistoryRecord, Review, Keyword } from './utils/parser';
+import { getCurrencySymbol, formatRevenue, computeMarketReportFingerprint } from './utils/marketFormat';
 import { get, set, del } from 'idb-keyval';
 import { Toaster, toast } from 'sonner';
-import { ensureBuiltinAdmin, getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
+import { getAuthToken, getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
 import { ensureAdminMcpDefaults, loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
-import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
+import { loadAiSettings, saveAiSettings, sanitizeAiSettings, AiSettings } from './utils/aiConfig';
+import { fetchServerKeys, saveServerKeys } from './utils/serverKeys';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
-import { LoginPage } from './components/LoginPage';
-import { AiSettingsPanel } from './components/AiSettingsPanel';
-import { savePromptItem, resetPromptToDefault } from './components/AiPromptManager';
-import { OpportunityScanner } from './components/OpportunityScanner';
-import { CompetitorHub } from './components/CompetitorHub';
-import { SeasonalHeatmap } from './components/SeasonalHeatmap';
-import { BsrDistributionChart } from './components/BsrDistributionChart';
-import { PriceRatingChart } from './components/PriceRatingChart';
-import { MarketConcentrationChart } from './components/MarketConcentrationChart';
-import { AvatarSettingsModal } from './components/AvatarSettingsModal';
+import type { MarketContext } from './utils/marketLook';
+import { saveReport } from './utils/reportStore';
+import { syncUserProjectsToCloud } from './utils/projectCloudAutosync';
+import { aiInsightToMarkdown, vocReportToMarkdown, competitorReportToMarkdown } from './utils/reportToMarkdown';
+import type { ResearchProject } from './types/researchProject';
+import type { UserContext } from './utils/userLook';
+import type { CompetitorContext } from './utils/competitorLook';
+import { savePromptItem, resetPromptToDefault } from './utils/promptOverrides';
 import { Select } from './components/ui/Select';
 import { AnchorAnnotationsLayer } from './components/AnchorAnnotationsLayer';
 import type { AnchorAnnotation } from './utils/anchorAnnotations';
 import { normalizeAnchorAnnotations } from './utils/anchorAnnotations';
-import { MarketScorecard } from './components/MarketScorecard';
 import { PageQuickNav } from './components/PageQuickNav';
-import { AsinCompareBar } from './components/AsinCompareBar';
 import { DataQualityPanel } from './components/DataQualityPanel';
 import { buildMarketDataQuality } from './utils/dataQuality';
 import {
@@ -63,6 +45,94 @@ import {
   coerceSegmentFilterKey,
   type SegmentDepth,
 } from './utils/subSegments';
+
+const FileUpload = React.lazy(() =>
+  import('./components/FileUpload').then((m) => ({ default: m.FileUpload }))
+);
+const LoginPage = React.lazy(() =>
+  import('./components/LoginPage').then((m) => ({ default: m.LoginPage }))
+);
+const ProjectCenter = React.lazy(() =>
+  import('./components/ProjectCenter').then((m) => ({ default: m.ProjectCenter }))
+);
+const ProjectWorkspace = React.lazy(() =>
+  import('./components/ProjectWorkspace').then((m) => ({ default: m.ProjectWorkspace }))
+);
+const MarketHistoryModal = React.lazy(() =>
+  import('./components/MarketHistoryModal').then((m) => ({ default: m.MarketHistoryModal }))
+);
+const MarketScorecard = React.lazy(() =>
+  import('./components/MarketScorecard').then((m) => ({ default: m.MarketScorecard }))
+);
+const SegmentationManager = React.lazy(() =>
+  import('./components/SegmentationManager').then((m) => ({ default: m.SegmentationManager }))
+);
+const UserInsights = React.lazy(() =>
+  import('./components/UserInsights').then((m) => ({ default: m.UserInsights }))
+);
+const KeywordAnalysis = React.lazy(() =>
+  import('./components/KeywordAnalysis').then((m) => ({ default: m.KeywordAnalysis }))
+);
+const ProfitCalculator = React.lazy(() =>
+  import('./components/ProfitCalculator').then((m) => ({ default: m.ProfitCalculator }))
+);
+const MarketAnalysisReport = React.lazy(() =>
+  import('./components/MarketAnalysisReport').then((m) => ({ default: m.MarketAnalysisReport }))
+);
+const AiSettingsPanel = React.lazy(() =>
+  import('./components/AiSettingsPanel').then((m) => ({ default: m.AiSettingsPanel }))
+);
+const OpportunityScanner = React.lazy(() =>
+  import('./components/OpportunityScanner').then((m) => ({ default: m.OpportunityScanner }))
+);
+const CompetitorHub = React.lazy(() =>
+  import('./components/CompetitorHub').then((m) => ({ default: m.CompetitorHub }))
+);
+const AvatarSettingsModal = React.lazy(() =>
+  import('./components/AvatarSettingsModal').then((m) => ({ default: m.AvatarSettingsModal }))
+);
+const MarketTrendChart = React.lazy(() =>
+  import('./components/MarketTrendChart').then((m) => ({ default: m.MarketTrendChart }))
+);
+const PriceDistributionChart = React.lazy(() =>
+  import('./components/PriceDistributionChart').then((m) => ({ default: m.PriceDistributionChart }))
+);
+const SellerTypeChart = React.lazy(() =>
+  import('./components/SellerTypeChart').then((m) => ({ default: m.SellerTypeChart }))
+);
+const BrandLeaderboard = React.lazy(() =>
+  import('./components/BrandLeaderboard').then((m) => ({ default: m.BrandLeaderboard }))
+);
+const TopProductsTable = React.lazy(() =>
+  import('./components/TopProductsTable').then((m) => ({ default: m.TopProductsTable }))
+);
+const LaunchDateChart = React.lazy(() =>
+  import('./components/LaunchDateChart').then((m) => ({ default: m.LaunchDateChart }))
+);
+const NewVsOldChart = React.lazy(() =>
+  import('./components/NewVsOldChart').then((m) => ({ default: m.NewVsOldChart }))
+);
+const RatingDistributionChart = React.lazy(() =>
+  import('./components/RatingDistributionChart').then((m) => ({ default: m.RatingDistributionChart }))
+);
+const SellerLocationChart = React.lazy(() =>
+  import('./components/SellerLocationChart').then((m) => ({ default: m.SellerLocationChart }))
+);
+const SegmentShareChart = React.lazy(() =>
+  import('./components/SegmentShareChart').then((m) => ({ default: m.SegmentShareChart }))
+);
+const SeasonalHeatmap = React.lazy(() =>
+  import('./components/SeasonalHeatmap').then((m) => ({ default: m.SeasonalHeatmap }))
+);
+const BsrDistributionChart = React.lazy(() =>
+  import('./components/BsrDistributionChart').then((m) => ({ default: m.BsrDistributionChart }))
+);
+const PriceRatingChart = React.lazy(() =>
+  import('./components/PriceRatingChart').then((m) => ({ default: m.PriceRatingChart }))
+);
+const MarketConcentrationChart = React.lazy(() =>
+  import('./components/MarketConcentrationChart').then((m) => ({ default: m.MarketConcentrationChart }))
+);
 interface ErrorBoundaryProps {
   children: ReactNode;
 }
@@ -84,6 +154,15 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
+    const message = `${error.message}\n${error.stack || ''}`;
+    if (/Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk/i.test(message)) {
+      const key = 'amzdev_chunk_reload_once';
+      if (sessionStorage.getItem(key) !== '1') {
+        sessionStorage.setItem(key, '1');
+        window.location.reload();
+        return;
+      }
+    }
     this.setState({ errorMessage: error.message + '\n' + error.stack });
   }
 
@@ -123,27 +202,50 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 }
 
+function LazyPanelLoading({ label = '正在加载模块…' }: { label?: string }) {
+  return (
+    <div className="flex items-center justify-center py-12 text-sm text-[#aeaeb2]">
+      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+      {label}
+    </div>
+  );
+}
+
 export default function App() {
   // ── Auth & AI Settings ────────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(() => {
-    ensureBuiltinAdmin();
-    const user = getCurrentUser();
-    if (isAdminSession(user)) {
-      try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
-    }
-    return user;
+    return getCurrentUser();
   });
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(() => loadAiSettings());
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
   const [isAvatarSettingsOpen, setIsAvatarSettingsOpen] = useState(false);
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
+  const [activeProject, setActiveProject] = useState<ResearchProject | null>(null);
 
-  // 每次进入应用：同步内置管理员 + 四家 MCP 默认 Key
   useEffect(() => {
-    ensureBuiltinAdmin();
-    if (isAdminSession(currentUser)) {
+    sessionStorage.removeItem('amzdev_chunk_reload_once');
+    const saved = localStorage.getItem('amzdev_theme');
+    const theme = saved === 'dark' || saved === 'system' ? saved : 'light';
+    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.classList.toggle('dark', theme === 'dark' || (theme === 'system' && prefersDark));
+  }, []);
+
+  // 管理员登录后：拉取服务器 Key，再初始化 MCP/AI 默认值
+  useEffect(() => {
+    if (!currentUser) return;
+    const token = getAuthToken();
+    if (!token) return;
+    let cancelled = false;
+    void (async () => {
+      const keys = await fetchServerKeys(token);
+      if (cancelled) return;
+      if (!Object.values(keys).some((v) => String(v || '').trim())) return;
+      saveServerKeys(keys);
       try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
-    }
+      setAiSettings(loadAiSettings());
+    })();
+    return () => { cancelled = true; };
   }, [currentUser]);
 
   // 飞书 OAuth 回跳：把 token 写入本机
@@ -157,9 +259,6 @@ export default function App() {
     const isGuest = sessionStorage.getItem('guest_mode') === '1';
     if (!isGuest) {
       const user = getCurrentUser();
-      if (isAdminSession(user)) {
-        try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
-      }
       setCurrentUser(user);
       setAiSettings(loadAiSettings());
     } else {
@@ -175,8 +274,9 @@ export default function App() {
   }, []);
 
   const handleSaveAiSettings = useCallback((settings: AiSettings) => {
-    saveAiSettings(settings);
-    setAiSettings(settings);
+    const cleaned = sanitizeAiSettings(settings);
+    saveAiSettings(cleaned);
+    setAiSettings(cleaned);
   }, []);
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -214,7 +314,7 @@ export default function App() {
     setIsSegmentationOpen(false);
   }, []);
 
-  const [activeView, setActiveView] = useState<'market' | 'competitors' | 'insights' | 'keywords' | 'profit'>('market');
+  const [activeView, setActiveView] = useState<'projects' | 'market' | 'competitors' | 'insights' | 'keywords' | 'profit'>('projects');
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isReportHidden, setIsReportHidden] = useState(false);
   const [isMarketHistoryOpen, setIsMarketHistoryOpen] = useState(false);
@@ -241,7 +341,40 @@ export default function App() {
 
   const handlePersistMarketReport = useCallback((body: string) => {
     setMarketReportCache({ fingerprint: reportDataFingerprint, body });
-  }, [reportDataFingerprint]);
+    if (activeProject) {
+      const uid = currentUser?.id ?? '';
+      void saveReport(uid, activeProject.id, {
+        reportType: 'market',
+        subjectId: marketplace.code,
+        title: `看市场报告 · ${marketplace.code}`,
+        markdown: body,
+        dataFingerprint: reportDataFingerprint,
+        promptVersion: 'market-v1',
+        modelName: aiSettings?.model ?? '',
+      })
+        .then(() => syncUserProjectsToCloud(uid))
+        .catch(() => {});
+    }
+  }, [reportDataFingerprint, activeProject, currentUser, marketplace.code, aiSettings]);
+
+  const archiveProjectReport = useCallback(
+    (reportType: 'user' | 'competitor', subjectId: string, title: string, markdown: string, dataFingerprint: string) => {
+      if (!activeProject || !markdown.trim()) return;
+      const uid = currentUser?.id ?? '';
+      void saveReport(uid, activeProject.id, {
+        reportType,
+        subjectId,
+        title,
+        markdown,
+        dataFingerprint,
+        promptVersion: 'v1',
+        modelName: aiSettings?.model ?? '',
+      })
+        .then(() => syncUserProjectsToCloud(uid))
+        .catch(() => {});
+    },
+    [activeProject, currentUser, aiSettings]
+  );
 
   const openMarketReport = useCallback(() => {
     setIsReportOpen(true);
@@ -268,7 +401,10 @@ export default function App() {
   const handleKeywordInsightSync = useCallback((state: AiInsight | null) => {
     setKeywordInsight(state);
     void set('keywordInsight', state);
-  }, []);
+    if (state) {
+      archiveProjectReport('user', 'keyword', '看用户报告 · 关键词', aiInsightToMarkdown(state, '看用户报告 · 关键词'), `kw:${keywords.length}:${reviews.length}`);
+    }
+  }, [archiveProjectReport, keywords.length, reviews.length]);
 
   /** 主内容滚动区 ref，供锚点批注绑定滚动与点击捕获 */
   const scrollMainRef = useRef<HTMLDivElement>(null);
@@ -290,7 +426,16 @@ export default function App() {
   const handleUserInsightsWorkspaceSync = useCallback((state: UserInsightsWorkspaceState) => {
     setUserInsightsWorkspace(state);
     void set('userInsightsWorkspace', state);
-  }, []);
+    const md = vocReportToMarkdown({ insight: state.deepInsight, markdown: state.deepReport, title: '看用户报告 · VOC' });
+    if (md) archiveProjectReport('user', 'voc', '看用户报告 · VOC', md, `voc:${reviews.length}`);
+  }, [archiveProjectReport, reviews.length]);
+
+  const handleCompetitorWorkspaceSync = useCallback((state: CompetitorWorkspaceState) => {
+    setCompetitorWorkspace(state);
+    if (state?.aiReportHtml) {
+      archiveProjectReport('competitor', state.selected.join(','), '看竞品报告', competitorReportToMarkdown(state.aiReportHtml, '看竞品报告'), `comp:${state.selected.length}`);
+    }
+  }, [archiveProjectReport]);
 
   const isRegisteredUser = Boolean(currentUser && currentUser.id !== 'guest');
 
@@ -1071,6 +1216,7 @@ export default function App() {
   const handleDataLoaded = async (file1: File, file2: File) => {
     setIsLoading(true);
     try {
+      const { detectMarketplaceFromFile, parseProducts, parseHistory } = await import('./utils/parser');
       // 优先从文件内容（货币符号）识别站点；文件名识别作兜底
       const contentDetected = await detectMarketplaceFromFile(file2) ?? await detectMarketplaceFromFile(file1);
       const marketplaceInfo = contentDetected ?? getMarketplace(file1, file2);
@@ -1222,6 +1368,31 @@ export default function App() {
     setLastYearKpiMonths(lastYear);
   }, []);
 
+  const marketContext = useMemo<MarketContext>(() => ({
+    loaded: isDataLoaded,
+    marketplace: marketplace.code,
+    sampleSize: products.length,
+    months,
+    sourceLabel: historySourceLabel,
+    isDemo: isDemoData,
+    domain: marketplace.domain,
+    asinToSegment,
+  }), [isDataLoaded, marketplace.code, marketplace.domain, products.length, months, historySourceLabel, isDemoData, asinToSegment]);
+
+  const userContext = useMemo<UserContext>(() => ({
+    keywordsCount: keywords.length,
+    reviewsCount: reviews.length,
+    sourceLabel: historySourceLabel,
+    isDemo: isDemoData,
+  }), [keywords.length, reviews.length, historySourceLabel, isDemoData]);
+
+  const competitorContext = useMemo<CompetitorContext>(() => ({
+    loaded: competitorWorkspace?.hasResult ?? false,
+    asinCount: competitorWorkspace?.selected?.length ?? 0,
+    marketplace: competitorWorkspace?.marketplace ?? '',
+    isDemo: isDemoData,
+  }), [competitorWorkspace, isDemoData]);
+
   /** 侧栏「定位」：切到批注所在 Tab 并滚动、高亮锚点模块 */
   const jumpToAnnotation = useCallback((a: AnchorAnnotation) => {
     setActiveView(a.view);
@@ -1273,7 +1444,9 @@ export default function App() {
 
       {/* ── Login Gate ───────────────────────────────────────────────── */}
       {!currentUser ? (
-        <LoginPage onLoginSuccess={handleLoginSuccess} />
+        <React.Suspense fallback={<LazyPanelLoading label="正在加载登录页…" />}>
+          <LoginPage onLoginSuccess={handleLoginSuccess} />
+        </React.Suspense>
       ) : (
       <>
       {isLoading || isInitializing || isRestoring ? (
@@ -1301,41 +1474,13 @@ export default function App() {
         </div>
         <nav className="flex-1 p-4 space-y-1">
           <button 
-            onClick={() => setActiveView('market')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'market' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            onClick={() => { setActiveProject(null); setActiveView('projects'); }}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'projects' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
           >
-            <LayoutDashboard className="w-5 h-5" />
-            <span>市场大盘</span>
+            <FolderKanban className="w-5 h-5" />
+            <span>项目中心</span>
           </button>
-          <button 
-            onClick={() => setActiveView('competitors')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'competitors' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <Crosshair className="w-5 h-5" />
-            <span>竞品分析</span>
-          </button>
-          <button 
-            onClick={() => setActiveView('insights')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'insights' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <Users className="w-5 h-5" />
-            <span>用户洞察</span>
-          </button>
-          <button 
-            onClick={() => setActiveView('keywords')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'keywords' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <TrendingUp className="w-5 h-5" />
-            <span>关键词分析</span>
-          </button>
-          <button 
-            onClick={() => setActiveView('profit')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'profit' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <Calculator className="w-5 h-5" />
-            <span>利润计算器</span>
-          </button>
-        </nav>
+</nav>
         <div className="p-4 border-t border-black/5 space-y-2">
           {isRegisteredUser && (
             <div className="flex items-stretch gap-1.5 px-2">
@@ -1386,16 +1531,16 @@ export default function App() {
                     <img src={currentUser.avatarDataUrl} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <span className="w-full h-full bg-indigo-600 flex items-center justify-center text-white text-[10px] font-bold">
-                      {currentUser?.username?.[0]?.toUpperCase()}
+                      {(currentUser?.nickname || currentUser?.username)?.[0]?.toUpperCase()}
                     </span>
                   )}
                 </button>
               ) : (
                 <div className="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center shrink-0">
-                  <span className="text-white text-[10px] font-bold">{currentUser?.username?.[0]?.toUpperCase()}</span>
+                  <span className="text-white text-[10px] font-bold">{(currentUser?.nickname || currentUser?.username)?.[0]?.toUpperCase()}</span>
                 </div>
               )}
-              <span className="text-xs font-medium text-[#1d1d1f] truncate">{currentUser?.username}</span>
+              <span className="text-xs font-medium text-[#1d1d1f] truncate">{currentUser?.nickname || currentUser?.username}</span>
             </div>
             <button onClick={handleLogout} className="text-[10px] text-[#86868b] hover:text-rose-600 transition-colors shrink-0 ml-2">退出</button>
           </div>
@@ -1405,14 +1550,26 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-black/5 px-8 py-4 flex items-center justify-between z-10 sticky top-0">
+        <header className={`bg-white/80 backdrop-blur-md border-b border-black/5 px-8 py-4 items-center justify-between z-10 sticky top-0 ${activeView === 'projects' && activeProject ? 'hidden' : 'flex'}`}>
           <div className="flex items-center space-x-4">
+            {activeProject && activeView !== 'projects' && (
+              <button
+                type="button"
+                onClick={() => setActiveView('projects')}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-all"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                返回项目
+              </button>
+            )}
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight text-[#1d1d1f]">
-                {activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品分析' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
+                {activeView === 'projects' ? '项目中心' : activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品分析' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
               </h1>
               <p className="text-[15px] text-[#86868b] mt-1">
-                {activeView === 'market' 
+                {activeView === 'projects'
+                  ? '创建并继续市调项目，跟踪五看进度与下一步。'
+                  : activeView === 'market' 
                   ? '分析市场趋势、竞争对手及产品机会。' 
                   : activeView === 'competitors'
                   ? '选定竞品 ASIN，从 Listing、流量、产品矩阵三视角全盘对比。'
@@ -1432,6 +1589,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3 shrink-0" data-print-hidden>
+            {activeView !== 'projects' && (
             <button
               type="button"
               onClick={handleExportPdf}
@@ -1440,6 +1598,7 @@ export default function App() {
               <Printer className="w-4 h-4 text-indigo-600" />
               存为 PDF
             </button>
+            )}
             {activeView === 'market' && isDataLoaded && (
             <div className="flex items-center space-x-4">
               {/* Market Segmentation Button */}
@@ -1509,13 +1668,51 @@ export default function App() {
               </div>
             </div>
           )}
+          {activeView === 'projects' && (activeProject ? (
+            <React.Suspense fallback={<LazyPanelLoading label="正在加载项目工作台…" />}>
+              <ProjectWorkspace
+                userId={currentUser?.id ?? ''}
+                project={activeProject}
+                username={currentUser?.nickname || currentUser?.username || ''}
+                marketContext={marketContext}
+                userContext={userContext}
+                competitorContext={competitorContext}
+                products={products}
+                history={history}
+                reviews={reviews}
+                setReviews={setReviews}
+                persona={persona}
+                setPersona={setPersona}
+                keywords={keywords}
+                setKeywords={setKeywords}
+                marketplaceCode={marketplace.code}
+                keywordInsight={keywordInsight}
+                keywordInsightRestoreKey={keywordInsightRestoreKey}
+                onKeywordInsightSync={handleKeywordInsightSync}
+                vocInitialDeepReport={isDemoData ? getDemoData().vocDeepReportHtml : null}
+                userInsightsWorkspace={userInsightsWorkspace}
+                userInsightsRestoreKey={userInsightsRestoreKey}
+                userInsightsRestorePayload={userInsightsRestorePayload}
+                onUserInsightsWorkspaceSync={handleUserInsightsWorkspaceSync}
+                onBack={() => setActiveProject(null)}
+                onOpenTool={(view) => setActiveView(view)}
+                onProjectChange={(updated) => setActiveProject(updated)}
+              />
+            </React.Suspense>
+          ) : (
+            <React.Suspense fallback={<LazyPanelLoading label="正在加载项目中心…" />}>
+              <ProjectCenter userId={currentUser?.id ?? ''} username={currentUser?.nickname || currentUser?.username || ''} marketContext={marketContext} userContext={userContext} competitorContext={competitorContext} onOpenProject={setActiveProject} />
+            </React.Suspense>
+          ))}
           {!isDataLoaded && activeView === 'market' ? (
             <div className="h-full flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-700">
               <div className="text-center space-y-2">
                 <h2 className="text-[32px] font-bold text-[#1d1d1f] tracking-tight">欢迎使用 Amazon 市场洞察</h2>
                 <p className="text-[#86868b] text-lg">上传您的市场数据，开启深度分析之旅</p>
               </div>
-              <FileUpload onDataLoaded={handleDataLoaded} />
+              <React.Suspense fallback={<LazyPanelLoading label="正在加载上传控件…" />}>
+                <FileUpload onDataLoaded={handleDataLoaded} />
+              </React.Suspense>
               <button 
                 onClick={handleReset}
                 className="text-sm text-[#86868b] hover:text-rose-600 transition-colors"
@@ -1531,7 +1728,9 @@ export default function App() {
                 <div className="flex flex-col space-y-4" data-annotate-anchor="market-kpi-header">
                   {/* ── Market Scorecard（默认隐藏，设置 → 功能开关 中开启） ── */}
                   {featureFlags.showMarketScorecard && (
-                    <MarketScorecard products={filteredProducts} history={filteredHistory} months={months} />
+                    <React.Suspense fallback={<LazyPanelLoading label="正在加载市场评分卡…" />}>
+                      <MarketScorecard products={filteredProducts} history={filteredHistory} months={months} />
+                    </React.Suspense>
                   )}
                   <DataQualityPanel quality={marketDataQuality} />
 
@@ -1648,6 +1847,7 @@ export default function App() {
 
                 {/* Charts Grid */}
                 <div className="grid grid-cols-1 gap-6" data-annotate-anchor="market-charts">
+                  <React.Suspense fallback={<LazyPanelLoading label="正在加载市场图表…" />}>
                   <div data-annotate-anchor="segment-share-chart">
                     <SegmentShareChart 
                     products={products}
@@ -1668,7 +1868,9 @@ export default function App() {
                     <MarketConcentrationChart products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} />
                   </div>
                   <div data-annotate-anchor="market-opportunity-scanner">
-                    <OpportunityScanner products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
+                    <React.Suspense fallback={<LazyPanelLoading label="正在加载机会扫描…" />}>
+                      <OpportunityScanner products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
+                    </React.Suspense>
                   </div>
                   <div data-annotate-anchor="brand-leaderboard">
                     <BrandLeaderboard products={filteredProducts} history={filteredHistory} months={months} domain={marketplace.domain} asinToSegment={asinToSegment} />
@@ -1719,6 +1921,7 @@ export default function App() {
                       maxSelect={5}
                     />
                   </div>
+                  </React.Suspense>
                 </div>
               </div>
               }
@@ -1729,18 +1932,20 @@ export default function App() {
                   className={activeView === 'competitors' ? 'max-w-7xl mx-auto' : 'hidden'}
                   data-annotate-anchor="competitors-root"
                 >
-                  <CompetitorHub
-                    products={products}
-                    marketplaceCode={marketplace.code}
-                    domain={marketplace.domain}
-                    preselectedAsins={selectedCompareAsins}
-                    demoSnapshot={isDemoData ? competitorDemo : null}
-                    userId={currentUser?.id || 'guest'}
-                    workspaceFromParent={competitorWorkspace}
-                    workspaceRestoreKey={competitorRestoreKey}
-                    restorePayload={competitorRestorePayload}
-                    onWorkspaceSync={setCompetitorWorkspace}
-                  />
+                  <React.Suspense fallback={<LazyPanelLoading label="正在加载竞品工具…" />}>
+                    <CompetitorHub
+                      products={products}
+                      marketplaceCode={marketplace.code}
+                      domain={marketplace.domain}
+                      preselectedAsins={selectedCompareAsins}
+                      demoSnapshot={isDemoData ? competitorDemo : null}
+                      userId={currentUser?.id || 'guest'}
+                      workspaceFromParent={competitorWorkspace}
+                      workspaceRestoreKey={competitorRestoreKey}
+                      restorePayload={competitorRestorePayload}
+                      onWorkspaceSync={handleCompetitorWorkspaceSync}
+                    />
+                  </React.Suspense>
                 </div>
               )}
               {/* 有市场数据、或当前在用户洞察、或已有评论数据时保持挂载（后台打标不因切 Tab 中断） */}
@@ -1749,56 +1954,53 @@ export default function App() {
                   className={activeView === 'insights' ? 'max-w-7xl mx-auto' : 'hidden'}
                   data-annotate-anchor="insights-root"
                 >
-                  <UserInsights
-                    products={products}
-                    reviews={reviews}
-                    setReviews={setReviews}
-                    persona={persona}
-                    setPersona={setPersona}
-                    insightsUiActive={activeView === 'insights'}
-                    marketplaceCode={marketplace.code}
-                    initialDeepReport={isDemoData ? getDemoData().vocDeepReportHtml : null}
-                    workspaceFromParent={userInsightsWorkspace}
-                    workspaceRestoreKey={userInsightsRestoreKey}
-                    restorePayload={userInsightsRestorePayload}
-                    onWorkspaceSync={handleUserInsightsWorkspaceSync}
-                  />
+                  <React.Suspense fallback={<LazyPanelLoading label="正在加载评论 / VOC 工具…" />}>
+                    <UserInsights
+                      products={products}
+                      reviews={reviews}
+                      setReviews={setReviews}
+                      persona={persona}
+                      setPersona={setPersona}
+                      insightsUiActive={activeView === 'insights'}
+                      marketplaceCode={marketplace.code}
+                      initialDeepReport={isDemoData ? getDemoData().vocDeepReportHtml : null}
+                      workspaceFromParent={userInsightsWorkspace}
+                      workspaceRestoreKey={userInsightsRestoreKey}
+                      restorePayload={userInsightsRestorePayload}
+                      onWorkspaceSync={handleUserInsightsWorkspaceSync}
+                    />
+                  </React.Suspense>
                 </div>
               )}
 
               {activeView === 'keywords' &&
                 <div className="max-w-7xl mx-auto" data-annotate-anchor="keywords-root">
-                  <KeywordAnalysis 
-                    keywords={keywords} 
-                    setKeywords={setKeywords}
-                    marketplaceCode={marketplace.code}
-                    suggestAsins={products.slice(0, 8).map((p) => p.asin).filter(Boolean)}
-                    initialInsight={isDemoData ? getDemoData().keywordAiInsight : null}
-                    persistedInsight={keywordInsight}
-                    insightRestoreKey={keywordInsightRestoreKey}
-                    onInsightSync={handleKeywordInsightSync}
-                  />
+                  <React.Suspense fallback={<LazyPanelLoading label="正在加载关键词工具…" />}>
+                    <KeywordAnalysis 
+                      keywords={keywords} 
+                      setKeywords={setKeywords}
+                      marketplaceCode={marketplace.code}
+                      suggestAsins={products.slice(0, 8).map((p) => p.asin).filter(Boolean)}
+                      initialInsight={isDemoData ? getDemoData().keywordAiInsight : null}
+                      persistedInsight={keywordInsight}
+                      insightRestoreKey={keywordInsightRestoreKey}
+                      onInsightSync={handleKeywordInsightSync}
+                    />
+                  </React.Suspense>
                 </div>
               }
 
               {activeView === 'profit' &&
                 <div className="max-w-7xl mx-auto" data-annotate-anchor="profit-root">
-                  <ProfitCalculator />
+                  <React.Suspense fallback={<LazyPanelLoading label="正在加载利润计算器…" />}>
+                    <ProfitCalculator />
+                  </React.Suspense>
                 </div>
               }
             </>
           )}
         </div>
       </main>
-
-      {/* ── ASIN Compare Bar ── */}
-      <AsinCompareBar
-        products={filteredProducts}
-        selectedAsins={selectedCompareAsins}
-        onRemove={(asin) => setSelectedCompareAsins(prev => prev.filter(a => a !== asin))}
-        onClear={() => setSelectedCompareAsins([])}
-        domain={marketplace.domain}
-      />
 
       {!isLoading && !isInitializing && !isRestoring && (
         <AnchorAnnotationsLayer
@@ -1815,48 +2017,54 @@ export default function App() {
     </div>
       )}
 
-      {isDataLoaded && (
-        <div className={isSegmentationOpen ? '' : 'hidden'}>
-          <SegmentationManager 
-            products={products}
-            history={history}
-            months={months}
-            segments={segments}
-            asinToSegment={asinToSegment}
-            segmentChildren={segmentChildren}
-            asinToSubSegment={asinToSubSegment}
-            segmentDescriptions={segmentDescriptions}
-            segmentSubDescriptions={segmentSubDescriptions}
-            segmentDepth={segmentDepth}
-            segmentLevel3Children={segmentLevel3Children}
-            asinToLevel3Segment={asinToLevel3Segment}
-            segmentLevel3Descriptions={segmentLevel3Descriptions}
-            domain={marketplace.domain}
-            onUpdateSegments={setSegments}
-            onUpdateAsinToSegment={setAsinToSegment}
-            onUpdateSegmentChildren={setSegmentChildren}
-            onUpdateAsinToSubSegment={setAsinToSubSegment}
-            onUpdateSegmentDescriptions={setSegmentDescriptions}
-            onUpdateSegmentSubDescriptions={setSegmentSubDescriptions}
-            onUpdateSegmentDepth={handleSegmentDepthChange}
-            onUpdateSegmentLevel3Children={setSegmentLevel3Children}
-            onUpdateAsinToLevel3Segment={setAsinToLevel3Segment}
-            onUpdateSegmentLevel3Descriptions={setSegmentLevel3Descriptions}
-            onGenerateReport={openMarketReport}
-            onRemoveSelectedAsins={handleRemoveMarketAsins}
-            onAiRunningChange={setIsSegAiRunning}
-            onClose={handleCloseSegmentation}
-          />
+      {isDataLoaded && isSegmentationOpen && (
+        <div>
+          <React.Suspense fallback={<LazyPanelLoading label="正在加载细分管理…" />}>
+            <SegmentationManager 
+              products={products}
+              history={history}
+              months={months}
+              segments={segments}
+              asinToSegment={asinToSegment}
+              segmentChildren={segmentChildren}
+              asinToSubSegment={asinToSubSegment}
+              segmentDescriptions={segmentDescriptions}
+              segmentSubDescriptions={segmentSubDescriptions}
+              segmentDepth={segmentDepth}
+              segmentLevel3Children={segmentLevel3Children}
+              asinToLevel3Segment={asinToLevel3Segment}
+              segmentLevel3Descriptions={segmentLevel3Descriptions}
+              domain={marketplace.domain}
+              onUpdateSegments={setSegments}
+              onUpdateAsinToSegment={setAsinToSegment}
+              onUpdateSegmentChildren={setSegmentChildren}
+              onUpdateAsinToSubSegment={setAsinToSubSegment}
+              onUpdateSegmentDescriptions={setSegmentDescriptions}
+              onUpdateSegmentSubDescriptions={setSegmentSubDescriptions}
+              onUpdateSegmentDepth={handleSegmentDepthChange}
+              onUpdateSegmentLevel3Children={setSegmentLevel3Children}
+              onUpdateAsinToLevel3Segment={setAsinToLevel3Segment}
+              onUpdateSegmentLevel3Descriptions={setSegmentLevel3Descriptions}
+              onGenerateReport={openMarketReport}
+              onRemoveSelectedAsins={handleRemoveMarketAsins}
+              onAiRunningChange={setIsSegAiRunning}
+              onClose={handleCloseSegmentation}
+            />
+          </React.Suspense>
         </div>
       )}
 
       {isAiSettingsOpen && (
-        <AiSettingsPanel
-          settings={aiSettings}
-          onSave={handleSaveAiSettings}
-          onClose={() => setIsAiSettingsOpen(false)}
-          onFeatureFlagsChange={setFeatureFlags}
-        />
+        <React.Suspense fallback={<LazyPanelLoading label="正在加载设置…" />}>
+          <AiSettingsPanel
+            settings={aiSettings}
+            onSave={handleSaveAiSettings}
+            onClose={() => setIsAiSettingsOpen(false)}
+            onFeatureFlagsChange={setFeatureFlags}
+            currentUser={currentUser}
+            onAccountSaved={setCurrentUser}
+          />
+        </React.Suspense>
       )}
 
       {/* AI Chatbot */}
@@ -1886,12 +2094,14 @@ export default function App() {
       )}
 
       {isRegisteredUser && (
-        <MarketHistoryModal
-          open={isMarketHistoryOpen}
-          userId={currentUser!.id}
-          onClose={() => setIsMarketHistoryOpen(false)}
-          onApplySnapshot={applyMarketSnapshotFromHistory}
-        />
+        <React.Suspense fallback={null}>
+          <MarketHistoryModal
+            open={isMarketHistoryOpen}
+            userId={currentUser!.id}
+            onClose={() => setIsMarketHistoryOpen(false)}
+            onApplySnapshot={applyMarketSnapshotFromHistory}
+          />
+        </React.Suspense>
       )}
 
       {isReportOpen && isReportHidden && (
@@ -1905,35 +2115,40 @@ export default function App() {
       )}
 
       {isReportOpen && (
-        <MarketAnalysisReport 
-          products={products}
-          history={history}
-          months={months}
-          segments={segments}
-          asinToSegment={asinToSegment}
-          segmentDescriptions={segmentDescriptions}
-          dataQuality={allMarketDataQuality}
-          cachedReportMarkdown={
-            marketReportCache?.fingerprint === reportDataFingerprint ? marketReportCache.body : null
-          }
-          onPersistReport={handlePersistMarketReport}
-          hidden={isReportHidden}
-          onHide={hideMarketReport}
-          onClose={closeMarketReport}
-        />
+        <React.Suspense fallback={<LazyPanelLoading label="正在加载市场报告…" />}>
+          <MarketAnalysisReport 
+            products={products}
+            history={history}
+            months={months}
+            segments={segments}
+            asinToSegment={asinToSegment}
+            segmentDescriptions={segmentDescriptions}
+            dataQuality={allMarketDataQuality}
+            cachedReportMarkdown={
+              marketReportCache?.fingerprint === reportDataFingerprint ? marketReportCache.body : null
+            }
+            onPersistReport={handlePersistMarketReport}
+            hidden={isReportHidden}
+            onHide={hideMarketReport}
+            onClose={closeMarketReport}
+          />
+        </React.Suspense>
       )}
 
-      {isRegisteredUser && currentUser && (
-        <AvatarSettingsModal
-          open={isAvatarSettingsOpen}
-          userId={currentUser.id}
-          username={currentUser.username}
-          currentAvatar={currentUser.avatarDataUrl}
-          onClose={() => setIsAvatarSettingsOpen(false)}
-          onSaved={(avatar) =>
-            setCurrentUser((prev) => (prev ? { ...prev, avatarDataUrl: avatar } : prev))
-          }
-        />
+      {isAvatarSettingsOpen && isRegisteredUser && currentUser && (
+        <React.Suspense fallback={<LazyPanelLoading label="正在加载头像设置…" />}>
+          <AvatarSettingsModal
+            open={isAvatarSettingsOpen}
+            userId={currentUser.id}
+            username={currentUser.username}
+            nickname={currentUser.nickname}
+            currentAvatar={currentUser.avatarDataUrl}
+            onClose={() => setIsAvatarSettingsOpen(false)}
+            onSaved={(profile) =>
+              setCurrentUser((prev) => (prev ? { ...prev, nickname: profile.nickname, avatarDataUrl: profile.avatarDataUrl } : prev))
+            }
+          />
+        </React.Suspense>
       )}
 
       </>

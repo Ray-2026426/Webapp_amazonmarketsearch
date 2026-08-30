@@ -1,9 +1,10 @@
 import { buildUserBackgroundSystemPrompt } from './userBackground';
-import { getCurrentUser, isAdminSession } from './auth';
+import { getAuthToken, getCurrentUser, isAdminSession } from './auth';
+import { getDefaultServerKey, pushServerKeys } from './serverKeys';
 
 // AI Provider Configuration & Unified Call Layer
 
-export type AiProvider = 'gemini' | 'openai' | 'claude' | 'deepseek' | 'qwen' | 'moonshot' | 'zhipu' | 'doubao';
+export type AiProvider = 'gemini' | 'openai' | 'claude' | 'deepseek' | 'qwen' | 'moonshot' | 'zhipu' | 'doubao' | 'custom';
 
 export interface AiProviderConfig {
   id: AiProvider;
@@ -43,8 +44,8 @@ export const AI_PROVIDERS: AiProviderConfig[] = [
     id: 'deepseek',
     name: 'DeepSeek',
     baseUrl: '/api-proxy/deepseek',
-    defaultModel: 'deepseek-chat',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    defaultModel: 'deepseek-v4-flash',
+    models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
     apiKeyPlaceholder: 'sk-...',
   },
   {
@@ -79,6 +80,14 @@ export const AI_PROVIDERS: AiProviderConfig[] = [
     models: ['doubao-seed-1-6-flash-250615', 'doubao-seed-1-6-thinking-250715', 'doubao-1-5-pro-32k-250115', 'doubao-1-5-lite-32k-250115'],
     apiKeyPlaceholder: 'Volcengine Ark API Key',
   },
+  {
+    id: 'custom',
+    name: '\u81ea\u5b9a\u4e49 / \u4e2d\u8f6c API',
+    baseUrl: '',
+    defaultModel: 'gpt-4o-mini',
+    models: ['gpt-4o-mini'],
+    apiKeyPlaceholder: '\u586b\u5199\u4e2d\u8f6c\u7ad9 API Key',
+  },
 ];
 
 export interface AiSettings {
@@ -91,9 +100,43 @@ export interface AiSettings {
   customModels?: Partial<Record<AiProvider, string[]>>;
 }
 
+export function isValidCustomApiUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('/')) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function sanitizeAiApiUrls(
+  apiUrls?: Partial<Record<AiProvider, string>>
+): Partial<Record<AiProvider, string>> | undefined {
+  if (!apiUrls) return undefined;
+  const cleaned: Partial<Record<AiProvider, string>> = {};
+  for (const provider of AI_PROVIDERS.map((p) => p.id)) {
+    const value = apiUrls[provider]?.trim();
+    if (value && isValidCustomApiUrl(value)) cleaned[provider] = value;
+  }
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+}
+
+export function sanitizeAiSettings(settings: AiSettings): AiSettings {
+  return {
+    ...settings,
+    apiKey: settings.apiKey ?? '',
+    model: settings.model || getProviderConfig(settings.provider).defaultModel,
+    apiUrls: sanitizeAiApiUrls(settings.apiUrls),
+  };
+}
+
 /** 获取某个供应商生效的 API URL（优先使用自定义 URL，否则返回默认 URL） */
 export function getEffectiveApiUrl(settings: AiSettings, provider: AiProvider): string {
-  return settings.apiUrls?.[provider]?.trim() || getProviderConfig(provider).baseUrl;
+  const customUrl = settings.apiUrls?.[provider]?.trim();
+  return customUrl && isValidCustomApiUrl(customUrl) ? customUrl : getProviderConfig(provider).baseUrl;
 }
 
 /** 获取某个供应商的完整模型列表（默认模型 + 自定义模型） */
@@ -118,14 +161,15 @@ export function loadAiSettings(): AiSettings | null {
   try {
     const storageKey = getAiSettingsKey();
     const raw = localStorage.getItem(storageKey);
-    if (raw) return JSON.parse(raw) as AiSettings;
+    if (raw) return sanitizeAiSettings(JSON.parse(raw) as AiSettings);
     const legacyRaw = canUseDefaultAiKey() ? localStorage.getItem(AI_SETTINGS_KEY) : null;
     if (legacyRaw) {
-      localStorage.setItem(storageKey, legacyRaw);
-      return JSON.parse(legacyRaw) as AiSettings;
+      const migrated = sanitizeAiSettings(JSON.parse(legacyRaw) as AiSettings);
+      localStorage.setItem(storageKey, JSON.stringify(migrated));
+      return migrated;
     }
     // \u56de\u9000\u5230 .env.local \u9ed8\u8ba4\u914d\u7f6e\uff0c\u65e0\u9700\u624b\u52a8\u8f93\u5165
-    const defaultKey = canUseDefaultAiKey() ? (import.meta.env.VITE_DEFAULT_AI_KEY as string | undefined) : '';
+    const defaultKey = canUseDefaultAiKey() ? getDefaultServerKey('deepseek') : '';
     const defaultProvider = (import.meta.env.VITE_DEFAULT_AI_PROVIDER ?? 'deepseek') as AiProvider;
     const defaultModel = (import.meta.env.VITE_DEFAULT_AI_MODEL ?? 'deepseek-chat') as string;
     // 无密钥时也返回 DeepSeek 默认项，方便你在「AI 设置」里直接填 Key
@@ -140,7 +184,13 @@ export function loadAiSettings(): AiSettings | null {
 }
 
 export function saveAiSettings(settings: AiSettings): void {
-  localStorage.setItem(getAiSettingsKey(), JSON.stringify(settings));
+  const cleaned = sanitizeAiSettings(settings);
+  localStorage.setItem(getAiSettingsKey(), JSON.stringify(cleaned));
+
+  const token = getAuthToken();
+  if (isAdminSession(getCurrentUser()) && token && cleaned.provider === 'deepseek') {
+    void pushServerKeys(token, { deepseek: cleaned.apiKey });
+  }
 }
 
 export function getProviderConfig(provider: AiProvider): AiProviderConfig {
@@ -364,13 +414,15 @@ async function callGeminiWithImages(
 
 /** 是否填写了自定义 API URL */
 export function hasCustomApiUrl(settings: AiSettings, provider: AiProvider): boolean {
-  return Boolean(settings.apiUrls?.[provider]?.trim());
+  const customUrl = settings.apiUrls?.[provider]?.trim();
+  return Boolean(customUrl && isValidCustomApiUrl(customUrl));
 }
 
 /** 将用户填写的中转 API 地址补全为可请求的完整 endpoint（不会重复添加 /v1） */
 export function resolveCustomApiUrl(url: string, provider: AiProvider): string {
   const cleaned = url.trim().replace(/\/+$/, '');
   if (!cleaned) return cleaned;
+  if (!isValidCustomApiUrl(cleaned)) return '';
 
   if (provider === 'gemini') {
     if (/\/models\/.*:generateContent$/i.test(cleaned) || /\/generateContent$/i.test(cleaned)) {
@@ -380,6 +432,15 @@ export function resolveCustomApiUrl(url: string, provider: AiProvider): string {
   }
 
   if (/\/chat\/completions$/i.test(cleaned)) return cleaned;
+
+  if (provider === 'deepseek') {
+    if (/\/v1$/i.test(cleaned)) return `${cleaned.replace(/\/v1$/i, '')}/chat/completions`;
+    try {
+      const path = new URL(cleaned).pathname.replace(/\/+$/, '') || '/';
+      if (path === '/' || path === '') return `${cleaned}/chat/completions`;
+    } catch {}
+    return cleaned;
+  }
 
   if (provider === 'zhipu') {
     if (/\/api\/paas\/v4\/chat\/completions$/i.test(cleaned)) return cleaned;
@@ -397,6 +458,16 @@ export function resolveCustomApiUrl(url: string, provider: AiProvider): string {
     try {
       const path = new URL(cleaned).pathname.replace(/\/+$/, '') || '/';
       if (path === '/' || path === '') return `${cleaned}/api/v3/chat/completions`;
+    } catch {}
+    return cleaned;
+  }
+
+  if (provider === 'custom') {
+    if (/\/chat\/completions$/i.test(cleaned)) return cleaned;
+    if (/\/v1$/i.test(cleaned)) return `${cleaned}/chat/completions`;
+    try {
+      const path = new URL(cleaned).pathname.replace(/\/+$/, '') || '/';
+      if (path === '/' || path === '') return `${cleaned}/v1/chat/completions`;
     } catch {}
     return cleaned;
   }
@@ -453,7 +524,7 @@ function parseOpenAICompatResponse(text: string, endpoint: string): string {
 /** 构建 API endpoint */
 export function buildEndpoint(settings: AiSettings, provider: AiProvider): string {
   const customUrl = settings.apiUrls?.[provider]?.trim();
-  if (customUrl) {
+  if (customUrl && isValidCustomApiUrl(customUrl)) {
     return resolveCustomApiUrl(customUrl, provider);
   }
 
@@ -463,6 +534,12 @@ export function buildEndpoint(settings: AiSettings, provider: AiProvider): strin
   }
   if (provider === 'doubao') {
     return `${baseUrl}/chat/completions`;
+  }
+  if (provider === 'deepseek') {
+    return `${baseUrl}/chat/completions`;
+  }
+  if (provider === 'custom') {
+    return `${baseUrl || '/api-proxy/openai'}/v1/chat/completions`;
   }
   return `${baseUrl}/v1/chat/completions`;
 }

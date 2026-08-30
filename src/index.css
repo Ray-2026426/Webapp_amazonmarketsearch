@@ -2,6 +2,23 @@
 
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+
+  /* 品牌中性色（Apple 风格，收敛现有散落的硬编码灰阶） */
+  --color-canvas: #f5f5f7;
+  --color-canvas-soft: #fafafa;
+  --color-canvas-inset: #f8f9fb;
+  --color-ink: #1d1d1f;
+  --color-ink-secondary: #424245;
+  --color-ink-tertiary: #86868b;
+  --color-ink-muted: #aeaeb2;
+  --color-ink-faint: #c7c7cc;
+  --color-line: #e5e7eb;
+
+  /* 品牌主色（indigo/violet，收敛现有 837 处品牌色类） */
+  --color-brand: #4f46e5;
+  --color-brand-strong: #4338ca;
+  --color-brand-soft: #eef2ff;
+  --color-accent: #8b5cf6;
 }
 
 body {
@@ -10,6 +27,166 @@ body {
   color: #1d1d1f;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.dark body,
+[data-theme="dark"] body {
+  background-color: #0b0d12;
+  color: #f4f4f5;
+}
+
+.dark .bg-white,
+[data-theme="dark"] .bg-white {
+  background-color: #181b22 !important;
+}
+
+.dark .bg-\[\#f5f5f7\],
+[data-theme="dark"] .bg-\[\#f5f5f7\],
+.dark .bg-\[\#fafafa\],
+[data-theme="dark"] .bg-\[\#fafafa\],
+.dark .bg-\[\#f8f9fb\],
+[data-theme="dark"] .bg-\[\#f8f9fb\] {
+  background-color: #11141a !important;
+}
+
+.dark .bg-slate-50,
+[data-theme="dark"] .bg-slate-50,
+.dark .bg-slate-100,
+[data-theme="dark"] .bg-slate-100 {
+  background-color: #20242d !important;
+}
+
+.dark .bg-indigo-50,
+[data-theme="dark"] .bg-indigo-50,
+.dark .bg-indigo-50\/30,
+[data-theme="dark"] .bg-indigo-50\/30,
+.dark .bg-indigo-50\/40,
+[data-theme="dark"] .bg-indigo-50\/40,
+.dark .bg-indigo-50\/50,
+[data-theme="dark"] .bg-indigo-50\/50,
+.dark .bg-indigo-50\/70,
+[data-theme="dark"] .bg-indigo-50\/70 {
+  background-color: rgba(79, 70, 229, 0.16) !important;
+}
+
+.dark .bg-emerald-50,
+[data-theme="dark"] .bg-emerald-50,
+.dark .bg-emerald-50\/50,
+[data-theme="dark"] .bg-emerald-50\/50,
+.dark .bg-emerald-50\/70,
+[data-theme="dark"] .bg-emerald-50\/70 {
+  background-color: rgba(16, 185, 129, 0.14) !important;
+}
+
+.dark .bg-amber-50,
+[data-theme="dark"] .bg-amber-50,
+.dark .bg-amber-50\/50,
+[data-theme="dark"] .bg-amber-50\/50,
+.dark .bg-amber-50\/70,
+[data-theme="dark"] .bg-amber-50\/70 {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+}
+
+.dark .bg-rose-50,
+[data-theme="dark"] .bg-rose-50,
+.dark .bg-rose-50\/50,
+[data-theme="dark"] .bg-rose-50\/50,
+.dark .bg-rose-50\/70,
+[data-theme="dark"] .bg-rose-50\/70 {
+  background-color: rgba(244, 63, 94, 0.14) !important;
+}
+
+.dark .text-\[\#1d1d1f\],
+[data-theme="dark"] .text-\[\#1d1d1f\] {
+  color: #f5f5f7 !important;
+}
+
+.dark .text-\[\#424245\],
+[data-theme="dark"] .text-\[\#424245\] {
+  color: #d1d5db !important;
+}
+
+.dark .text-\[\#86868b\],
+[data-theme="dark"] .text-\[\#86868b\],
+.dark .text-\[\#aeaeb2\],
+[data-theme="dark"] .text-\[\#aeaeb2\] {
+  color: #a1a1aa !important;
+}
+
+.dark .text-slate-800,
+[data-theme="dark"] .text-slate-800,
+.dark .text-slate-700,
+[data-theme="dark"] .text-slate-700,
+.dark .text-slate-600,
+[data-theme="dark"] .text-slate-600 {
+  color: #e4e4e7 !important;
+}
+
+.dark .text-slate-500,
+[data-theme="dark"] .text-slate-500,
+.dark .text-slate-400,
+[data-theme="dark"] .text-slate-400,
+.dark .text-slate-300,
+[data-theme="dark"] .text-slate-300 {
+  color: #a1a1aa !important;
+}
+
+.dark .border-black\/5,
+[data-theme="dark"] .border-black\/5,
+.dark .border-black\/8,
+[data-theme="dark"] .border-black\/8,
+.dark .border-black\/10,
+[data-theme="dark"] .border-black\/10 {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .border-slate-100,
+[data-theme="dark"] .border-slate-100,
+.dark .border-slate-200,
+[data-theme="dark"] .border-slate-200,
+.dark .border-indigo-100,
+[data-theme="dark"] .border-indigo-100,
+.dark .border-emerald-100,
+[data-theme="dark"] .border-emerald-100,
+.dark .border-amber-100,
+[data-theme="dark"] .border-amber-100,
+.dark .border-rose-100,
+[data-theme="dark"] .border-rose-100 {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.dark .shadow-sm,
+[data-theme="dark"] .shadow-sm,
+.dark .shadow-xl,
+[data-theme="dark"] .shadow-xl,
+.dark .shadow-2xl,
+[data-theme="dark"] .shadow-2xl {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.38) !important;
+}
+
+.dark .bg-gradient-to-b,
+[data-theme="dark"] .bg-gradient-to-b,
+.dark .bg-gradient-to-r,
+[data-theme="dark"] .bg-gradient-to-r {
+  background-image: none !important;
+}
+
+.dark input,
+.dark textarea,
+.dark select,
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+  background-color: #11141a !important;
+  color: #f5f5f7 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder,
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: #6b7280 !important;
 }
 
 .markdown-body {

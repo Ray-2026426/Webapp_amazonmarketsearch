@@ -8,11 +8,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx tests/progress.test.ts && tsx tests/cloudSync.test.ts && tsx tests/authAccount.test.ts && tsx tests/aiConfig.test.ts && tsx tests/members.test.ts && tsx tests/teamStore.test.ts && tsx tests/optimistic.test.ts && tsx tests/assets.test.ts && tsx tests/lookOptimize.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
+    "@supabase/supabase-js": "^2.112.3",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/pg": "^8.23.1",
     "@vitejs/plugin-react": "^5.0.4",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
@@ -22,6 +25,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pg": "^8.23.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",

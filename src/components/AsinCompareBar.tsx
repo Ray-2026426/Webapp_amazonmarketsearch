@@ -1,5 +1,6 @@
 import React from 'react';
-import { Product, getCurrencySymbol } from '../utils/parser';
+import type { Product } from '../utils/parser';
+import { getCurrencySymbol } from '../utils/marketFormat';
 import { X, ExternalLink, Star } from 'lucide-react';
 
 interface AsinCompareBarProps {

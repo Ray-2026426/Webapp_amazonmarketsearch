@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { X, User, ImagePlus, Trash2 } from 'lucide-react';
-import { updateUserAvatar } from '../utils/auth';
+import { updateAccountProfile } from '../utils/auth';
 import { toast } from 'sonner';
 
 const MAX_EDGE = 160;
@@ -47,21 +47,25 @@ interface AvatarSettingsModalProps {
   open: boolean;
   userId: string;
   username: string;
+  nickname?: string;
   currentAvatar?: string | null;
   onClose: () => void;
-  onSaved: (avatarDataUrl?: string) => void;
+  onSaved: (profile: { nickname: string; avatarDataUrl?: string }) => void;
 }
 
 export const AvatarSettingsModal: React.FC<AvatarSettingsModalProps> = ({
   open,
   userId,
   username,
+  nickname,
   currentAvatar,
   onClose,
   onSaved,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [displayName, setDisplayName] = useState(nickname || username);
+  const [avatarPreview, setAvatarPreview] = useState<string | undefined>(currentAvatar ?? undefined);
 
   if (!open) return null;
 
@@ -80,15 +84,7 @@ export const AvatarSettingsModal: React.FC<AvatarSettingsModalProps> = ({
     }
     setBusy(true);
     try {
-      const dataUrl = await fileToAvatarDataUrl(f);
-      const res = updateUserAvatar(userId, dataUrl);
-      if (!res.ok) {
-        toast.error(res.error ?? '保存失败');
-        return;
-      }
-      toast.success('头像已更新');
-      onSaved(dataUrl);
-      onClose();
+      setAvatarPreview(await fileToAvatarDataUrl(f));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '处理失败');
     } finally {
@@ -96,14 +92,14 @@ export const AvatarSettingsModal: React.FC<AvatarSettingsModalProps> = ({
     }
   };
 
-  const clearAvatar = () => {
-    const res = updateUserAvatar(userId, null);
+  const save = () => {
+    const finalName = displayName.trim() || username;
+    const res = updateAccountProfile(userId, { nickname: finalName, avatarDataUrl: avatarPreview });
     if (!res.ok) {
-      toast.error(res.error ?? '清除失败');
+      toast.error(res.error ?? '保存失败');
       return;
     }
-    toast.success('已恢复默认头像');
-    onSaved(undefined);
+    onSaved({ nickname: finalName, avatarDataUrl: avatarPreview });
     onClose();
   };
 
@@ -113,24 +109,33 @@ export const AvatarSettingsModal: React.FC<AvatarSettingsModalProps> = ({
         <div className="flex items-center justify-between px-5 py-4 border-b border-black/5">
           <div className="flex items-center gap-2">
             <User className="w-5 h-5 text-indigo-600" />
-            <h2 className="text-lg font-bold text-[#1d1d1f]">头像设置</h2>
+            <h2 className="text-lg font-bold text-[#1d1d1f]">账号信息</h2>
           </div>
           <button type="button" onClick={onClose} className="p-2 rounded-full hover:bg-black/5">
             <X className="w-5 h-5 text-[#86868b]" />
           </button>
         </div>
         <div className="p-6 space-y-5">
-          <p className="text-sm text-[#86868b]">账号「{username}」的头像保存在本机浏览器，换电脑需重新设置。</p>
+          <p className="text-sm text-[#86868b]">账号资料会跟随当前登录账号保存。</p>
+          <label className="block">
+            <span className="block text-xs font-semibold text-[#424245] mb-1.5">昵称</span>
+            <input
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder={username}
+              className="w-full px-3 py-2.5 rounded-xl border border-black/8 bg-gradient-to-b from-white to-[#f8f9fb] text-sm text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 transition-all"
+            />
+          </label>
           <div className="flex justify-center">
-            {currentAvatar ? (
+            {avatarPreview ? (
               <img
-                src={currentAvatar}
+                src={avatarPreview}
                 alt=""
                 className="w-24 h-24 rounded-2xl object-cover border border-black/10 shadow-sm"
               />
             ) : (
               <div className="w-24 h-24 rounded-2xl bg-indigo-600 flex items-center justify-center text-white text-2xl font-bold">
-                {username[0]?.toUpperCase() ?? '?'}
+                {(displayName.trim() || username)[0]?.toUpperCase() ?? '?'}
               </div>
             )}
           </div>
@@ -143,18 +148,26 @@ export const AvatarSettingsModal: React.FC<AvatarSettingsModalProps> = ({
               className="w-full py-3 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
             >
               <ImagePlus className="w-4 h-4" />
-              {busy ? '处理中…' : '选择图片'}
+              {busy ? '处理中…' : '选择头像'}
             </button>
-            {currentAvatar && (
+            {avatarPreview && (
               <button
                 type="button"
-                onClick={clearAvatar}
+                onClick={() => setAvatarPreview(undefined)}
                 className="w-full py-2.5 rounded-xl border border-black/10 text-sm font-medium text-[#86868b] hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center gap-2"
               >
                 <Trash2 className="w-4 h-4" />
                 清除头像
               </button>
             )}
+            <button
+              type="button"
+              disabled={busy}
+              onClick={save}
+              className="w-full py-3 rounded-xl bg-[#1d1d1f] text-white text-sm font-semibold hover:bg-black disabled:opacity-50"
+            >
+              保存账号信息
+            </button>
           </div>
         </div>
       </div>

@@ -5,6 +5,7 @@ export interface AiPromptConfig {
   id: string;
   name: string;
   description: string;
+  version?: string;
   defaultPrompt: string;
   currentPrompt: string;
 }
@@ -242,15 +243,37 @@ const DEFAULT_PROMPTS: Omit<AiPromptConfig, 'currentPrompt'>[] = [
     defaultPrompt: '你是亚马逊产品矩阵与选品顾问。请基于「父体下子体结构」与「同品牌其他链接（来自大盘数据）」做对比，用简体中文输出 HTML 片段（不要 html/body 外壳）。\n\n## 输出结构\n1. 一句话总判断（各品牌矩阵完整度）\n2. 父体变体打法：规格覆盖、价格带、锚点子体角色\n3. 同品牌其他链接：是否多父体铺货、是否有明显爆款线\n4. 对我们入局的启示：该跟哪条规格线、避开哪条红海线\n5. 3 条产品/链接布局建议\n\n要求：严格基于给定表数据；销量/价格缺失时注明「大盘未覆盖」；面向业务负责人。' },
   { id: 'competitor_full_report', name: '竞品·综合解析报告', description: '一次生成 Listing + 流量 + 产品矩阵的合并报告',
     defaultPrompt: '你是亚马逊竞品分析顾问。请把 Listing、流量、产品矩阵三部分合成一份完整报告，用简体中文输出 HTML 片段（不要 html/body 外壳，从 div 开始；可用内联 style；配色以白底+靛紫强调为主）。\n\n## 报告结构（必须按此顺序）\n### 执行摘要\n一句话总判断 + 3 条最重要动作。\n\n### 一、Listing 对比（买家进详情页视角）\n主图/标题/价格评分/五点/徽章差异；谁更转化。\n\n### 二、流量对比\n流量结构、广告依赖度（广告词÷流量词，用白话解释）、核心词流量占比、ABA、自然/广告排名机会。\n\n### 三、产品矩阵\n父体变体结构 + 同品牌其他链接（大盘数据）；价格带与销量暗示。\n\n### 四、行动清单\n按「本周可做 / 两周内 / 需验证」分三级，每级 2–3 条。\n\n## 排版\n- 章节用圆角卡片；标题用靛紫渐变条或左边框\n- 关键数字/ASIN 加粗\n- 可用表格对比\n- 面向业务负责人，少术语；术语首次出现括号解释\n- 禁止编造数据中没有的字段' },
+  { id: 'self_category_questions', name: '看自己·品类引导问题', description: '结合账号背景、需求细分与竞对缝隙生成 3–7 个针对性问题',
+    defaultPrompt: `你是新品立项评审顾问。请根据账号背景、研究目标、目标需求、细分市场和竞对缝隙，只提出真正会改变“我们是否适合抓住这个机会”结论的问题。
+
+规则：
+1. 只输出 3–7 个问题；优先选择题和数值题，必要时才用短文本题。
+2. 不重复账号背景中已有答案。
+3. 问题必须落到供应链、研发、预算、MOQ、合规、利润边界、渠道或团队能力。
+4. 缺数据时提问，不得替用户假设答案。
+5. 严格输出 JSON：{"questions":[{"question":"","type":"choice|number|text","options":[""],"reason":"为什么会影响机会判断","impactDimension":"strength|gap|boundary|fit"}]}` },
+  { id: 'five_look_opportunity', name: '五看·综合机会识别', description: '基于五看证据生成 0–N 个候选机会',
+    defaultPrompt: `你是亚马逊新品机会评审委员会。请综合看用户、看市场、看竞对、看自己的结构化结论，识别 0–N 个真实机会。
+
+机会只允许两类：market_growth（需求增长/供不应求）或 competitor_gap（竞对未满足明确需求）。市场大、搜索量高、零散差评都不能单独证明机会。证据不足时必须返回空 opportunities，并在 resultStatus 中写 insufficient_evidence；已确认没有机会时写 no_opportunity。禁止为了完成任务强行生成机会。
+
+每个机会必须引用输入中的 evidence ID，并同时给出支持证据、反证、缺失证据和可审核的“证据→判断→结论”结构化推理。严格输出 JSON：
+{"resultStatus":"opportunities|no_opportunity|insufficient_evidence","reasons":[""],"opportunities":[{"title":"","opportunityType":"market_growth|competitor_gap","targetUser":"","scenario":"","jobToBeDone":"","needStatement":"","currentAlternative":"","solutionHypothesis":"","marketEvidenceIds":[""],"userEvidenceIds":[""],"competitorEvidenceIds":[""],"selfAssessmentId":"","scoreBreakdown":{"demandStrength":0,"marketOpportunity":0,"competitorGap":0,"selfFit":0,"evidenceConfidence":0},"coverage":0,"confidence":"high|medium|low","risks":[""],"counterEvidence":[""],"missingEvidence":[""],"reasoning":[{"evidenceIds":[""],"judgement":"","conclusion":""}]}]}` },
+  { id: 'opportunity_counter_review', name: '机会·反证审查', description: '主动寻找机会不成立的证据与逻辑跳跃',
+    defaultPrompt: `你是反方立项评审人。你的目标不是补强机会，而是找出它为什么可能不成立。严格基于给定机会和证据，检查需求是否真实、市场是否只是表面增长、竞对是否其实已满足需求、自身能力是否被高估、证据是否过时或互相矛盾。不得虚构反证。严格输出 JSON：{"counterEvidence":[""],"conflicts":[""],"missingEvidence":[""],"recommendedDowngrade":"none|confidence|score|reject","reviewSummary":""}` },
+  { id: 'opportunity_review_summary', name: '机会·审核摘要', description: '生成给同事或老板看的机会结论摘要',
+    defaultPrompt: `你是新品立项审核秘书。请基于已确认机会、人工修改和关键证据，生成简洁、可审计的审核摘要。先给最终判断，再给机会排名、最关键依据、主要保留意见和证据不足。不要新增输入中不存在的数字或机会。严格输出 JSON：{"finalJudgement":"","rankedOpportunities":[{"id":"","reason":""}],"keyEvidence":[""],"reservations":[""],"humanChanges":[""]}` },
 ];
+
+const PHASE0_PROMPT_IDS = new Set(['self_category_questions', 'five_look_opportunity', 'opportunity_counter_review', 'opportunity_review_summary']);
 
 export function loadPrompts(): AiPromptConfig[] {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     const savedMap: Record<string, string> = saved ? JSON.parse(saved) : {};
-    return DEFAULT_PROMPTS.map(p => ({ ...p, currentPrompt: savedMap[p.id] ?? p.defaultPrompt }));
+    return DEFAULT_PROMPTS.map(p => ({ ...p, version: PHASE0_PROMPT_IDS.has(p.id) ? 'phase0-v1' : undefined, currentPrompt: savedMap[p.id] ?? p.defaultPrompt }));
   } catch {
-    return DEFAULT_PROMPTS.map(p => ({ ...p, currentPrompt: p.defaultPrompt }));
+    return DEFAULT_PROMPTS.map(p => ({ ...p, version: PHASE0_PROMPT_IDS.has(p.id) ? 'phase0-v1' : undefined, currentPrompt: p.defaultPrompt }));
   }
 }
 
@@ -308,7 +331,7 @@ export const AiPromptManager: React.FC<AiPromptManagerProps> = ({ onClose, embed
             <div className="flex items-center justify-between px-4 py-3 bg-white">
               <button type="button" className="flex-1 flex items-center gap-3 text-left" onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}>
                 <div className="w-2 h-2 rounded-full bg-indigo-500 shrink-0"/>
-                <div><div className="text-sm font-semibold text-[#1d1d1f]">{p.name}</div><div className="text-xs text-[#86868b]">{p.description}</div></div>
+                <div><div className="flex items-center gap-2"><div className="text-sm font-semibold text-[#1d1d1f]">{p.name}</div>{p.version && <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">{p.version}</span>}</div><div className="text-xs text-[#86868b]">{p.description}</div></div>
                 {expandedId === p.id ? <ChevronUp className="w-4 h-4 text-[#86868b] ml-auto shrink-0"/> : <ChevronDown className="w-4 h-4 text-[#86868b] ml-auto shrink-0"/>}
               </button>
               <div className="flex items-center gap-2 ml-3">
