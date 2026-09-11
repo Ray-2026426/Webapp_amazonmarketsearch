@@ -25,6 +25,8 @@ import {
 import { updateLookProgress } from '../utils/projectStore';
 import { SegmentScoreCards } from './SegmentScoreCards';
 import type { ResearchProject } from '../types/researchProject';
+import { LookAiBar } from './LookAiBar';
+import { makeMergeAcc, mergeText, mergeList } from '../utils/lookAiMerge';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -125,6 +127,18 @@ export function MarketLookView({
     update({ evidence: makeMarketEvidence(marketContext) });
   };
 
+  /** M1：AI 起草回填（只填空字段，不覆盖人工已填内容） */
+  const applyAi = (out: Record<string, unknown>) => {
+    const acc = makeMergeAcc();
+    update({
+      attractiveness: mergeText(data.attractiveness, out.attractiveness, '市场吸引力判断', acc),
+      keyEvidences: mergeList(data.keyEvidences, out.keyEvidences, '关键证据', acc),
+      risks: mergeList(data.risks, out.risks, '主要风险', acc),
+      openQuestions: mergeList(data.openQuestions, out.openQuestions, '待验证问题', acc),
+    });
+    return { filled: acc.filled, skipped: acc.skipped };
+  };
+
   return (
     <div className="space-y-4">
       {/* 头部 */}
@@ -142,6 +156,12 @@ export function MarketLookView({
         </div>
         <SaveBadge state={saveState} />
       </div>
+
+      <LookAiBar
+        look="market"
+        onApply={applyAi}
+        hint="已上传产品表与历史表时，AI 会基于规模、趋势、集中度、价格带给出吸引力判断与关键证据，并生成对看用户 / 看竞对的待验证问题。"
+      />
 
       {/* 数据上下文 */}
       <Card>

@@ -18,6 +18,7 @@ import {
   makeUserEvidence,
   computeUserProgress,
   emptyUnmetNeedCandidate,
+  createUnmetNeedId,
   EVIDENCE_STRENGTH_LABELS,
   type UserContext,
   type UserEvidence,
@@ -27,6 +28,8 @@ import {
 } from '../utils/userLook';
 import { updateLookProgress } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
+import { LookAiBar } from './LookAiBar';
+import { makeMergeAcc, mergeText, mergeList, mergeUnmetNeedCandidates } from '../utils/lookAiMerge';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -117,6 +120,26 @@ export function UserLookView({
 
   const captureEvidence = () => update({ evidence: makeUserEvidence(userContext) });
 
+  /** M1：AI 起草回填（只填空字段，不覆盖人工已填内容） */
+  const applyAi = (out: Record<string, unknown>) => {
+    const acc = makeMergeAcc();
+    const patch: Partial<UserLookData> = {
+      targetUser: mergeText(data.targetUser, out.targetUser, '目标用户', acc),
+      scenario: mergeText(data.scenario, out.scenario, '使用场景', acc),
+      jobToBeDone: mergeText(data.jobToBeDone, out.jobToBeDone, '用户任务 / JTBD', acc),
+      satisfiedNeeds: mergeList(data.satisfiedNeeds, out.satisfiedNeeds, '已满足需求', acc),
+      unmetNeedCandidates: mergeUnmetNeedCandidates(
+        data.unmetNeedCandidates,
+        out.unmetNeedCandidates,
+        createUnmetNeedId,
+        '未满足需求候选',
+        acc
+      ),
+    };
+    update(patch);
+    return { filled: acc.filled, skipped: acc.skipped };
+  };
+
   return (
     <div className="space-y-4">
       {/* 头部 */}
@@ -135,6 +158,11 @@ export function UserLookView({
         <SaveBadge state={saveState} />
       </div>
 
+      <LookAiBar
+        look="user"
+        onApply={applyAi}
+        hint="已经加载了关键词与评论数据时，AI 会把它们合并成需求地图（目标用户 / 场景 / JTBD / 已满足 / 未满足候选），并吸收市场细分里的人群·场景·需求描述。"
+      />
       {/* 数据上下文 */}
       <Card>
         <div className="p-5">

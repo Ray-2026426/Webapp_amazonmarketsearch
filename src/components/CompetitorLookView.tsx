@@ -23,6 +23,8 @@ import {
 import { updateLookProgress } from '../utils/projectStore';
 import { CompetitorPickerPanel } from './CompetitorPickerPanel';
 import type { ResearchProject } from '../types/researchProject';
+import { LookAiBar } from './LookAiBar';
+import { makeMergeAcc, mergeText, mergeList } from '../utils/lookAiMerge';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -109,6 +111,19 @@ export function CompetitorLookView({
     update({ evidence: makeCompetitorEvidence(competitorContext) });
   };
 
+  /** M1：AI 起草回填（只填空字段，不覆盖人工已填内容） */
+  const applyAi = (out: Record<string, unknown>) => {
+    const acc = makeMergeAcc();
+    update({
+      samplePool: mergeList(data.samplePool, out.samplePool, '竞品样本池', acc),
+      benchmarkAsins: mergeList(data.benchmarkAsins, out.benchmarkAsins, '标杆 ASIN', acc),
+      barriers: mergeText(data.barriers, out.barriers, '竞争壁垒与经营能力', acc),
+      needMatrix: mergeText(data.needMatrix, out.needMatrix, '需求满足矩阵', acc),
+      gaps: mergeList(data.gaps, out.gaps, '未充分满足的产品缺口', acc),
+    });
+    return { filled: acc.filled, skipped: acc.skipped };
+  };
+
   return (
     <div className="space-y-4">
       {/* 头部 */}
@@ -126,6 +141,12 @@ export function CompetitorLookView({
         </div>
         <SaveBadge state={saveState} />
       </div>
+
+      <LookAiBar
+        look="competitor"
+        onApply={applyAi}
+        hint="已选择竞品 ASIN 时，AI 会做产品层 + 主体层拆解：样本池分层、标杆 ASIN、壁垒、需求满足矩阵与产品缺口。"
+      />
 
       {/* 数据上下文 */}
       <Card>
