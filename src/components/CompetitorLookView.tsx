@@ -25,6 +25,7 @@ import { CompetitorPickerPanel } from './CompetitorPickerPanel';
 import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
 import { mergeCompetitorLookAi } from '../utils/lookAiApply';
+import { addEvidence } from '../utils/evidence';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -109,6 +110,12 @@ export function CompetitorLookView({
   const captureEvidence = () => {
     if (!competitorContext.loaded) return;
     update({ evidence: makeCompetitorEvidence(competitorContext) });
+    void addEvidence(userId, project.id, {
+      look: 'competitor',
+      type: 'asin',
+      sourceRef: `asin:${competitorContext.asinCount}@${new Date().toISOString().slice(0, 10)}`,
+      summary: `竞品 ${competitorContext.asinCount} 个 ASIN · ${competitorContext.marketplace}`,
+    });
   };
 
   /** M1：AI 起草回填（只填空字段；逻辑与一键向导共用） */

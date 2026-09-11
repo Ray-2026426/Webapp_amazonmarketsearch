@@ -16,6 +16,7 @@ import { updateLookProgress } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
 import { mergeSelfAi, buildSelfAnswers } from '../utils/lookAiApply';
+import { addEvidence } from '../utils/evidence';
 
 const STATUS_ORDER: SelfStatus[] = ['have', 'partial', 'lack', 'unknown'];
 
@@ -94,6 +95,14 @@ export function SelfAssessmentView({
   const applyAi = (out: Record<string, unknown>) => {
     const { next, filled, skipped } = mergeSelfAi(assessment, out);
     scheduleSave(next);
+    void addEvidence(userId, project.id, {
+      look: 'self',
+      type: 'assessment',
+      sourceRef: `self:${new Date().toISOString().slice(0, 10)}`,
+      summary: `自评已答 ${assessment.items.filter((i) => i.status !== 'unknown').length}/${
+        assessment.items.length
+      } 项 + AI 适配度结论`,
+    });
     return { filled, skipped };
   };
 

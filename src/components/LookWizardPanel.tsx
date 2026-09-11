@@ -27,6 +27,7 @@ import {
   describeSnapshot,
   type SnapshotSummary,
 } from '../utils/projectSnapshot';
+import { loadEvidence, countEvidenceByLook, describeEvidence, EVIDENCE_LOOK_LABELS } from '../utils/evidence';
 import { FIVE_LOOK_LABELS, type ResearchProject } from '../types/researchProject';
 
 /**
@@ -76,7 +77,14 @@ export function LookWizardPanel({
 }) {
   const [steps, setSteps] = useState<WizardStep[]>(initialSteps);
   const [running, setRunning] = useState(false);
-  const [draft, setDraft] = useState<{ unmetCount: number; unmetTop: string[]; missing: string[] } | null>(null);
+  const [draft, setDraft] = useState<{
+    unmetCount: number;
+    unmetTop: string[];
+    missing: string[];
+    evidenceTotal: number;
+    evidenceByLook: Record<string, number>;
+    evidenceTop: string[];
+  } | null>(null);
   const [snap, setSnap] = useState<{ summary: SnapshotSummary; text: string } | null>(null);
   const [snapBusy, setSnapBusy] = useState(false);
 
@@ -89,6 +97,7 @@ export function LookWizardPanel({
         loadCompetitorLook(userId, project.id),
         loadSelfAssessment(userId, project.id),
       ]);
+      const evList = await loadEvidence(userId, project.id);
       const missing: string[] = [];
       if (!market.attractiveness.trim()) missing.push('看市场：缺吸引力判断');
       if (!user.targetUser.trim() && user.unmetNeedCandidates.length === 0) missing.push('看用户：缺用户与需求地图');
@@ -98,6 +107,9 @@ export function LookWizardPanel({
         unmetCount: user.unmetNeedCandidates.length,
         unmetTop: user.unmetNeedCandidates.slice(0, 3).map((c) => c.needStatement || '(未填写)'),
         missing,
+        evidenceTotal: evList.length,
+        evidenceByLook: countEvidenceByLook(evList) as unknown as Record<string, number>,
+        evidenceTop: evList.slice(0, 4).map((e) => describeEvidence(e)),
       });
     } catch {
       setDraft(null);
@@ -369,6 +381,30 @@ export function LookWizardPanel({
                 </ul>
               ) : (
                 <p className="text-[11px] text-emerald-700">五看证据已齐，可以进入「看机会」做结论。</p>
+              )}
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold text-[#424245] mb-1.5">
+                项目证据：{draft.evidenceTotal} 条
+              </p>
+              {draft.evidenceTotal > 0 ? (
+                <>
+                  <p className="text-[10px] text-[#86868b] mb-1">
+                    {(['user', 'market', 'competitor', 'self'] as const)
+                      .map((k) => `${EVIDENCE_LOOK_LABELS[k]} ${draft.evidenceByLook[k] ?? 0}`)
+                      .join(' · ')}
+                  </p>
+                  <ul className="space-y-1">
+                    {draft.evidenceTop.map((t, i) => (
+                      <li key={i} className="text-[10px] text-[#424245] leading-relaxed">· {t}</li>
+                    ))}
+                  </ul>
+                  {draft.evidenceTotal > draft.evidenceTop.length && (
+                    <p className="text-[10px] text-[#aeaeb2] mt-1">还有 {draft.evidenceTotal - draft.evidenceTop.length} 条…</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-[10px] text-[#86868b]">还没有证据 —— 在各看页面点「捕获为项目证据」即可入库。</p>
               )}
             </div>
             <p className="text-[10px] text-[#86868b] leading-relaxed pt-1 border-t border-black/5">

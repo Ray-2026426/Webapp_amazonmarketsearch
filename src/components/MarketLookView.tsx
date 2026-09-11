@@ -27,6 +27,7 @@ import { SegmentScoreCards } from './SegmentScoreCards';
 import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
 import { mergeMarketLookAi } from '../utils/lookAiApply';
+import { addEvidence } from '../utils/evidence';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -125,6 +126,14 @@ export function MarketLookView({
   const captureEvidence = () => {
     if (!marketContext.loaded) return;
     update({ evidence: makeMarketEvidence(marketContext) });
+    void addEvidence(userId, project.id, {
+      look: 'market',
+      type: 'chart',
+      sourceRef: `market:${marketContext.marketplace || 'unknown'}@${new Date().toISOString().slice(0, 10)}`,
+      summary: `市场大盘：${marketContext.marketplace} · ${marketContext.sampleSize} 个商品样本 · ${
+        marketContext.months.length
+      } 个月历史${marketContext.sourceLabel ? ` · ${marketContext.sourceLabel}` : ''}`,
+    });
   };
 
   /** M1：AI 起草回填（只填空字段；逻辑与一键向导共用） */

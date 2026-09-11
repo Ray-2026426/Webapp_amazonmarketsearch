@@ -29,6 +29,7 @@ import { updateLookProgress } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
 import { mergeUserLookAi } from '../utils/lookAiApply';
+import { addEvidence } from '../utils/evidence';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -117,7 +118,18 @@ export function UserLookView({
   const addList = (key: 'satisfiedNeeds') => update({ [key]: [...data[key], ''] } as Partial<UserLookData>);
   const removeList = (key: 'satisfiedNeeds', index: number) => update({ [key]: data[key].filter((_, i) => i !== index) } as Partial<UserLookData>);
 
-  const captureEvidence = () => update({ evidence: makeUserEvidence(userContext) });
+  const captureEvidence = () => {
+    update({ evidence: makeUserEvidence(userContext) });
+    // M1：同时写入结构化 Evidence（断链 #5：证据可追溯，而不是只有元数据）
+    void addEvidence(userId, project.id, {
+      look: 'user',
+      type: 'review',
+      sourceRef: `user:${userContext.sourceLabel || 'workspace'}@${new Date().toISOString().slice(0, 10)}`,
+      summary: `关键词 ${userContext.keywordsCount} 个 + 评论 ${userContext.reviewsCount} 条${
+        userContext.sourceLabel ? ` · ${userContext.sourceLabel}` : ''
+      }`,
+    });
+  };
 
   /** M1：AI 起草回填（只填空字段，不覆盖人工已填内容；逻辑与一键向导共用） */
   const applyAi = (out: Record<string, unknown>) => {
