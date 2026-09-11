@@ -154,6 +154,8 @@ export function MarketLookView({
 
       <LookAiBar
         look="market"
+        userId={userId}
+        projectId={project.id}
         onApply={applyAi}
         hint="已上传产品表与历史表时，AI 会基于规模、趋势、集中度、价格带给出吸引力判断与关键证据，并生成对看用户 / 看竞对的待验证问题。"
       />

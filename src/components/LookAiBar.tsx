@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, Loader2, RefreshCw, Sparkles } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { runLookAnalysis } from '../utils/lookAi';
 
@@ -25,6 +25,8 @@ export function LookAiBar({
   hint,
   disabled,
   onApply,
+  userId,
+  projectId,
 }: {
   look: LookAiKey;
   /** 传给 AI 的附加数据（如「看自己」的引导问题回答） */
@@ -32,20 +34,34 @@ export function LookAiBar({
   hint?: string;
   disabled?: boolean;
   onApply: (data: Record<string, unknown>) => LookAiApplyOutcome;
+  /** 传了这两项则启用**项目快照**（避免 AI 读到其他项目的数据） */
+  userId?: string;
+  projectId?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scopeNote, setScopeNote] = useState<string | null>(null);
+  const [fallback, setFallback] = useState(false);
 
   const run = async () => {
     setBusy(true);
     setError(null);
+    setScopeNote(null);
+    setFallback(false);
     try {
-      const res = await runLookAnalysis(look, extra);
+      const res = await runLookAnalysis(look, {
+        ...(extra ?? {}),
+        ...(userId && projectId ? { scope: { userId, projectId } } : {}),
+      });
       if (!res.ok || !res.data) {
         const msg = res.error || 'AI 分析失败';
         setError(msg);
         toast.error(msg);
         return;
+      }
+      if (res.scopeNote) {
+        setScopeNote(res.scopeNote);
+        setFallback(res.dataScope === 'global-fallback');
       }
       const outcome = onApply(res.data);
       if (outcome.filled.length === 0) {
@@ -91,6 +107,12 @@ export function LookAiBar({
         </button>
       </div>
       {hint && <p className="text-[11px] text-[#86868b] mt-1.5 leading-relaxed">{hint}</p>}
+      {scopeNote && (
+        <p className={`text-[11px] mt-1.5 leading-relaxed flex items-start gap-1.5 ${fallback ? 'text-amber-700' : 'text-[#424245]'}`}>
+          {fallback ? <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" /> : <CheckCircle2 className="w-3 h-3 mt-0.5 shrink-0 text-emerald-600" />}
+          <span>数据范围：{scopeNote}</span>
+        </p>
+      )}
       {error && (
         <p className="text-[11px] text-rose-600 mt-1.5 flex items-start gap-1.5">
           <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />

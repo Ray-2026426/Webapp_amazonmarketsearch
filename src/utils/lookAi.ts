@@ -5,6 +5,7 @@
 import { get } from 'idb-keyval';
 import { generateText, loadAiSettings, type AiSettings } from './aiConfig';
 import { loadUserBackground, buildUserBackgroundSystemPrompt } from './userBackground';
+import { loadSnapshot, describeSnapshot, type ProjectSnapshot } from './projectSnapshot';
 import type { Product, Review, Keyword } from './parser';
 
 export interface LookAiResult {
@@ -12,6 +13,33 @@ export interface LookAiResult {
   error?: string;
   /** 各看回填的结论（结构由各看约定） */
   data?: Record<string, unknown>;
+  /** 本次分析用的是「项目快照」还是「全局工作区回退」（PRD §7.2 跨项目污染修复） */
+  dataScope?: 'project' | 'global-fallback';
+  /** 给用户看的数据范围说明 */
+  scopeNote?: string;
+}
+
+/** 把项目快照映射成与 gatherGlobalMarketData 相同的形状，供各看 AI 使用 */
+function snapshotToGlobalData(snap: ProjectSnapshot): GlobalMarketData {
+  return {
+    loaded:
+      snap.products.length > 0 ||
+      snap.reviews.length > 0 ||
+      snap.keywords.length > 0 ||
+      snap.competitorAsins.length > 0,
+    marketplace: snap.marketplace,
+    productCount: snap.products.length,
+    products: snap.products,
+    historyMonths: snap.months,
+    reviews: snap.reviews,
+    keywords: snap.keywords,
+    competitorAsins: snap.competitorAsins,
+    isDemo: snap.isDemo,
+    segments: snap.segments,
+    asinToSegment: snap.asinToSegment,
+    history: snap.history,
+    segmentDescriptions: snap.segmentDescriptions,
+  };
 }
 
 /** 尝试解析 AI 返回的 JSON（容错：剥离 ```json 包裹、截取第一个 { 到最后一个 }）。 */
@@ -198,9 +226,41 @@ function buildSystemPromptFor(look: string): string {
 }
 
 /**
+ * 解析本次分析使用的数据范围（M1 · 修断链 #2）：
+ * 传了 scope（userId + projectId）且该项目已捕获快照 → 用**项目快照**，避免跨项目污染；
+ * 未捕获 → 回退全局工作区，并在 scopeNote 里**明确告知**，绝不假装是项目自己的数据。
+ */
+interface ScopedData {
+  market: GlobalMarketData;
+  dataScope: 'project' | 'global-fallback';
+  scopeNote: string;
+}
+
+async function resolveScopedData(extra?: Record<string, unknown>): Promise<ScopedData> {
+  const scope = extra?.scope as { userId?: string; projectId?: string } | undefined;
+  if (scope?.userId && scope?.projectId) {
+    const snap = await loadSnapshot(scope.userId, scope.projectId);
+    if (snap) {
+      return {
+        market: snapshotToGlobalData(snap),
+        dataScope: 'project',
+        scopeNote: `本项目数据快照 · ${describeSnapshot(snap)}`,
+      };
+    }
+    return {
+      market: await gatherGlobalMarketData(),
+      dataScope: 'global-fallback',
+      scopeNote:
+        '尚未捕获本项目数据快照，已回退到全局工作区数据（可能混入其他项目的数据）。建议先在项目「概览」页点「捕获项目快照」。',
+    };
+  }
+  return { market: await gatherGlobalMarketData(), dataScope: 'global-fallback', scopeNote: '' };
+}
+
+/**
  * 统一的「看」AI 分析出口。
  * @param look market|user|competitor|self
- * @param extra 附加数据（如自评的用户回答、竞品列表等）
+ * @param extra 附加数据（如自评的用户回答、竞品列表等）；extra.scope = { userId, projectId } 可启用项目快照
  */
 export async function runLookAnalysis(
   look: 'market' | 'user' | 'competitor' | 'self',
@@ -211,8 +271,9 @@ export async function runLookAnalysis(
     return { ok: false, error: '尚未配置 AI 模型 Key，请先到「设置 → API 与模型」填写。' };
   }
 
-  const data = await gatherGlobalMarketData();
-  const summary = summarizeMarketData(data);
+  const scoped = await resolveScopedData(extra);
+  const data = scoped.market;
+  const summary = `${scoped.scopeNote ? `【数据范围】${scoped.scopeNote}\n\n` : ''}${summarizeMarketData(data)}`;
 
   let prompt: string;
   let system: string = buildSystemPromptFor(look);
@@ -289,7 +350,7 @@ ${answerLines}`;
     const raw = await generateText(prompt, settings, { jsonMode: true, systemPrompt: system });
     const parsed = tryParseJson<Record<string, unknown>>(raw);
     if (!parsed) return { ok: false, error: 'AI 返回格式无法解析，请重试。' };
-    return { ok: true, data: parsed };
+    return { ok: true, data: parsed, dataScope: scoped.dataScope, scopeNote: scoped.scopeNote };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'AI 分析失败' };
   }

@@ -138,6 +138,8 @@ export function CompetitorLookView({
 
       <LookAiBar
         look="competitor"
+        userId={userId}
+        projectId={project.id}
         onApply={applyAi}
         hint="已选择竞品 ASIN 时，AI 会做产品层 + 主体层拆解：样本池分层、标杆 ASIN、壁垒、需求满足矩阵与产品缺口。"
       />

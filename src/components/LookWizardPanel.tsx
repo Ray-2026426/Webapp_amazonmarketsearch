@@ -20,6 +20,13 @@ import {
   SELF_STATUS_LABELS,
 } from '../utils/selfAssessment';
 import { updateLookProgress } from '../utils/projectStore';
+import {
+  captureAndSaveSnapshot,
+  loadSnapshot,
+  snapshotSummary,
+  describeSnapshot,
+  type SnapshotSummary,
+} from '../utils/projectSnapshot';
 import { FIVE_LOOK_LABELS, type ResearchProject } from '../types/researchProject';
 
 /**
@@ -70,6 +77,8 @@ export function LookWizardPanel({
   const [steps, setSteps] = useState<WizardStep[]>(initialSteps);
   const [running, setRunning] = useState(false);
   const [draft, setDraft] = useState<{ unmetCount: number; unmetTop: string[]; missing: string[] } | null>(null);
+  const [snap, setSnap] = useState<{ summary: SnapshotSummary; text: string } | null>(null);
+  const [snapBusy, setSnapBusy] = useState(false);
 
   /** 决策草稿：只反映"当前证据状态"，不编造机会（机会结论由看机会负责） */
   const refreshDraft = useCallback(async () => {
@@ -98,6 +107,29 @@ export function LookWizardPanel({
   useEffect(() => {
     void refreshDraft();
   }, [refreshDraft, project.updatedAt]);
+
+  const refreshSnapshot = useCallback(async () => {
+    const raw = await loadSnapshot(userId, project.id);
+    setSnap(raw ? { summary: snapshotSummary(raw), text: describeSnapshot(raw) } : null);
+  }, [userId, project.id]);
+
+  useEffect(() => {
+    void refreshSnapshot();
+  }, [refreshSnapshot]);
+
+  /** 捕获/更新本项目数据快照：AI 与细分评分从此只认这份数据，不再跨项目污染 */
+  const captureNow = async () => {
+    setSnapBusy(true);
+    try {
+      const raw = await captureAndSaveSnapshot(userId, project.id);
+      setSnap({ summary: snapshotSummary(raw), text: describeSnapshot(raw) });
+      toast.success('已捕获本项目数据快照');
+    } catch (e) {
+      toast.error(`捕获失败：${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSnapBusy(false);
+    }
+  };
 
   const patchStep = (look: AiLookId, patch: Partial<WizardStep>) => {
     setSteps((prev) => prev.map((s) => (s.look === look ? { ...s, ...patch } : s)));
@@ -160,6 +192,16 @@ export function LookWizardPanel({
   const run = async () => {
     setRunning(true);
     setSteps(initialSteps());
+    // 先确保有项目快照：否则 AI 会读到全局工作区里其他项目的数据
+    if (!snap) {
+      try {
+        const raw = await captureAndSaveSnapshot(userId, project.id);
+        setSnap({ summary: snapshotSummary(raw), text: describeSnapshot(raw) });
+        toast.info('已自动捕获本项目数据快照：本次分析只使用这份数据');
+      } catch {
+        /* 捕获失败则走回退路径，runLookAnalysis 会在 scopeNote 里明确告知 */
+      }
+    }
     let doneCount = 0;
     let failCount = 0;
     for (const look of ORDER) {
@@ -170,7 +212,7 @@ export function LookWizardPanel({
           const sa = await loadSelfAssessment(userId, project.id);
           extra = { answers: buildSelfAnswers(sa, SELF_CATEGORY_LABELS, SELF_STATUS_LABELS) };
         }
-        const res = await runLookAnalysis(look, extra);
+        const res = await runLookAnalysis(look, { ...(extra ?? {}), scope: { userId, projectId: project.id } });
         if (!res.ok || !res.data) {
           const msg = res.error || 'AI 分析失败';
           // 数据缺失属于"跳过"而非"失败"，便于用户区分
@@ -273,6 +315,33 @@ export function LookWizardPanel({
           <Sparkles className="w-4 h-4 text-indigo-500" />
           <p className="text-sm font-bold text-[#1d1d1f]">决策草稿</p>
           <span className="text-[10px] text-[#86868b]">随证据变化</span>
+        </div>
+
+        {/* 项目数据快照（M1 · 修跨项目污染） */}
+        <div className="rounded-xl border border-black/8 bg-white p-3">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <p className="text-[11px] font-semibold text-[#424245]">项目数据快照</p>
+            <button
+              type="button"
+              onClick={() => void captureNow()}
+              disabled={snapBusy}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              {snapBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              {snap ? '更新快照' : '捕获快照'}
+            </button>
+          </div>
+          {snap ? (
+            <p className="text-[10px] text-[#86868b] leading-relaxed">
+              {snap.text}
+              <br />
+              捕获于 {new Date(snap.summary.capturedAt).toLocaleString()}
+            </p>
+          ) : (
+            <p className="text-[10px] text-amber-700 leading-relaxed">
+              尚未捕获：AI 会回退读取全局工作区数据（可能混入其他项目）。建议先点「捕获快照」，再跑一键分析。
+            </p>
+          )}
         </div>
         {draft ? (
           <>

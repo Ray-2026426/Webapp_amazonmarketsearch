@@ -146,6 +146,8 @@ export function UserLookView({
 
       <LookAiBar
         look="user"
+        userId={userId}
+        projectId={project.id}
         onApply={applyAi}
         hint="已经加载了关键词与评论数据时，AI 会把它们合并成需求地图（目标用户 / 场景 / JTBD / 已满足 / 未满足候选），并吸收市场细分里的人群·场景·需求描述。"
       />

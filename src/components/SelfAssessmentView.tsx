@@ -130,6 +130,8 @@ export function SelfAssessmentView({
 
       <LookAiBar
         look="self"
+        userId={userId}
+        projectId={project.id}
         extra={{ answers: buildSelfAnswers(assessment, SELF_CATEGORY_LABELS, SELF_STATUS_LABELS) }}
         disabled={answered === 0}
         onApply={applyAi}
