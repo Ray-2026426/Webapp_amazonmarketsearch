@@ -15,8 +15,7 @@ import {
 import { updateLookProgress } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
-import { makeMergeAcc, mergeText, mergeList } from '../utils/lookAiMerge';
-import type { SelfAiDraft } from '../utils/selfAssessment';
+import { mergeSelfAi, buildSelfAnswers } from '../utils/lookAiApply';
 
 const STATUS_ORDER: SelfStatus[] = ['have', 'partial', 'lack', 'unknown'];
 
@@ -91,31 +90,11 @@ export function SelfAssessmentView({
     scheduleSave({ ...assessment, items });
   };
 
-  /** M1：把已作答的自评项整理成 AI 可读的问答对（未作答项不传，避免让 AI 凭空判断） */
-  const buildAnswers = (): Record<string, string> => {
-    const out: Record<string, string> = {};
-    for (const it of assessment.items) {
-      if (it.status === 'unknown') continue;
-      const label = `${SELF_CATEGORY_LABELS[it.category]}·${it.label}`;
-      out[label] = `${SELF_STATUS_LABELS[it.status]}${it.note?.trim() ? `；${it.note.trim()}` : ''}`;
-    }
-    return out;
-  };
-
-  /** M1：AI 起草回填 —— 只填 aiDraft，绝不改动人工自评项 */
+  /** M1：AI 起草回填 —— 只填 aiDraft，绝不改动人工自评项（逻辑与一键向导共用） */
   const applyAi = (out: Record<string, unknown>) => {
-    const acc = makeMergeAcc();
-    const cur: SelfAiDraft = assessment.aiDraft ?? {};
-    const next: SelfAiDraft = {
-      conclusion: mergeText(cur.conclusion ?? '', out.conclusion, '适配度总体判断', acc),
-      strengths: mergeList(cur.strengths ?? [], out.strengths, '自身优势', acc),
-      gaps: mergeList(cur.gaps ?? [], out.gaps, '能力缺口', acc),
-      hardConstraints: mergeList(cur.hardConstraints ?? [], out.hardConstraints, '硬约束与止损边界', acc),
-      fitAssessment: mergeText(cur.fitAssessment ?? '', out.fitAssessment, '对机会卡的适配度评价', acc),
-      updatedAt: new Date().toISOString(),
-    };
-    scheduleSave({ ...assessment, aiDraft: next });
-    return { filled: acc.filled, skipped: acc.skipped };
+    const { next, filled, skipped } = mergeSelfAi(assessment, out);
+    scheduleSave(next);
+    return { filled, skipped };
   };
 
   if (!assessment) {
@@ -151,7 +130,7 @@ export function SelfAssessmentView({
 
       <LookAiBar
         look="self"
-        extra={{ answers: buildAnswers() }}
+        extra={{ answers: buildSelfAnswers(assessment, SELF_CATEGORY_LABELS, SELF_STATUS_LABELS) }}
         disabled={answered === 0}
         onApply={applyAi}
         hint={

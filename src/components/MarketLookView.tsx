@@ -26,7 +26,7 @@ import { updateLookProgress } from '../utils/projectStore';
 import { SegmentScoreCards } from './SegmentScoreCards';
 import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
-import { makeMergeAcc, mergeText, mergeList } from '../utils/lookAiMerge';
+import { mergeMarketLookAi } from '../utils/lookAiApply';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -127,16 +127,11 @@ export function MarketLookView({
     update({ evidence: makeMarketEvidence(marketContext) });
   };
 
-  /** M1：AI 起草回填（只填空字段，不覆盖人工已填内容） */
+  /** M1：AI 起草回填（只填空字段；逻辑与一键向导共用） */
   const applyAi = (out: Record<string, unknown>) => {
-    const acc = makeMergeAcc();
-    update({
-      attractiveness: mergeText(data.attractiveness, out.attractiveness, '市场吸引力判断', acc),
-      keyEvidences: mergeList(data.keyEvidences, out.keyEvidences, '关键证据', acc),
-      risks: mergeList(data.risks, out.risks, '主要风险', acc),
-      openQuestions: mergeList(data.openQuestions, out.openQuestions, '待验证问题', acc),
-    });
-    return { filled: acc.filled, skipped: acc.skipped };
+    const { next, filled, skipped } = mergeMarketLookAi(data, out);
+    update(next);
+    return { filled, skipped };
   };
 
   return (

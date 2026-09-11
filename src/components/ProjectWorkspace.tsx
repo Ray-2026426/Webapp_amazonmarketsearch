@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { ProjectOverviewContent } from './ProjectOverview';
+import { LookWizardPanel } from './LookWizardPanel';
 import { SelfAssessmentView } from './SelfAssessmentView';
 import { MarketLookView } from './MarketLookView';
 import { UserLookView } from './UserLookView';
@@ -223,10 +224,10 @@ export function ProjectWorkspace({
         </div>
       )}
 
-      {/* 非线性五看 Tab（任意顺序进入） */}
+      {/* 向导步骤条：五看带序号（非线性，可任意顺序进入） */}
       <div className="flex flex-wrap items-center gap-1.5 mb-5 border-b border-black/5 pb-3">
         <TabButton active={tab === 'overview'} onClick={() => setTab('overview')} label="概览" />
-        {FIVE_LOOKS.map((look) => {
+        {FIVE_LOOKS.map((look, idx) => {
           const Icon = LOOK_ICONS[look];
           const s = p.fiveLookProgress[look].status;
           return (
@@ -234,7 +235,7 @@ export function ProjectWorkspace({
               key={look}
               active={tab === look}
               onClick={() => void switchToLook(look)}
-              label={FIVE_LOOK_LABELS[look]}
+              label={`${idx + 1} ${FIVE_LOOK_LABELS[look]}`}
               icon={<Icon className="w-3.5 h-3.5" />}
               dot={<span className={cn('w-1.5 h-1.5 rounded-full', LOOK_STATUS_DOT[s])} />}
             />
@@ -245,7 +246,10 @@ export function ProjectWorkspace({
 
       {/* 内容区 */}
       {tab === 'overview' ? (
-        <ProjectOverviewContent project={p} username={username} userId={userId} onNavigateLook={(look) => void switchToLook(look)} />
+        <div className="space-y-5">
+          <LookWizardPanel userId={userId} project={p} onProjectChange={applyProjectUpdate} />
+          <ProjectOverviewContent project={p} username={username} userId={userId} onNavigateLook={(look) => void switchToLook(look)} />
+        </div>
       ) : tab === 'self' ? (
         <SelfAssessmentView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
       ) : tab === 'market' ? (

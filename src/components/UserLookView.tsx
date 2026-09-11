@@ -18,7 +18,6 @@ import {
   makeUserEvidence,
   computeUserProgress,
   emptyUnmetNeedCandidate,
-  createUnmetNeedId,
   EVIDENCE_STRENGTH_LABELS,
   type UserContext,
   type UserEvidence,
@@ -29,7 +28,7 @@ import {
 import { updateLookProgress } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
-import { makeMergeAcc, mergeText, mergeList, mergeUnmetNeedCandidates } from '../utils/lookAiMerge';
+import { mergeUserLookAi } from '../utils/lookAiApply';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -120,24 +119,11 @@ export function UserLookView({
 
   const captureEvidence = () => update({ evidence: makeUserEvidence(userContext) });
 
-  /** M1：AI 起草回填（只填空字段，不覆盖人工已填内容） */
+  /** M1：AI 起草回填（只填空字段，不覆盖人工已填内容；逻辑与一键向导共用） */
   const applyAi = (out: Record<string, unknown>) => {
-    const acc = makeMergeAcc();
-    const patch: Partial<UserLookData> = {
-      targetUser: mergeText(data.targetUser, out.targetUser, '目标用户', acc),
-      scenario: mergeText(data.scenario, out.scenario, '使用场景', acc),
-      jobToBeDone: mergeText(data.jobToBeDone, out.jobToBeDone, '用户任务 / JTBD', acc),
-      satisfiedNeeds: mergeList(data.satisfiedNeeds, out.satisfiedNeeds, '已满足需求', acc),
-      unmetNeedCandidates: mergeUnmetNeedCandidates(
-        data.unmetNeedCandidates,
-        out.unmetNeedCandidates,
-        createUnmetNeedId,
-        '未满足需求候选',
-        acc
-      ),
-    };
-    update(patch);
-    return { filled: acc.filled, skipped: acc.skipped };
+    const { next, filled, skipped } = mergeUserLookAi(data, out);
+    update(next);
+    return { filled, skipped };
   };
 
   return (

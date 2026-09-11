@@ -24,7 +24,7 @@ import { updateLookProgress } from '../utils/projectStore';
 import { CompetitorPickerPanel } from './CompetitorPickerPanel';
 import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
-import { makeMergeAcc, mergeText, mergeList } from '../utils/lookAiMerge';
+import { mergeCompetitorLookAi } from '../utils/lookAiApply';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -111,17 +111,11 @@ export function CompetitorLookView({
     update({ evidence: makeCompetitorEvidence(competitorContext) });
   };
 
-  /** M1：AI 起草回填（只填空字段，不覆盖人工已填内容） */
+  /** M1：AI 起草回填（只填空字段；逻辑与一键向导共用） */
   const applyAi = (out: Record<string, unknown>) => {
-    const acc = makeMergeAcc();
-    update({
-      samplePool: mergeList(data.samplePool, out.samplePool, '竞品样本池', acc),
-      benchmarkAsins: mergeList(data.benchmarkAsins, out.benchmarkAsins, '标杆 ASIN', acc),
-      barriers: mergeText(data.barriers, out.barriers, '竞争壁垒与经营能力', acc),
-      needMatrix: mergeText(data.needMatrix, out.needMatrix, '需求满足矩阵', acc),
-      gaps: mergeList(data.gaps, out.gaps, '未充分满足的产品缺口', acc),
-    });
-    return { filled: acc.filled, skipped: acc.skipped };
+    const { next, filled, skipped } = mergeCompetitorLookAi(data, out);
+    update(next);
+    return { filled, skipped };
   };
 
   return (
