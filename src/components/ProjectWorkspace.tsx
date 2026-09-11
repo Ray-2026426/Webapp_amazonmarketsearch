@@ -85,6 +85,8 @@ export function ProjectWorkspace({
   onBack,
   onOpenTool,
   onProjectChange,
+  focusLook,
+  focusNonce,
 }: {
   userId: string;
   project: ResearchProject;
@@ -93,8 +95,12 @@ export function ProjectWorkspace({
   userContext: UserContext;
   competitorContext: CompetitorContext;
   onBack: () => void;
-  onOpenTool: (view: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit') => void;
+  /** M1 · ToolRoute：带上"从哪一个看来"，供 App 在返回时精确回到该看 */
+  onOpenTool: (view: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit', fromLook: FiveLookId) => void;
   onProjectChange: (updated: ResearchProject) => void;
+  /** 从工具返回时要求聚焦的看（配合 focusNonce 触发一次） */
+  focusLook?: FiveLookId | null;
+  focusNonce?: number;
 }) {
   const [p, setP] = useState<ResearchProject>(project);
   const [tab, setTab] = useState<Tab>(project.activeLook);
@@ -123,6 +129,16 @@ export function ProjectWorkspace({
     setP(updated);
     onProjectChange(updated);
   };
+
+  // M1 · ToolRoute：从工具返回时，精确回到当初打开工具的那一个看
+  const focusNonceRef = useRef(0);
+  useEffect(() => {
+    if (!focusLook || !focusNonce) return;
+    if (focusNonceRef.current === focusNonce) return;
+    focusNonceRef.current = focusNonce;
+    void switchToLook(focusLook);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusLook, focusNonce]);
 
   const switchToLook = async (look: FiveLookId) => {
     setTab(look);
@@ -157,6 +173,9 @@ export function ProjectWorkspace({
       setSaveState('error');
     }
   };
+
+  /** 打开工具时记录"从哪一个看来"（概览/报告页则退回项目当前活跃的看） */
+  const toolOriginLook: FiveLookId = tab === 'overview' || tab === 'reports' ? p.activeLook : tab;
 
   const toolButtons: { label: string; view: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit' }[] =
     tab === 'market'
@@ -214,7 +233,7 @@ export function ProjectWorkspace({
             <button
               key={b.view}
               type="button"
-              onClick={() => onOpenTool(b.view)}
+              onClick={() => onOpenTool(b.view, toolOriginLook)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-all active:scale-[0.98]"
             >
               <Wrench className="w-3.5 h-3.5" />
@@ -253,11 +272,11 @@ export function ProjectWorkspace({
       ) : tab === 'self' ? (
         <SelfAssessmentView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
       ) : tab === 'market' ? (
-        <MarketLookView userId={userId} project={p} marketContext={marketContext} onProjectChange={applyProjectUpdate} onOpenMarketTool={() => onOpenTool('market')} />
+        <MarketLookView userId={userId} project={p} marketContext={marketContext} onProjectChange={applyProjectUpdate} onOpenMarketTool={() => onOpenTool('market', 'market')} />
       ) : tab === 'user' ? (
         <UserLookView userId={userId} project={p} userContext={userContext} onProjectChange={applyProjectUpdate} />
       ) : tab === 'competitor' ? (
-        <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} onOpenCompetitorTool={() => onOpenTool('competitors')} />
+        <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} onOpenCompetitorTool={() => onOpenTool('competitors', 'competitor')} />
       ) : tab === 'opportunity' ? (
         <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} onNavigateLook={(look) => void switchToLook(look)} />
       ) : (

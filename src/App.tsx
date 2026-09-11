@@ -39,7 +39,7 @@ import type { MarketContext } from './utils/marketLook';
 import { saveReport } from './utils/reportStore';
 import { syncUserProjectsToCloud } from './utils/projectCloudAutosync';
 import { aiInsightToMarkdown, vocReportToMarkdown, competitorReportToMarkdown } from './utils/reportToMarkdown';
-import type { ResearchProject } from './types/researchProject';
+import { FIVE_LOOK_LABELS, type FiveLookId, type ResearchProject } from './types/researchProject';
 import type { UserContext } from './utils/userLook';
 import type { CompetitorContext } from './utils/competitorLook';
 import { LoginPage } from './components/LoginPage';
@@ -227,6 +227,12 @@ export default function App() {
   }, []);
 
   const [activeView, setActiveView] = useState<'projects' | 'market' | 'competitors' | 'insights' | 'keywords' | 'profit'>('projects');
+  /**
+   * M1 · ToolRoute 上下文透传（PRD §2.7.6）：
+   * 从某个看打开工具时记住"从哪一个看来"，返回时直接回到那一个看，而不是笼统回到项目。
+   */
+  const [toolReturn, setToolReturn] = useState<{ projectId: string; look: FiveLookId } | null>(null);
+  const [focusLook, setFocusLook] = useState<{ look: FiveLookId; nonce: number } | null>(null);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isReportHidden, setIsReportHidden] = useState(false);
   const [isMarketHistoryOpen, setIsMarketHistoryOpen] = useState(false);
@@ -1388,7 +1394,7 @@ export default function App() {
         </div>
         <nav className="flex-1 p-4 space-y-1">
           <button 
-            onClick={() => { setActiveProject(null); setActiveView('projects'); }}
+            onClick={() => { setActiveProject(null); setActiveView('projects'); setToolReturn(null); }}
             className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'projects' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
           >
             <FolderKanban className="w-5 h-5" />
@@ -1486,11 +1492,19 @@ export default function App() {
             {activeProject && activeView !== 'projects' && (
               <button
                 type="button"
-                onClick={() => setActiveView('projects')}
+                onClick={() => {
+                  setActiveView('projects');
+                  // 回到"当初打开工具的那一个看"
+                  if (toolReturn && toolReturn.projectId === activeProject.id) {
+                    setFocusLook({ look: toolReturn.look, nonce: Date.now() });
+                  }
+                }}
                 className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-all"
               >
                 <ArrowLeft className="w-4 h-4" />
-                返回项目
+                {toolReturn && toolReturn.projectId === activeProject.id
+                  ? `返回 ${FIVE_LOOK_LABELS[toolReturn.look]}`
+                  : '返回项目'}
               </button>
             )}
             <div>
@@ -1607,8 +1621,10 @@ export default function App() {
               marketContext={marketContext}
               userContext={userContext}
               competitorContext={competitorContext}
-              onBack={() => setActiveProject(null)}
-              onOpenTool={(view) => setActiveView(view)}
+              onBack={() => { setActiveProject(null); setToolReturn(null); }}
+              onOpenTool={(view, look) => { setActiveView(view); setToolReturn({ projectId: activeProject.id, look }); }}
+              focusLook={focusLook?.look ?? null}
+              focusNonce={focusLook?.nonce ?? 0}
               onProjectChange={(updated) => setActiveProject(updated)}
             />
           ) : (
