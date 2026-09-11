@@ -1,71 +1,62 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Loader2, Sparkles } from 'lucide-react';
-import { toast } from 'sonner';
-import { Card } from './ui/Card';
-import { FiveLookSummaryShell } from './five-look/FiveLookSummaryShell';
-import { SegmentScoreCards } from './SegmentScoreCards';
 import {
-  computeMarketProgress,
+  TrendingUp,
+  Database,
+  Plus,
+  X,
+  CheckCircle2,
+  Loader2,
+  AlertTriangle,
+  MapPin,
+  Layers,
+  CalendarRange,
+} from 'lucide-react';
+import { cn } from './ui/Card';
+import { Card } from './ui/Card';
+import {
   loadMarketLook,
-  makeMarketEvidence,
   saveMarketLook,
+  makeMarketEvidence,
+  computeMarketProgress,
   type MarketContext,
+  type MarketEvidence,
   type MarketLookData,
 } from '../utils/marketLook';
 import { updateLookProgress } from '../utils/projectStore';
-import { LOOK_STATUS_LABELS, type ResearchProject } from '../types/researchProject';
-import type { SegmentScoreResult } from '../utils/segmentScore';
-import type { HistoryRecord, Product } from '../utils/parser';
-import { loadUserLook, type UserLookData } from '../utils/userLook';
-import { MarketTrendChart } from './MarketTrendChart';
-import { SeasonalHeatmap } from './SeasonalHeatmap';
-import { MarketConcentrationChart } from './MarketConcentrationChart';
-import { OpportunityScanner } from './OpportunityScanner';
-import { BrandLeaderboard } from './BrandLeaderboard';
-import { PriceDistributionChart } from './PriceDistributionChart';
-import { RatingDistributionChart } from './RatingDistributionChart';
-import { SellerTypeChart } from './SellerTypeChart';
-import { SellerLocationChart } from './SellerLocationChart';
-import { LaunchDateChart } from './LaunchDateChart';
-import { NewVsOldChart } from './NewVsOldChart';
-import { BsrDistributionChart } from './BsrDistributionChart';
-import { PriceRatingChart } from './PriceRatingChart';
-import { TopProductsTable } from './TopProductsTable';
-import { runLookAnalysis } from '../utils/lookAi';
+import { SegmentScoreCards } from './SegmentScoreCards';
+import type { ResearchProject } from '../types/researchProject';
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+function formatDate(iso?: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export function MarketLookView({
   userId,
   project,
   marketContext,
-  products = [],
-  history = [],
   onProjectChange,
   onOpenMarketTool,
-  onNavigateCompetitor,
 }: {
   userId: string;
   project: ResearchProject;
   marketContext: MarketContext;
-  products?: Product[];
-  history?: HistoryRecord[];
   onProjectChange: (updated: ResearchProject) => void;
   onOpenMarketTool?: () => void;
-  onNavigateCompetitor?: () => void;
 }) {
   const [data, setData] = useState<MarketLookData | null>(null);
-  const [selectedScore, setSelectedScore] = useState<SegmentScoreResult | null>(null);
-  const [userLook, setUserLook] = useState<UserLookData | null>(null);
-  const [showDetail, setShowDetail] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([loadMarketLook(userId, project.id), loadUserLook(userId, project.id)]).then(([d, user]) => {
-      if (!cancelled) {
-        setData(d);
-        setUserLook(user);
-      }
+    void loadMarketLook(userId, project.id).then((d) => {
+      if (!cancelled) setData(d);
     });
     return () => {
       cancelled = true;
@@ -73,243 +64,159 @@ export function MarketLookView({
   }, [userId, project.id]);
 
   const persist = useCallback(
-    async (next: MarketLookData) => {
-      await saveMarketLook(userId, project.id, next);
-      const progress = computeMarketProgress(next);
-      const updated = await updateLookProgress(userId, project.id, 'market', {
-        ...project.fiveLookProgress.market,
-        status: progress.status,
-        completionPercent: progress.completionPercent,
-        missingRequirements: progress.missingRequirements,
-        updatedAt: new Date().toISOString(),
-      });
-      if (updated) onProjectChange(updated);
+    async (d: MarketLookData) => {
+      setSaveState('saving');
+      try {
+        await saveMarketLook(userId, project.id, d);
+        const progress = computeMarketProgress(d);
+        const updated = await updateLookProgress(userId, project.id, 'market', {
+          ...project.fiveLookProgress.market,
+          status: progress.status,
+          completionPercent: progress.completionPercent,
+          missingRequirements: progress.missingRequirements,
+          updatedAt: new Date().toISOString(),
+        });
+        if (updated) onProjectChange(updated);
+        setSaveState('saved');
+      } catch {
+        setSaveState('error');
+      }
     },
-    [userId, project.id, project.fiveLookProgress.market, onProjectChange]
+    [userId, project.id, project.fiveLookProgress, onProjectChange]
   );
 
-  const update = useCallback(
-    (patch: Partial<MarketLookData>) => {
-      if (!data) return;
-      const next = { ...data, ...patch };
+  const scheduleSave = useCallback(
+    (next: MarketLookData) => {
       setData(next);
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
       saveTimer.current = window.setTimeout(() => {
         void persist(next);
       }, 500);
     },
-    [data, persist]
+    [persist]
   );
 
-  if (!data || !userLook) {
+  if (!data) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-[#aeaeb2]">
-        <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载看市场结论...
+        <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载…
       </div>
     );
   }
 
-  const progress = project.fiveLookProgress.market;
-  const selectedSegment = data.selectedOpportunitySegment?.trim() || '';
-  const evidence = data.keyEvidences.filter(Boolean);
-  const risks = data.risks.filter(Boolean);
-  const questions = data.openQuestions.filter(Boolean);
-  const selectedNeeds = userLook.unmetNeedCandidates.filter((candidate) => candidate.selectedForSegmentation);
-  const userDataStale = Boolean(data.sourceUserUpdatedAt && data.sourceUserUpdatedAt !== userLook.updatedAt);
-  const judgement = data.attractiveness.trim()
-    ? data.attractiveness.trim()
-    : selectedSegment
-      ? `${selectedSegment} 细分市场已选中。`
-      : '还没有形成可用于机会判断的细分市场结论。';
+  const update = (patch: Partial<MarketLookData>) => scheduleSave({ ...data, ...patch });
 
-  const generateMarketConclusion = async () => {
-    const selectedNeed = selectedNeeds.find((need) => need.id === data.selectedNeedId);
-    if (!data.selectedOpportunitySegment?.trim() || !selectedNeed) {
-      toast.error('请先选择目标细分市场，并关联一条来自看用户的需求分类。');
-      return;
-    }
-    setGenerating(true);
-    try {
-      const result = await runLookAnalysis('market', {
-        selectedSegment: data.selectedOpportunitySegment,
-        selectedNeed,
-      });
-      if (!result.ok || !result.data) throw new Error(result.error || 'AI 未返回有效市场结论');
-      const next: MarketLookData = {
-        ...data,
-        attractiveness: String(result.data.attractiveness || ''),
-        keyEvidences: Array.isArray(result.data.keyEvidences) ? result.data.keyEvidences.map(String).filter(Boolean).slice(0, 5) : [],
-        risks: Array.isArray(result.data.risks) ? result.data.risks.map(String).filter(Boolean).slice(0, 5) : [],
-        openQuestions: Array.isArray(result.data.openQuestions) ? result.data.openQuestions.map(String).filter(Boolean).slice(0, 5) : [],
-        evidence: makeMarketEvidence(marketContext),
-        sourceUserUpdatedAt: userLook.updatedAt,
-      };
-      await persist(next);
-      setData(next);
-      toast.success('目标细分市场结论已生成');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '生成市场结论失败');
-    } finally {
-      setGenerating(false);
-    }
+  const updateListItem = (key: 'keyEvidences' | 'risks' | 'openQuestions', index: number, value: string) => {
+    const next = [...data[key]];
+    next[index] = value;
+    update({ [key]: next } as Partial<MarketLookData>);
   };
 
-  if (showDetail && selectedSegment) {
-    const segmentProducts = products.filter((product) => {
-      const mapped = marketContext.asinToSegment?.[product.asin];
-      return !marketContext.asinToSegment || mapped === selectedSegment;
-    });
-    const safeProducts = segmentProducts.length ? segmentProducts : products;
-    const asinSet = new Set(safeProducts.map((product) => product.asin));
-    const segmentHistory = history.filter((record) => asinSet.has(record.asin));
-    const months = marketContext.months ?? [];
-    const mapping = marketContext.asinToSegment ?? {};
-    const domain = marketContext.domain ?? 'amazon.com';
-    const totalRevenue = safeProducts.reduce((sum, product) => sum + (product.monthlyRevenue || 0), 0);
-    const totalSales = safeProducts.reduce((sum, product) => sum + (product.monthlySales || 0), 0);
-    const avgPrice = safeProducts.length ? safeProducts.reduce((sum, product) => sum + (product.price || 0), 0) / safeProducts.length : 0;
-    const top10Sales = safeProducts.slice().sort((a, b) => b.monthlySales - a.monthlySales).slice(0, 10).reduce((sum, product) => sum + product.monthlySales, 0);
-    const concentration = totalSales ? (top10Sales / totalSales) * 100 : 0;
-    return (
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <button type="button" onClick={() => setShowDetail(false)} className="mt-0.5 w-9 h-9 rounded-xl border border-black/8 bg-white text-[#86868b] hover:text-indigo-600 flex items-center justify-center">
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-            <div>
-              <p className="text-xs font-semibold text-indigo-600">看市场 / 细分市场详情</p>
-              <h3 className="text-xl font-bold text-[#1d1d1f] mt-1">{selectedSegment}</h3>
-              <p className="text-sm text-[#86868b] mt-1">趋势、体量、垄断、价格带、卖家分布与新品结构均按当前细分口径过滤。</p>
-            </div>
-          </div>
-          <span className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">{safeProducts.length} 个 ASIN</span>
-        </div>
-        {!segmentProducts.length && products.length > 0 && (
-          <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-            当前数据还没有 ASIN→细分映射，以下暂展示全市场数据，不能作为该细分的独立证据。
-          </div>
-        )}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <MarketMetric label="月销售额" value={`$${Math.round(totalRevenue).toLocaleString()}`} />
-          <MarketMetric label="月销量" value={Math.round(totalSales).toLocaleString()} />
-          <MarketMetric label="平均价格" value={`$${avgPrice.toFixed(2)}`} />
-          <MarketMetric label="Top10 销量集中度" value={`${concentration.toFixed(1)}%`} />
-        </div>
-        <MarketTrendChart history={segmentHistory} months={months} products={safeProducts} asinToSegment={mapping} domain={domain} />
-        <SeasonalHeatmap history={segmentHistory} months={months} domain={domain} />
-        <MarketConcentrationChart products={safeProducts} history={segmentHistory} months={months} domain={domain} />
-        <OpportunityScanner products={safeProducts} history={segmentHistory} months={months} domain={domain} asinToSegment={mapping} />
-        <BrandLeaderboard products={safeProducts} history={segmentHistory} months={months} domain={domain} asinToSegment={mapping} />
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          <PriceDistributionChart products={safeProducts} domain={domain} history={segmentHistory} months={months} asinToSegment={mapping} />
-          <RatingDistributionChart products={safeProducts} domain={domain} history={segmentHistory} months={months} selectedMonths={months} asinToSegment={mapping} />
-          <SellerTypeChart products={safeProducts} domain={domain} history={segmentHistory} months={months} selectedMonths={months} asinToSegment={mapping} />
-          <SellerLocationChart products={safeProducts} domain={domain} history={segmentHistory} months={months} selectedMonths={months} asinToSegment={mapping} />
-          <LaunchDateChart products={safeProducts} domain={domain} history={segmentHistory} months={months} asinToSegment={mapping} />
-          <NewVsOldChart products={safeProducts} domain={domain} history={segmentHistory} months={months} asinToSegment={mapping} />
-          <BsrDistributionChart products={safeProducts} domain={domain} history={segmentHistory} months={months} asinToSegment={mapping} />
-          <PriceRatingChart products={safeProducts} history={segmentHistory} months={months} domain={domain} asinToSegment={mapping} />
-        </div>
-        <TopProductsTable products={safeProducts} history={segmentHistory} months={months} domain={domain} asinToSegment={mapping} />
-      </div>
-    );
-  }
+  const addListItem = (key: 'keyEvidences' | 'risks' | 'openQuestions') => {
+    update({ [key]: [...data[key], ''] } as Partial<MarketLookData>);
+  };
+
+  const removeListItem = (key: 'keyEvidences' | 'risks' | 'openQuestions', index: number) => {
+    update({ [key]: data[key].filter((_, i) => i !== index) } as Partial<MarketLookData>);
+  };
+
+  const captureEvidence = () => {
+    if (!marketContext.loaded) return;
+    update({ evidence: makeMarketEvidence(marketContext) });
+  };
 
   return (
     <div className="space-y-4">
-      <FiveLookSummaryShell
-        eyebrow="Five Looks / Market"
-        title="看市场 · 细分市场结论"
-        judgement={judgement}
-        description=""
-        statusBadge={
-          <span className="rounded-full border border-black/5 bg-[#f5f5f7] px-2.5 py-1 text-[11px] font-semibold text-[#86868b]">
-            {LOOK_STATUS_LABELS[progress.status]} · {progress.completionPercent}%
-          </span>
-        }
-        metrics={[
-          { label: '目标细分', value: selectedSegment || '未选择', tone: selectedSegment ? 'brand' : 'warn' },
-          { label: '商品样本', value: `${marketContext.sampleSize || data.evidence?.sampleSize || 0}`, tone: marketContext.sampleSize ? 'brand' : 'neutral' },
-          { label: '历史月份', value: `${marketContext.months?.length || data.evidence?.months?.length || 0}`, tone: marketContext.months?.length ? 'brand' : 'neutral' },
-          { label: '市场证据', value: `${selectedScore ? selectedScore.dimensions.length : evidence.length}`, tone: selectedScore || evidence.length >= 3 ? 'good' : 'neutral' },
-        ]}
-        sections={[]}
-      />
-
-      <Card className={userDataStale ? 'border-amber-200 bg-amber-50/40' : ''}>
-        <div className="p-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold text-[#424245]">需求主线</p>
-            <p className="text-sm text-[#1d1d1f] mt-1">
-              {selectedNeeds.length ? selectedNeeds.map((item) => item.category || item.needStatement).join(' · ') : '尚未从看用户选择细分标准'}
-            </p>
-            {userDataStale && <p className="text-xs text-amber-700 mt-1">看用户内容已更新，请重新确认当前细分是否仍对应这些需求。</p>}
+      {/* 头部 */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center shrink-0">
+            <TrendingUp className="w-5 h-5 text-indigo-600" />
           </div>
-          {selectedNeeds.length > 0 && (
-            <label className="flex items-center gap-2 text-xs font-semibold text-[#86868b]">
-              当前细分对应
-              <select
-                value={data.selectedNeedId ?? ''}
-                onChange={(event) => update({ selectedNeedId: event.target.value, sourceUserUpdatedAt: userLook.updatedAt })}
-                className="rounded-xl border border-indigo-100 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          <div>
+            <h3 className="text-lg font-semibold text-[#1d1d1f]">看市场 · 市场判断</h3>
+            <p className="text-sm text-[#86868b] mt-0.5 max-w-xl">
+              判断需求所在市场的规模、趋势和进入环境，形成吸引力判断与关键证据。
+            </p>
+          </div>
+        </div>
+        <SaveBadge state={saveState} />
+      </div>
+
+      {/* 数据上下文 */}
+      <Card>
+        <div className="p-5">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <p className="text-sm font-semibold text-[#1d1d1f]">数据上下文</p>
+            {marketContext.loaded && (
+              <button
+                type="button"
+                onClick={captureEvidence}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]"
               >
-                <option value="">请选择需求分类</option>
-                {selectedNeeds.map((need) => <option key={need.id} value={need.id}>{need.category || need.needStatement}</option>)}
-              </select>
-            </label>
+                <Database className="w-3.5 h-3.5" />
+                {data.evidence ? '更新捕获证据' : '捕获为项目证据'}
+              </button>
+            )}
+          </div>
+          {marketContext.loaded ? (
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-[#86868b]">
+              <span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {marketContext.marketplace}</span>
+              <span className="inline-flex items-center gap-1"><Layers className="w-3.5 h-3.5" /> 样本 {marketContext.sampleSize}</span>
+              <span className="inline-flex items-center gap-1"><CalendarRange className="w-3.5 h-3.5" /> {marketContext.months.length} 个月</span>
+              <span>{marketContext.sourceLabel || '未标注来源'}</span>
+              {marketContext.isDemo && <span className="rounded-full bg-indigo-50 text-indigo-600 px-2 py-0.5 text-[10px] font-semibold">示例数据</span>}
+            </div>
+          ) : (
+            <p className="text-xs text-[#aeaeb2]">
+              尚未加载市场数据 —— 可到左侧「市场大盘」上传 Excel 或加载示例数据后再回来捕获。
+            </p>
           )}
         </div>
       </Card>
 
+      {/* 已捕获证据 */}
+      {data.evidence && <EvidenceCard evidence={data.evidence} />}
+
+      {/* 细分市场评分（确定性公式，机会分排序） */}
       <SegmentScoreCards
         onOpenMarketTool={onOpenMarketTool ?? (() => {})}
-        selectedOpportunitySegment={data.selectedOpportunitySegment}
-        onSelectOpportunitySegment={(segment) => update({
-          selectedOpportunitySegment: segment ?? '',
-          selectedNeedId: data.selectedNeedId || (selectedNeeds.length === 1 ? selectedNeeds[0].id : ''),
-          sourceUserUpdatedAt: userLook.updatedAt,
-        })}
-        onSelectScore={setSelectedScore}
       />
 
-      <div className="flex justify-end">
-        <button type="button" onClick={() => void generateMarketConclusion()} disabled={generating || !selectedSegment || !data.selectedNeedId} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-40">
-          {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}AI 生成当前细分结论
-        </button>
+      {/* 市场吸引力判断 */}
+      <Card>
+        <div className="p-5">
+          <p className="text-sm font-semibold text-[#1d1d1f] mb-2">市场吸引力判断</p>
+          <textarea
+            value={data.attractiveness}
+            onChange={(e) => update({ attractiveness: e.target.value })}
+            rows={3}
+            placeholder="这个市场值不值得进？规模、趋势、竞争结构、价格带和进入窗口的综合判断…"
+            className={inputCls}
+          />
+        </div>
+      </Card>
+
+      {/* 关键证据 / 风险 / 待验证问题 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <StringListCard title="关键证据（3–5 条）" hint="用数据支撑判断，例如：头部品牌集中度、价格带分布、月度趋势" value={data.keyEvidences} onAdd={() => addListItem('keyEvidences')} onChange={(i, v) => updateListItem('keyEvidences', i, v)} onRemove={(i) => removeListItem('keyEvidences', i)} />
+        <StringListCard title="主要市场风险" hint="例如：季节性波动、退货率、合规、供给集中" value={data.risks} onAdd={() => addListItem('risks')} onChange={(i, v) => updateListItem('risks', i, v)} onRemove={(i) => removeListItem('risks', i)} />
       </div>
 
       <Card>
         <div className="p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-[#1d1d1f]">
-                {selectedSegment ? `${selectedSegment} · 细分结论` : '细分市场详情'}
-              </p>
-              <p className="text-xs text-[#86868b] mt-0.5">点击上方细分市场卡片后，这里展示该细分的判断依据。</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {onOpenMarketTool && (
-                <button type="button" onClick={onOpenMarketTool} className="inline-flex items-center gap-1.5 rounded-xl border border-black/8 bg-white px-3 py-2 text-xs font-semibold text-[#424245] hover:text-indigo-600">
-                  回到市场大盘细节 <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              )}
-              {onNavigateCompetitor && selectedSegment && (
-                <button type="button" onClick={onNavigateCompetitor} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700">
-                  去看竞对 <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              )}
-              {selectedSegment && (
-                <button type="button" onClick={() => setShowDetail(true)} className="inline-flex items-center gap-1.5 rounded-xl bg-[#1d1d1f] px-3 py-2 text-xs font-semibold text-white hover:bg-black">
-                  查看完整细分大盘 <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-4">
-            <SummaryBox title="进入判断" items={selectedScore ? buildSegmentJudgement(selectedScore) : (data.attractiveness ? [data.attractiveness] : [])} emptyText="暂无市场总结。" />
-            <SummaryBox title="关键证据" items={selectedScore ? buildSegmentEvidence(selectedScore) : evidence} emptyText="暂无关键证据。" />
-            <SummaryBox title="风险 / 待验证" items={selectedScore ? buildSegmentRisks(selectedScore) : [...risks, ...questions]} emptyText="暂无风险或待验证问题。" />
+          <p className="text-sm font-semibold text-[#1d1d1f] mb-1">对看用户 / 看竞品的待验证问题（选填）</p>
+          <p className="text-xs text-[#aeaeb2] mb-3">这些问题将带到后续视角去验证</p>
+          <div className="space-y-2">
+            {data.openQuestions.map((q, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input value={q} onChange={(e) => updateListItem('openQuestions', i, e.target.value)} placeholder={`问题 ${i + 1}`} className={inputCls} />
+                <button type="button" onClick={() => removeListItem('openQuestions', i)} className="shrink-0 w-8 h-8 rounded-lg hover:bg-[#f5f5f7] flex items-center justify-center text-[#aeaeb2] hover:text-rose-500 transition-colors"><X className="w-4 h-4" /></button>
+              </div>
+            ))}
+            <button type="button" onClick={() => addListItem('openQuestions')} className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors">
+              <Plus className="w-3.5 h-3.5" /> 添加问题
+            </button>
           </div>
         </div>
       </Card>
@@ -317,44 +224,79 @@ export function MarketLookView({
   );
 }
 
-function MarketMetric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl border border-black/5 bg-white px-4 py-3"><p className="text-[11px] text-[#86868b]">{label}</p><p className="text-lg font-bold text-[#1d1d1f] mt-1">{value}</p></div>;
-}
-
-function buildSegmentJudgement(score: SegmentScoreResult): string[] {
-  const grade = score.opportunity >= 70 ? '建议进入' : score.opportunity >= 45 ? '先验证再进入' : '暂缓进入';
-  return [`${grade}：综合机会分 ${score.opportunity}。该分数使用市场准入评估的 8 个维度加权计算，避免只看趋势、体量和竞争三项。`];
-}
-
-function buildSegmentEvidence(score: SegmentScoreResult): string[] {
-  return [
-    `样本 ${score.productCount} 个，月销额 $${Math.round(score.totalRevenue).toLocaleString()}，均价 $${score.avgPrice.toFixed(2)}。`,
-    `Top ASIN：${score.topAsins.join(', ') || '-'}`,
-    ...score.dimensions.slice(0, 4).map((d) => `${d.label}：${d.display}，${d.score}分，权重 ${d.weight}`),
-  ];
-}
-
-function buildSegmentRisks(score: SegmentScoreResult): string[] {
-  if (score.confidenceNotes.length) return score.confidenceNotes;
-  const weak = score.dimensions.filter((d) => d.score < 45).slice(0, 3);
-  return weak.length ? weak.map((d) => `${d.label}偏弱，需要在看竞品或看用户中继续验证。`) : ['暂无明显数据覆盖风险，下一步重点验证竞品壁垒和用户未满足需求。'];
-}
-
-function SummaryBox({ title, items, emptyText }: { title: string; items: string[]; emptyText: string }) {
+function StringListCard({
+  title,
+  hint,
+  value,
+  onAdd,
+  onChange,
+  onRemove,
+}: {
+  title: string;
+  hint: string;
+  value: string[];
+  onAdd: () => void;
+  onChange: (index: number, value: string) => void;
+  onRemove: (index: number) => void;
+}) {
   return (
-    <div className="rounded-xl border border-black/5 bg-[#fafafa] p-4 min-h-[140px]">
-      <p className="text-xs font-semibold text-[#424245] mb-2">{title}</p>
-      {items.length ? (
+    <Card>
+      <div className="p-5">
+        <p className="text-sm font-semibold text-[#1d1d1f] mb-1">{title}</p>
+        <p className="text-xs text-[#aeaeb2] mb-3">{hint}</p>
         <div className="space-y-2">
-          {items.map((item, index) => (
-            <p key={`${item}-${index}`} className="text-sm text-[#424245] leading-6">
-              {item}
-            </p>
+          {value.map((v, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input value={v} onChange={(e) => onChange(i, e.target.value)} placeholder={`第 ${i + 1} 条`} className={inputCls} />
+              <button type="button" onClick={() => onRemove(i)} className="shrink-0 w-8 h-8 rounded-lg hover:bg-[#f5f5f7] flex items-center justify-center text-[#aeaeb2] hover:text-rose-500 transition-colors"><X className="w-4 h-4" /></button>
+            </div>
           ))}
+          <button type="button" onClick={onAdd} className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors">
+            <Plus className="w-3.5 h-3.5" /> 添加
+          </button>
         </div>
-      ) : (
-        <p className="text-sm text-[#aeaeb2] leading-6">{emptyText}</p>
-      )}
-    </div>
+      </div>
+    </Card>
   );
 }
+
+function EvidenceCard({ evidence }: { evidence: MarketEvidence }) {
+  return (
+    <Card className="border-indigo-100 bg-indigo-50/40">
+      <div className="p-5">
+        <div className="flex items-center gap-2 mb-2">
+          <Database className="w-4 h-4 text-indigo-600" />
+          <p className="text-sm font-semibold text-[#1d1d1f]">已捕获的市场证据</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-[#86868b]">
+          <span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {evidence.marketplace}</span>
+          <span>样本 {evidence.sampleSize}</span>
+          <span>{evidence.months.length} 个月</span>
+          <span>{evidence.sourceLabel || '未标注来源'}</span>
+          <span>捕获于 {formatDate(evidence.capturedAt)}</span>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function SaveBadge({ state }: { state: SaveState }) {
+  if (state === 'idle') return null;
+  const map: Record<SaveState, { icon: typeof CheckCircle2; text: string; cls: string }> = {
+    idle: { icon: CheckCircle2, text: '', cls: '' },
+    saving: { icon: Loader2, text: '保存中…', cls: 'text-amber-600' },
+    saved: { icon: CheckCircle2, text: '已保存', cls: 'text-emerald-600' },
+    error: { icon: AlertTriangle, text: '保存失败', cls: 'text-rose-600' },
+  };
+  const m = map[state];
+  const Icon = m.icon;
+  return (
+    <span className={cn('inline-flex items-center gap-1 text-xs font-medium', m.cls)}>
+      <Icon className={cn('w-3.5 h-3.5', state === 'saving' && 'animate-spin')} />
+      {m.text}
+    </span>
+  );
+}
+
+const inputCls =
+  'w-full px-3 py-2.5 rounded-xl border border-black/8 bg-gradient-to-b from-white to-[#f8f9fb] text-sm text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 transition-all';

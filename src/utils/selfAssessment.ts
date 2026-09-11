@@ -24,20 +24,7 @@ export interface SelfAssessmentItem {
 export interface SelfAssessment {
   projectId: string;
   items: SelfAssessmentItem[];
-  aiSummary?: string;
-  accountBackgroundSnapshot?: string;
-  guidingQuestions?: SelfGuidingQuestion[];
   updatedAt: string;
-}
-
-export interface SelfGuidingQuestion {
-  id: string;
-  question: string;
-  type: 'choice' | 'number' | 'text';
-  options?: string[];
-  reason: string;
-  impactDimension: 'strength' | 'gap' | 'boundary' | 'fit';
-  answer: string;
 }
 
 export const SELF_STATUS_LABELS: Record<SelfStatus, string> = {
@@ -81,7 +68,7 @@ export function defaultSelfAssessment(projectId: string): SelfAssessment {
       items.push({ id: `${g.category}:${label}`, category: g.category, label, status: 'unknown', note: '' });
     }
   }
-  return { projectId, items, aiSummary: '', accountBackgroundSnapshot: '', guidingQuestions: [], updatedAt: new Date().toISOString() };
+  return { projectId, items, updatedAt: new Date().toISOString() };
 }
 
 const KEY_PREFIX = 'amzdev_self:';
@@ -92,12 +79,7 @@ function storageKey(userId: string, projectId: string): string {
 export async function loadSelfAssessment(userId: string, projectId: string): Promise<SelfAssessment> {
   try {
     const raw = await get<SelfAssessment>(storageKey(userId, projectId));
-    if (raw && Array.isArray(raw.items) && raw.items.length > 0) return {
-      ...raw,
-      aiSummary: raw.aiSummary ?? '',
-      accountBackgroundSnapshot: raw.accountBackgroundSnapshot ?? '',
-      guidingQuestions: Array.isArray(raw.guidingQuestions) ? raw.guidingQuestions : [],
-    };
+    if (raw && Array.isArray(raw.items) && raw.items.length > 0) return raw;
   } catch {
     /* ignore */
   }
@@ -116,21 +98,6 @@ export async function saveSelfAssessment(
 export function computeSelfProgress(
   assessment: SelfAssessment
 ): Pick<FiveLookProgress, 'status' | 'completionPercent' | 'missingRequirements'> {
-  if ((assessment.guidingQuestions?.length ?? 0) > 0) {
-    const questions = assessment.guidingQuestions ?? [];
-    const answered = questions.filter((question) => question.answer.trim()).length;
-    const hasBackground = Boolean(assessment.accountBackgroundSnapshot?.trim());
-    const completionPercent = Math.round(((answered + (hasBackground ? 1 : 0)) / (questions.length + 1)) * 100);
-    const status: FiveLookProgress['status'] = answered === 0
-      ? 'in_progress'
-      : answered === questions.length && hasBackground
-        ? 'completed'
-        : 'in_progress';
-    const missingRequirements: string[] = [];
-    if (!hasBackground) missingRequirements.push('账号背景尚未同步');
-    if (answered < questions.length) missingRequirements.push(`还有 ${questions.length - answered} 个品类引导问题未回答`);
-    return { status, completionPercent, missingRequirements };
-  }
   const total = assessment.items.length;
   const answered = assessment.items.filter((i) => i.status !== 'unknown').length;
   const completionPercent = total > 0 ? Math.round((answered / total) * 100) : 0;

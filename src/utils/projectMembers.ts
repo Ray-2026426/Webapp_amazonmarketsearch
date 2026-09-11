@@ -1,3 +1,4 @@
+// 项目成员管理客户端封装（PRD Phase 3：成员邀请/移除/角色调整）。
 import { getAuthToken, getSupabaseAccessToken } from './auth';
 
 export type MemberRole = 'owner' | 'editor' | 'viewer';
@@ -8,7 +9,6 @@ export interface ProjectMemberInfo {
   email?: string | null;
   account?: string | null;
   created_at?: string;
-  pending?: boolean;
 }
 
 export interface MembersResult {
@@ -24,40 +24,6 @@ export const MEMBER_ROLE_LABELS: Record<MemberRole, string> = {
   editor: '可编辑',
   viewer: '只读',
 };
-
-const PENDING_INVITES_KEY_PREFIX = 'amzdev_pending_invites:';
-
-function pendingKey(projectId: string): string {
-  return `${PENDING_INVITES_KEY_PREFIX}${projectId}`;
-}
-
-function readPendingInvites(projectId: string): ProjectMemberInfo[] {
-  try {
-    const raw = localStorage.getItem(pendingKey(projectId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((item) => item?.pending) : [];
-  } catch {
-    return [];
-  }
-}
-
-function savePendingInvites(projectId: string, invites: ProjectMemberInfo[]): void {
-  localStorage.setItem(pendingKey(projectId), JSON.stringify(invites));
-}
-
-function clearPendingInvite(projectId: string, email: string): void {
-  const normalized = email.trim().toLowerCase();
-  savePendingInvites(projectId, readPendingInvites(projectId).filter((m) => (m.email || '').toLowerCase() !== normalized));
-}
-
-function mergePending(projectId: string, members: ProjectMemberInfo[]): ProjectMemberInfo[] {
-  const registeredEmails = new Set(members.map((m) => (m.email || '').toLowerCase()).filter(Boolean));
-  return [
-    ...members,
-    ...readPendingInvites(projectId).filter((m) => !registeredEmails.has((m.email || '').toLowerCase())),
-  ];
-}
 
 async function postMembers<T>(payload: Record<string, unknown>): Promise<T> {
   const token = getAuthToken();
@@ -80,14 +46,9 @@ export async function fetchProjectMembers(projectId: string): Promise<MembersRes
       { projectId, action: 'list' }
     );
     if (!body.ok) return { ok: false, members: [], myRole: null, error: body.error };
-    return {
-      ok: true,
-      members: mergePending(projectId, body.members ?? []),
-      myRole: body.myRole ?? null,
-      cloudDisabled: body.cloudDisabled,
-    };
+    return { ok: true, members: body.members ?? [], myRole: body.myRole ?? null, cloudDisabled: body.cloudDisabled };
   } catch (e) {
-    return { ok: false, members: mergePending(projectId, []), myRole: null, error: e instanceof Error ? e.message : '获取成员失败' };
+    return { ok: false, members: [], myRole: null, error: e instanceof Error ? e.message : '获取成员失败' };
   }
 }
 
@@ -96,46 +57,24 @@ export async function inviteProjectMember(
   email: string,
   role: Exclude<MemberRole, 'owner'>
 ): Promise<MembersResult> {
-  const normalizedEmail = email.trim().toLowerCase();
   try {
     const body = await postMembers<{ ok?: boolean; members?: ProjectMemberInfo[]; myRole?: MemberRole; error?: string }>(
-      { projectId, action: 'invite', email: normalizedEmail, role }
+      { projectId, action: 'invite', email, role }
     );
     if (!body.ok) return { ok: false, members: [], myRole: null, error: body.error };
-    clearPendingInvite(projectId, normalizedEmail);
-    return { ok: true, members: mergePending(projectId, body.members ?? []), myRole: body.myRole ?? null };
+    return { ok: true, members: body.members ?? [], myRole: body.myRole ?? null };
   } catch (e) {
-    const message = e instanceof Error ? e.message : '邀请失败';
-    if (/尚未注册|not registered|not found/i.test(message)) {
-      const pending = readPendingInvites(projectId).filter((m) => (m.email || '').toLowerCase() !== normalizedEmail);
-      pending.push({
-        user_id: `pending:${normalizedEmail}`,
-        role,
-        email: normalizedEmail,
-        account: '待注册成员',
-        created_at: new Date().toISOString(),
-        pending: true,
-      });
-      savePendingInvites(projectId, pending);
-      const latest = await fetchProjectMembers(projectId);
-      return latest.ok ? latest : { ok: true, members: pending, myRole: 'owner' };
-    }
-    return { ok: false, members: [], myRole: null, error: message };
+    return { ok: false, members: [], myRole: null, error: e instanceof Error ? e.message : '邀请失败' };
   }
 }
 
 export async function removeProjectMember(projectId: string, userId: string): Promise<MembersResult> {
   try {
-    if (userId.startsWith('pending:')) {
-      savePendingInvites(projectId, readPendingInvites(projectId).filter((m) => m.user_id !== userId));
-      const latest = await fetchProjectMembers(projectId);
-      return latest.ok ? latest : { ok: true, members: readPendingInvites(projectId), myRole: 'owner' };
-    }
     const body = await postMembers<{ ok?: boolean; members?: ProjectMemberInfo[]; myRole?: MemberRole; error?: string }>(
       { projectId, action: 'remove', userId }
     );
     if (!body.ok) return { ok: false, members: [], myRole: null, error: body.error };
-    return { ok: true, members: mergePending(projectId, body.members ?? []), myRole: body.myRole ?? null };
+    return { ok: true, members: body.members ?? [], myRole: body.myRole ?? null };
   } catch (e) {
     return { ok: false, members: [], myRole: null, error: e instanceof Error ? e.message : '移除失败' };
   }
@@ -147,17 +86,11 @@ export async function setProjectMemberRole(
   role: Exclude<MemberRole, 'owner'>
 ): Promise<MembersResult> {
   try {
-    if (userId.startsWith('pending:')) {
-      const pending = readPendingInvites(projectId).map((m) => (m.user_id === userId ? { ...m, role } : m));
-      savePendingInvites(projectId, pending);
-      const latest = await fetchProjectMembers(projectId);
-      return latest.ok ? latest : { ok: true, members: pending, myRole: 'owner' };
-    }
     const body = await postMembers<{ ok?: boolean; members?: ProjectMemberInfo[]; myRole?: MemberRole; error?: string }>(
       { projectId, action: 'setRole', userId, role }
     );
     if (!body.ok) return { ok: false, members: [], myRole: null, error: body.error };
-    return { ok: true, members: mergePending(projectId, body.members ?? []), myRole: body.myRole ?? null };
+    return { ok: true, members: body.members ?? [], myRole: body.myRole ?? null };
   } catch (e) {
     return { ok: false, members: [], myRole: null, error: e instanceof Error ? e.message : '修改角色失败' };
   }

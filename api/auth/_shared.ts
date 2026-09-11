@@ -1,20 +1,31 @@
 import crypto from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const DEFAULT_SUPABASE_URL = 'https://fbldvwzoqlewoistybto.supabase.co';
-const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Y1fTAwpwmaZEEQe6Fdtseg_kljnG53_';
-const DEFAULT_ADMIN_EMAILS = ['ljh15874760218@gmail.com'];
+// M0（2026-09）：不再硬编码任何默认 Supabase 项目。
+// 历史问题：此处曾写死一个默认 URL / Publishable Key，导致「未配置环境变量时静默连到某个固定项目」；
+// 该项目失效后全环境（生产 / 预览 / 本地）一起登录失败，且前端只能报"登录失败"，无法诊断。
+// 现在：未配置 → 明确视为「未配置」，由 /api/health 与前端诊断面板给出原因，绝不猜一个库去连。
 
 function env(name: string): string {
   return (process.env[name] || '').trim();
 }
 
 function supabaseUrl(): string {
-  return env('SUPABASE_URL') || DEFAULT_SUPABASE_URL;
+  return env('SUPABASE_URL') || env('VITE_SUPABASE_URL');
 }
 
 function supabasePublishableKey(): string {
-  return env('SUPABASE_PUBLISHABLE_KEY') || env('VITE_SUPABASE_PUBLISHABLE_KEY') || env('SUPABASE_ANON_KEY') || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+  return (
+    env('SUPABASE_PUBLISHABLE_KEY') ||
+    env('VITE_SUPABASE_PUBLISHABLE_KEY') ||
+    env('SUPABASE_ANON_KEY') ||
+    env('VITE_SUPABASE_ANON_KEY')
+  );
+}
+
+/** Supabase 是否具备最小可用配置（URL + 可发布 Key） */
+export function hasSupabaseConfig(): boolean {
+  return Boolean(supabaseUrl() && supabasePublishableKey());
 }
 
 export function getServiceSupabase(): SupabaseClient | null {
@@ -109,7 +120,81 @@ export function json(res: import('@vercel/node').VercelResponse, status: number,
 export function isAdminEmail(email?: string | null): boolean {
   const raw = env('ADMIN_EMAILS') || env('VITE_ADMIN_EMAILS');
   const list = raw
-    ? raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
-    : DEFAULT_ADMIN_EMAILS;
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
   return Boolean(email) && list.includes(String(email).trim().toLowerCase());
+}
+
+/**
+ * 云配置自检（M0）：只返回"是否就绪 + 主机名 + 缺失项"，**绝不回显任何密钥**。
+ * 用途：/api/health 与前端「设置 → 诊断」面板，把"登录失败"变成"能指出缺哪一项配置"。
+ */
+export interface CloudConfigStatus {
+  ready: boolean;
+  supabaseUrlConfigured: boolean;
+  /** 仅主机名，不含路径与密钥，可安全展示 */
+  supabaseHost: string;
+  publishableKeyConfigured: boolean;
+  serviceRoleKeyConfigured: boolean;
+  jwtSecretConfigured: boolean;
+  /** true 表示正在使用不安全的开发默认密钥（生产必须配置 APP_JWT_SECRET） */
+  jwtSecretIsInsecureFallback: boolean;
+  adminEmailsConfigured: boolean;
+  dataPoolKeys: Record<string, boolean>;
+  missing: string[];
+  warnings: string[];
+}
+
+export function getCloudConfigStatus(): CloudConfigStatus {
+  const url = supabaseUrl();
+  let host = '';
+  try {
+    host = url ? new URL(url).host : '';
+  } catch {
+    host = '';
+  }
+  const publishable = Boolean(supabasePublishableKey());
+  const serviceRole = Boolean(env('SUPABASE_SERVICE_ROLE_KEY'));
+  const jwtSecret = Boolean(env('APP_JWT_SECRET') || env('SUPABASE_JWT_SECRET'));
+  const adminEmails = Boolean(env('ADMIN_EMAILS') || env('VITE_ADMIN_EMAILS'));
+  const dataPoolKeys: Record<string, boolean> = {
+    sellersprite: Boolean(env('SELLERSPRITE_SECRET_KEY') || env('VITE_DEFAULT_SELLERSPRITE_SECRET_KEY')),
+    deepseek: Boolean(env('DEEPSEEK_API_KEY') || env('VITE_DEFAULT_AI_KEY')),
+    lingxing: Boolean(env('LINGXING_SECRET_KEY')),
+    xydc: Boolean(env('XYDC_SECRET_KEY') || env('VITE_DEFAULT_XYDC_SECRET_KEY')),
+    sorftime: Boolean(env('SORFTIME_SECRET_KEY')),
+  };
+
+  const missing: string[] = [];
+  if (!url) missing.push('SUPABASE_URL');
+  if (!publishable) missing.push('SUPABASE_PUBLISHABLE_KEY');
+  if (!serviceRole) missing.push('SUPABASE_SERVICE_ROLE_KEY（缺此项：注册会走邮箱确认流程，可能失败）');
+  if (!jwtSecret) missing.push('APP_JWT_SECRET（缺此项：登录令牌使用不安全的开发默认密钥）');
+  if (!adminEmails) missing.push('ADMIN_EMAILS（缺此项：无人被识别为管理员）');
+  for (const [k, v] of Object.entries(dataPoolKeys)) {
+    if (!v) missing.push(`数据池密钥 ${k}`);
+  }
+
+  const warnings: string[] = [];
+  if (!serviceRole && url && publishable) {
+    warnings.push('缺少 SERVICE_ROLE_KEY：登录仍可用，但注册/管理接口会受限');
+  }
+  if (!jwtSecret) {
+    warnings.push('APP_JWT_SECRET 未配置，正在使用 dev-insecure-secret（不可用于生产）');
+  }
+
+  return {
+    ready: Boolean(url && publishable),
+    supabaseUrlConfigured: Boolean(url),
+    supabaseHost: host,
+    publishableKeyConfigured: publishable,
+    serviceRoleKeyConfigured: serviceRole,
+    jwtSecretConfigured: jwtSecret,
+    jwtSecretIsInsecureFallback: !jwtSecret,
+    adminEmailsConfigured: adminEmails,
+    dataPoolKeys,
+    missing,
+    warnings,
+  };
 }

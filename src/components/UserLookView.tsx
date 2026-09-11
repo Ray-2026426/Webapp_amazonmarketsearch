@@ -1,85 +1,50 @@
-import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
-import { ArrowLeft, ArrowRight, Loader2, MessageSquareText, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
-import { Card } from './ui/Card';
-import { FiveLookSummaryShell } from './five-look/FiveLookSummaryShell';
-import { KeywordAnalysis, type AiInsight } from './KeywordAnalysis';
-import { UserInsights } from './UserInsights';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  computeUserProgress,
-  emptyUnmetNeedCandidate,
+  Users,
+  Database,
+  Plus,
+  X,
+  CheckCircle2,
+  Loader2,
+  AlertTriangle,
+  MessageCircle,
+  Search,
+} from 'lucide-react';
+import { cn } from './ui/Card';
+import { Card } from './ui/Card';
+import {
   loadUserLook,
   saveUserLook,
-  type UnmetNeedCandidate,
+  makeUserEvidence,
+  computeUserProgress,
+  emptyUnmetNeedCandidate,
+  EVIDENCE_STRENGTH_LABELS,
   type UserContext,
+  type UserEvidence,
   type UserLookData,
+  type UnmetNeedCandidate,
+  type EvidenceStrength,
 } from '../utils/userLook';
 import { updateLookProgress } from '../utils/projectStore';
-import { runLookAnalysis } from '../utils/lookAi';
-import type { UserInsightsWorkspaceState } from '../utils/userInsightsHistory';
-import type { Keyword, Product, Review } from '../utils/parser';
-import { LOOK_STATUS_LABELS, type ResearchProject } from '../types/researchProject';
+import type { ResearchProject } from '../types/researchProject';
 
-type UserDetailPage = 'summary' | 'keywords' | 'voc';
-type Persona = { people: string; scenarios: string; needs: string };
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+const STRENGTHS: EvidenceStrength[] = ['high', 'medium', 'low'];
 
 export function UserLookView({
   userId,
   project,
   userContext,
-  products = [],
-  reviews,
-  setReviews,
-  persona,
-  setPersona,
-  keywords,
-  setKeywords,
-  marketplaceCode,
-  suggestAsins = [],
-  keywordInitialInsight = null,
-  keywordPersistedInsight = null,
-  keywordInsightRestoreKey = 0,
-  onKeywordInsightSync,
-  vocInitialDeepReport = null,
-  userInsightsWorkspace = null,
-  userInsightsRestoreKey = 0,
-  userInsightsRestorePayload = null,
-  onUserInsightsWorkspaceSync,
-  onOpenKeywordTool,
-  onOpenVocTool,
   onProjectChange,
-  onNavigateMarket,
 }: {
   userId: string;
   project: ResearchProject;
   userContext: UserContext;
   onProjectChange: (updated: ResearchProject) => void;
-  products?: Product[];
-  reviews?: Review[];
-  setReviews?: Dispatch<SetStateAction<Review[]>>;
-  persona?: Persona | null;
-  setPersona?: Dispatch<SetStateAction<Persona | null>>;
-  keywords?: Keyword[];
-  setKeywords?: Dispatch<SetStateAction<Keyword[]>>;
-  marketplaceCode?: string;
-  suggestAsins?: string[];
-  keywordInitialInsight?: AiInsight | null;
-  keywordPersistedInsight?: AiInsight | null;
-  keywordInsightRestoreKey?: number;
-  onKeywordInsightSync?: (state: AiInsight | null) => void;
-  vocInitialDeepReport?: string | null;
-  userInsightsWorkspace?: UserInsightsWorkspaceState | null;
-  userInsightsRestoreKey?: number;
-  userInsightsRestorePayload?: UserInsightsWorkspaceState | null;
-  onUserInsightsWorkspaceSync?: (state: UserInsightsWorkspaceState) => void;
-  onOpenKeywordTool?: () => void;
-  onOpenVocTool?: () => void;
-  onNavigateMarket?: () => void;
 }) {
   const [data, setData] = useState<UserLookData | null>(null);
-  const [detailPage, setDetailPage] = useState<UserDetailPage>('summary');
-  const [saving, setSaving] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -92,477 +57,293 @@ export function UserLookView({
     };
   }, [userId, project.id]);
 
-  const persist = async (next: UserLookData) => {
-    setSaving(true);
-    const stamped = { ...next, updatedAt: new Date().toISOString() };
-    setData(stamped);
-    await saveUserLook(userId, project.id, stamped);
-    const progress = computeUserProgress(stamped);
-    const updated = await updateLookProgress(userId, project.id, 'user', {
-      ...project.fiveLookProgress.user,
-      ...progress,
-      updatedAt: stamped.updatedAt,
-    });
-    if (updated) onProjectChange(updated);
-    setSaving(false);
-  };
+  const persist = useCallback(
+    async (d: UserLookData) => {
+      setSaveState('saving');
+      try {
+        await saveUserLook(userId, project.id, d);
+        const progress = computeUserProgress(d);
+        const updated = await updateLookProgress(userId, project.id, 'user', {
+          ...project.fiveLookProgress.user,
+          status: progress.status,
+          completionPercent: progress.completionPercent,
+          missingRequirements: progress.missingRequirements,
+          updatedAt: new Date().toISOString(),
+        });
+        if (updated) onProjectChange(updated);
+        setSaveState('saved');
+      } catch {
+        setSaveState('error');
+      }
+    },
+    [userId, project.id, project.fiveLookProgress, onProjectChange]
+  );
 
-  const updateCandidate = (id: string, patch: Partial<UnmetNeedCandidate>) => {
-    if (!data) return;
-    const next = {
-      ...data,
-      unmetNeedCandidates: data.unmetNeedCandidates.map((candidate) =>
-        candidate.id === id ? { ...candidate, ...patch } : candidate
-      ),
-    };
-    setData(next);
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => void persist(next), 450);
-  };
-
-  const generateNeeds = async () => {
-    if (!data) return;
-    setGenerating(true);
-    try {
-      const result = await runLookAnalysis('user');
-      if (!result.ok || !result.data) throw new Error(result.error || 'AI 未返回有效需求分类');
-      const raw = Array.isArray(result.data.unmetNeedCandidates) ? result.data.unmetNeedCandidates : [];
-      const candidates = raw.map((item) => {
-        const value = item && typeof item === 'object' ? item as Record<string, unknown> : {};
-        const strength = value.evidenceStrength === 'high' || value.evidenceStrength === 'low' ? value.evidenceStrength : 'medium';
-        return {
-          ...emptyUnmetNeedCandidate(),
-          category: String(value.category || ''),
-          targetUser: String(value.targetUser || ''),
-          scenario: String(value.scenario || ''),
-          jobToBeDone: String(value.jobToBeDone || ''),
-          decisionPath: String(value.decisionPath || ''),
-          needStatement: String(value.needStatement || value.unmetPart || ''),
-          currentAlternative: String(value.currentAlternative || ''),
-          satisfiedPart: String(value.satisfiedPart || ''),
-          unmetPart: String(value.unmetPart || value.needStatement || ''),
-          evidenceNotes: Array.isArray(value.evidenceNotes) ? value.evidenceNotes.map(String).filter(Boolean) : [],
-          evidenceStrength: strength,
-        } satisfies UnmetNeedCandidate;
-      }).filter((candidate) => candidate.needStatement || candidate.category);
-      if (!candidates.length) throw new Error('AI 没有形成可用需求分类，请检查关键词或 VOC 数据。');
-      await persist({
-        ...data,
-        targetUser: String(result.data.targetUser || ''),
-        scenario: String(result.data.scenario || ''),
-        jobToBeDone: String(result.data.jobToBeDone || ''),
-        satisfiedNeeds: Array.isArray(result.data.satisfiedNeeds) ? result.data.satisfiedNeeds.map(String).filter(Boolean) : [],
-        unmetNeedCandidates: candidates,
-      });
-      toast.success(`已生成 ${candidates.length} 类需求，请人工确认并选择细分标准`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '生成需求分类失败');
-    } finally {
-      setGenerating(false);
-    }
-  };
+  const scheduleSave = useCallback(
+    (next: UserLookData) => {
+      setData(next);
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      saveTimer.current = window.setTimeout(() => {
+        void persist(next);
+      }, 500);
+    },
+    [persist]
+  );
 
   if (!data) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-[#aeaeb2]">
-        <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载看用户结论...
+        <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载…
       </div>
     );
   }
 
-  if (detailPage === 'keywords') {
-    return (
-      <UserDetailShell
-        title="关键词分析"
-        subtitle="完整复用关键词详情里的搜索意图、JTBD、场景、人群、痛点和 AI 结论。"
-        onBack={() => setDetailPage('summary')}
-        externalLabel="打开全局关键词工具"
-        onExternal={onOpenKeywordTool}
-      >
-        {keywords && setKeywords ? (
-          <KeywordAnalysis
-            keywords={keywords}
-            setKeywords={setKeywords}
-            marketplaceCode={marketplaceCode}
-            suggestAsins={suggestAsins}
-            initialInsight={keywordInitialInsight}
-            persistedInsight={keywordPersistedInsight}
-            insightRestoreKey={keywordInsightRestoreKey}
-            onInsightSync={onKeywordInsightSync}
-          />
-        ) : (
-          <DetailEmptyState text="当前项目还没有可用于关键词详情页的数据。" />
-        )}
-      </UserDetailShell>
-    );
-  }
+  const update = (patch: Partial<UserLookData>) => scheduleSave({ ...data, ...patch });
 
-  if (detailPage === 'voc') {
-    return (
-      <UserDetailShell
-        title="VOC 分析"
-        subtitle="完整复用评论 / VOC 详情里的情绪、痛点、需求旅程和 AI 深度报告。"
-        onBack={() => setDetailPage('summary')}
-        externalLabel="打开全局 VOC 工具"
-        onExternal={onOpenVocTool}
-      >
-        {reviews && setReviews && setPersona ? (
-          <UserInsights
-            products={products}
-            reviews={reviews}
-            setReviews={setReviews}
-            persona={persona ?? null}
-            setPersona={setPersona}
-            insightsUiActive
-            marketplaceCode={marketplaceCode}
-            initialDeepReport={vocInitialDeepReport}
-            workspaceFromParent={userInsightsWorkspace}
-            workspaceRestoreKey={userInsightsRestoreKey}
-            restorePayload={userInsightsRestorePayload}
-            onWorkspaceSync={onUserInsightsWorkspaceSync}
-          />
-        ) : (
-          <DetailEmptyState text="当前项目还没有可用于 VOC 详情页的数据。" />
-        )}
-      </UserDetailShell>
-    );
-  }
+  const updateCandidate = (id: string, patch: Partial<UnmetNeedCandidate>) => {
+    update({ unmetNeedCandidates: data.unmetNeedCandidates.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
+  };
 
-  const progress = project.fiveLookProgress.user;
-  const keywordCount = userContext.keywordsCount || data.evidence?.keywordsCount || 0;
-  const reviewCount = userContext.reviewsCount || data.evidence?.reviewsCount || 0;
-  const unmetNeeds = data.unmetNeedCandidates
-    .map((c) => c.needStatement || c.jobToBeDone || c.scenario)
-    .filter(Boolean);
-  const highEvidenceCount = data.unmetNeedCandidates.filter((c) => c.evidenceStrength === 'high').length;
-  const judgement = unmetNeeds.length
-    ? `已识别 ${unmetNeeds.length} 个未满足需求，其中 ${highEvidenceCount} 个证据强度较高。`
-    : '当前还没有沉淀出明确的未满足需求，需要先从关键词和 VOC 明细中补证据。';
+  const addCandidate = () => update({ unmetNeedCandidates: [...data.unmetNeedCandidates, emptyUnmetNeedCandidate()] });
+  const removeCandidate = (id: string) => update({ unmetNeedCandidates: data.unmetNeedCandidates.filter((c) => c.id !== id) });
 
-  const keywordSignals = [
-    data.targetUser ? `目标用户：${data.targetUser}` : '',
-    data.scenario ? `使用场景：${data.scenario}` : '',
-    data.jobToBeDone ? `用户任务：${data.jobToBeDone}` : '',
-  ].filter(Boolean);
-  const vocSignals = [
-    ...data.satisfiedNeeds.map((s) => `已满足：${s}`),
-    ...data.unmetNeedCandidates.map((c) => `未满足：${c.needStatement || c.jobToBeDone || '未命名需求'}`),
-  ].filter(Boolean);
+  const updateList = (key: 'satisfiedNeeds', index: number, value: string) => {
+    const next = [...data[key]];
+    next[index] = value;
+    update({ [key]: next } as Partial<UserLookData>);
+  };
+  const addList = (key: 'satisfiedNeeds') => update({ [key]: [...data[key], ''] } as Partial<UserLookData>);
+  const removeList = (key: 'satisfiedNeeds', index: number) => update({ [key]: data[key].filter((_, i) => i !== index) } as Partial<UserLookData>);
+
+  const captureEvidence = () => update({ evidence: makeUserEvidence(userContext) });
 
   return (
     <div className="space-y-4">
-      <FiveLookSummaryShell
-        eyebrow="Five Looks / User"
-        title="看用户 · 需求结论"
-        judgement={judgement}
-        description="这里呈现用户需求的核心结论：他们怎么搜索、怎么决策、现有产品满足了什么、还有哪些需求没有被充分满足。"
-        statusBadge={
-          <span className="rounded-full border border-black/5 bg-[#f5f5f7] px-2.5 py-1 text-[11px] font-semibold text-[#86868b]">
-            {LOOK_STATUS_LABELS[progress.status]} · {progress.completionPercent}%
-          </span>
-        }
-        metrics={[
-          { label: '关键词样本', value: `${keywordCount}`, tone: keywordCount ? 'brand' : 'neutral' },
-          { label: 'VOC 样本', value: `${reviewCount}`, tone: reviewCount ? 'brand' : 'neutral' },
-          { label: '未满足需求', value: `${unmetNeeds.length}`, tone: unmetNeeds.length ? 'warn' : 'neutral' },
-          { label: '高强度证据', value: `${highEvidenceCount}`, tone: highEvidenceCount ? 'good' : 'neutral' },
-        ]}
-        sections={[]}
-      />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <InsightPanel
-          icon={<Search className="w-5 h-5" />}
-          title="关键词分析"
-          subtitle="用户如何搜索、比较和表达需求"
-          actionLabel="打开关键词工具"
-          onAction={onOpenKeywordTool}
-          onOpenDetail={() => setDetailPage('keywords')}
-          items={keywordSignals}
-          emptyText="还没有形成搜索路径结论。请先在关键词工具中补充关键词样本、意图和场景。"
-        />
-        <InsightPanel
-          icon={<MessageSquareText className="w-5 h-5" />}
-          title="VOC 分析"
-          subtitle="评论里反复出现的满意点、抱怨点和期待落差"
-          actionLabel="打开评论 / VOC 工具"
-          onAction={onOpenVocTool}
-          onOpenDetail={() => setDetailPage('voc')}
-          items={vocSignals}
-          emptyText="还没有形成 VOC 结论。请先在评论工具中补充评论样本和痛点归纳。"
-        />
+      {/* 头部 */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center shrink-0">
+            <Users className="w-5 h-5 text-indigo-600" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-[#1d1d1f]">看用户 · 需求地图</h3>
+            <p className="text-sm text-[#86868b] mt-0.5 max-w-xl">
+              把关键词与评论 VOC 合并为「谁在什么场景完成什么任务」，识别未被充分满足的需求。
+            </p>
+          </div>
+        </div>
+        <SaveBadge state={saveState} />
       </div>
 
+      {/* 数据上下文 */}
       <Card>
-        <div className="p-5 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-[#1d1d1f]">需求分类 · 后续分析主线</p>
-                {saving && <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />}
-              </div>
-              <p className="text-xs text-[#86868b] mt-1 leading-5">
-                每一行都描述“谁在什么场景下，要完成什么任务，哪里仍未被满足”。勾选后，它会成为看市场的细分标准、看竞对的满足矩阵行和看机会的证据起点。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => void generateNeeds()} disabled={generating} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
-                {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}AI 生成需求分类
-              </button>
-              <button
-                type="button"
-                onClick={() => void persist({ ...data, unmetNeedCandidates: [...data.unmetNeedCandidates, emptyUnmetNeedCandidate()] })}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
-              >
-                <Plus className="w-3.5 h-3.5" /> 添加需求
-              </button>
-            </div>
+        <div className="p-5">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <p className="text-sm font-semibold text-[#1d1d1f]">数据上下文</p>
+            <button
+              type="button"
+              onClick={captureEvidence}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]"
+            >
+              <Database className="w-3.5 h-3.5" />
+              {data.evidence ? '更新捕获证据' : '捕获为项目证据'}
+            </button>
           </div>
-
-          {data.unmetNeedCandidates.length ? (
-            <div className="space-y-3">
-              {data.unmetNeedCandidates.map((candidate, index) => (
-                <div key={candidate.id} className="rounded-2xl border border-black/8 bg-[#fafafa] p-4">
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#424245]">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(candidate.selectedForSegmentation)}
-                        onChange={(event) => updateCandidate(candidate.id, { selectedForSegmentation: event.target.checked })}
-                        className="accent-indigo-600"
-                      />
-                      作为细分标准
-                    </label>
-                    <div className="flex items-center gap-1">
-                      {index > 0 && <button type="button" onClick={() => {
-                        const previous = data.unmetNeedCandidates[index - 1];
-                        const merged: UnmetNeedCandidate = {
-                          ...previous,
-                          category: previous.category || candidate.category,
-                          targetUser: [previous.targetUser, candidate.targetUser].filter(Boolean).join('；'),
-                          scenario: [previous.scenario, candidate.scenario].filter(Boolean).join('；'),
-                          jobToBeDone: [previous.jobToBeDone, candidate.jobToBeDone].filter(Boolean).join('；'),
-                          needStatement: [previous.needStatement, candidate.needStatement].filter(Boolean).join('；'),
-                          unmetPart: [previous.unmetPart, candidate.unmetPart].filter(Boolean).join('；'),
-                          evidenceNotes: [...new Set([...(previous.evidenceNotes ?? []), ...(candidate.evidenceNotes ?? [])])],
-                          selectedForSegmentation: Boolean(previous.selectedForSegmentation || candidate.selectedForSegmentation),
-                        };
-                        void persist({ ...data, unmetNeedCandidates: data.unmetNeedCandidates.map((item) => item.id === previous.id ? merged : item).filter((item) => item.id !== candidate.id) });
-                      }} className="rounded-lg px-2 py-1.5 text-[11px] font-semibold text-[#86868b] hover:text-indigo-600 hover:bg-indigo-50">合并到上一类</button>}
-                      <button type="button" onClick={() => {
-                        const copy = { ...candidate, id: emptyUnmetNeedCandidate().id, category: `${candidate.category || '需求'}（拆分）`, selectedForSegmentation: false };
-                        const next = [...data.unmetNeedCandidates];
-                        next.splice(index + 1, 0, copy);
-                        void persist({ ...data, unmetNeedCandidates: next });
-                      }} className="rounded-lg px-2 py-1.5 text-[11px] font-semibold text-[#86868b] hover:text-indigo-600 hover:bg-indigo-50">拆分副本</button>
-                      <button
-                        type="button"
-                        title="删除需求"
-                        onClick={() => void persist({ ...data, unmetNeedCandidates: data.unmetNeedCandidates.filter((item) => item.id !== candidate.id) })}
-                        className="w-8 h-8 rounded-lg text-[#aeaeb2] hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <NeedField label="需求分类" value={candidate.category ?? ''} placeholder={`例如：便携收纳 ${index + 1}`} onChange={(value) => updateCandidate(candidate.id, { category: value })} />
-                    <NeedField label="需求强度" value={candidate.evidenceStrength} type="select" onChange={(value) => updateCandidate(candidate.id, { evidenceStrength: value as UnmetNeedCandidate['evidenceStrength'] })} />
-                    <NeedField label="用户画像" value={candidate.targetUser} placeholder="谁最强烈需要它？" onChange={(value) => updateCandidate(candidate.id, { targetUser: value })} />
-                    <NeedField label="使用场景" value={candidate.scenario} placeholder="在什么情境下发生？" onChange={(value) => updateCandidate(candidate.id, { scenario: value })} />
-                    <NeedField label="JTBD" value={candidate.jobToBeDone} placeholder="用户想完成什么任务？" onChange={(value) => updateCandidate(candidate.id, { jobToBeDone: value })} />
-                    <NeedField label="决策路径" value={candidate.decisionPath ?? ''} placeholder="如何发现、比较、购买？" onChange={(value) => updateCandidate(candidate.id, { decisionPath: value })} />
-                    <NeedField label="当前替代方案" value={candidate.currentAlternative} placeholder="现在用什么解决？" onChange={(value) => updateCandidate(candidate.id, { currentAlternative: value })} />
-                    <NeedField label="已经满足" value={candidate.satisfiedPart ?? ''} placeholder="竞品已经做好了什么？" onChange={(value) => updateCandidate(candidate.id, { satisfiedPart: value })} />
-                    <div className="md:col-span-2">
-                      <NeedField label="未满足需求（必须具体）" value={candidate.unmetPart || candidate.needStatement} placeholder="谁，在什么场景下，因为什么不足而无法完成什么任务？" onChange={(value) => updateCandidate(candidate.id, { unmetPart: value, needStatement: value })} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-black/10 bg-[#fafafa] px-4 py-8 text-center text-sm text-[#86868b]">
-              暂无结构化需求。可从关键词/VOC 结论整理，或手动添加第一条。
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-4">
-            <p className="text-xs text-[#86868b]">
-              已选 {data.unmetNeedCandidates.filter((item) => item.selectedForSegmentation).length} 条作为细分标准
-            </p>
-            {onNavigateMarket && (
-              <button
-                type="button"
-                disabled={!data.unmetNeedCandidates.some((item) => item.selectedForSegmentation)}
-                onClick={onNavigateMarket}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
-              >
-                用这些需求看市场 <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            )}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-[#86868b]">
+            <span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> 关键词 {userContext.keywordsCount}</span>
+            <span className="inline-flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> 评论 {userContext.reviewsCount}</span>
+            <span>{userContext.sourceLabel || '未标注来源'}</span>
+            {userContext.isDemo && <span className="rounded-full bg-indigo-50 text-indigo-600 px-2 py-0.5 text-[10px] font-semibold">示例数据</span>}
           </div>
         </div>
       </Card>
+
+      {data.evidence && <UserEvidenceCard evidence={data.evidence} />}
+
+      {/* 用户需求地图：目标用户 / 场景 / JTBD */}
+      <Card>
+        <div className="p-5 space-y-4">
+          <p className="text-sm font-semibold text-[#1d1d1f]">用户需求地图</p>
+          <Field label="目标用户">
+            <input value={data.targetUser} onChange={(e) => update({ targetUser: e.target.value })} placeholder="例如：美国站侧睡人群、颈椎不适的上班族" className={inputCls} />
+          </Field>
+          <Field label="使用场景">
+            <input value={data.scenario} onChange={(e) => update({ scenario: e.target.value })} placeholder="例如：睡前、久坐办公、旅行途中" className={inputCls} />
+          </Field>
+          <Field label="用户任务 / JTBD">
+            <textarea value={data.jobToBeDone} onChange={(e) => update({ jobToBeDone: e.target.value })} rows={2} placeholder="用户希望完成什么任务？例如：侧睡时保持颈椎中立、不闷热" className={inputCls} />
+          </Field>
+        </div>
+      </Card>
+
+      {/* 已满足需求 */}
+      <StringListCard title="已满足需求" hint="现有产品已经较好满足的需求，用于对照" value={data.satisfiedNeeds} onAdd={() => addList('satisfiedNeeds')} onChange={(i, v) => updateList('satisfiedNeeds', i, v)} onRemove={(i) => removeList('satisfiedNeeds', i)} />
+
+      {/* 未满足需求候选 */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-[#1d1d1f]">未满足需求候选</p>
+            <p className="text-xs text-[#aeaeb2] mt-0.5">每个候选都要能说明：目标用户 + 场景 + 任务 + 当前替代方案 + 证据强度</p>
+          </div>
+          <button type="button" onClick={addCandidate} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]">
+            <Plus className="w-3.5 h-3.5" /> 添加未满足需求
+          </button>
+        </div>
+        {data.unmetNeedCandidates.length === 0 ? (
+          <Card className="py-10 text-center">
+            <p className="text-sm text-[#aeaeb2]">尚未添加未满足需求候选</p>
+          </Card>
+        ) : (
+          data.unmetNeedCandidates.map((c, i) => (
+            <UnmetNeedCard key={c.id} index={i} candidate={c} onChange={(patch) => updateCandidate(c.id, patch)} onRemove={() => removeCandidate(c.id)} />
+          ))
+        )}
+      </div>
     </div>
   );
 }
 
-function NeedField({
-  label,
-  value,
-  placeholder,
-  type = 'text',
+function UnmetNeedCard({
+  index,
+  candidate,
   onChange,
+  onRemove,
 }: {
-  label: string;
-  value: string;
-  placeholder?: string;
-  type?: 'text' | 'select';
-  onChange: (value: string) => void;
+  index: number;
+  candidate: UnmetNeedCandidate;
+  onChange: (patch: Partial<UnmetNeedCandidate>) => void;
+  onRemove: () => void;
 }) {
   return (
+    <Card>
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-semibold text-[#86868b]">未满足需求 #{index + 1}</span>
+          <button type="button" onClick={onRemove} className="w-8 h-8 rounded-lg hover:bg-rose-50 flex items-center justify-center text-[#aeaeb2] hover:text-rose-500 transition-colors"><X className="w-4 h-4" /></button>
+        </div>
+        <Field label="未满足需求">
+          <textarea value={candidate.needStatement} onChange={(e) => onChange({ needStatement: e.target.value })} rows={2} placeholder="当前产品没有充分满足什么？" className={inputCls} />
+        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <Field label="目标用户">
+            <input value={candidate.targetUser} onChange={(e) => onChange({ targetUser: e.target.value })} placeholder="谁存在这个需求" className={inputCls} />
+          </Field>
+          <Field label="使用场景">
+            <input value={candidate.scenario} onChange={(e) => onChange({ scenario: e.target.value })} placeholder="在什么情况下" className={inputCls} />
+          </Field>
+          <Field label="用户任务 / JTBD">
+            <input value={candidate.jobToBeDone} onChange={(e) => onChange({ jobToBeDone: e.target.value })} placeholder="需要完成什么任务" className={inputCls} />
+          </Field>
+          <Field label="当前替代方案">
+            <input value={candidate.currentAlternative} onChange={(e) => onChange({ currentAlternative: e.target.value })} placeholder="用户现在怎么解决，代价是什么" className={inputCls} />
+          </Field>
+        </div>
+        <div className="mt-3">
+          <p className="text-xs font-semibold text-[#424245] mb-1.5">证据强度</p>
+          <div className="flex items-center gap-1.5">
+            {STRENGTHS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onChange({ evidenceStrength: s })}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all active:scale-[0.96]',
+                  candidate.evidenceStrength === s
+                    ? s === 'high' ? 'bg-emerald-600 text-white border-emerald-600' : s === 'medium' ? 'bg-amber-500 text-white border-amber-500' : 'bg-rose-500 text-white border-rose-500'
+                    : 'bg-white text-[#aeaeb2] border-black/5 hover:text-[#424245] hover:border-black/10'
+                )}
+              >
+                {EVIDENCE_STRENGTH_LABELS[s]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function StringListCard({
+  title,
+  hint,
+  value,
+  onAdd,
+  onChange,
+  onRemove,
+}: {
+  title: string;
+  hint: string;
+  value: string[];
+  onAdd: () => void;
+  onChange: (index: number, value: string) => void;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <Card>
+      <div className="p-5">
+        <p className="text-sm font-semibold text-[#1d1d1f] mb-1">{title}</p>
+        <p className="text-xs text-[#aeaeb2] mb-3">{hint}</p>
+        <div className="space-y-2">
+          {value.map((v, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input value={v} onChange={(e) => onChange(i, e.target.value)} placeholder={`第 ${i + 1} 条`} className={inputCls} />
+              <button type="button" onClick={() => onRemove(i)} className="shrink-0 w-8 h-8 rounded-lg hover:bg-[#f5f5f7] flex items-center justify-center text-[#aeaeb2] hover:text-rose-500 transition-colors"><X className="w-4 h-4" /></button>
+            </div>
+          ))}
+          <button type="button" onClick={onAdd} className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors">
+            <Plus className="w-3.5 h-3.5" /> 添加
+          </button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function UserEvidenceCard({ evidence }: { evidence: UserEvidence }) {
+  return (
+    <Card className="border-indigo-100 bg-indigo-50/40">
+      <div className="p-5">
+        <div className="flex items-center gap-2 mb-2">
+          <Database className="w-4 h-4 text-indigo-600" />
+          <p className="text-sm font-semibold text-[#1d1d1f]">已捕获的用户证据</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-[#86868b]">
+          <span>关键词 {evidence.keywordsCount}</span>
+          <span>评论 {evidence.reviewsCount}</span>
+          <span>{evidence.sourceLabel || '未标注来源'}</span>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
     <label className="block">
-      <span className="block text-[11px] font-semibold text-[#86868b] mb-1">{label}</span>
-      {type === 'select' ? (
-        <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-xl border border-black/8 bg-white px-3 py-2 text-sm text-[#424245] focus:outline-none focus:ring-2 focus:ring-indigo-500/20">
-          <option value="high">高：多源重复出现</option>
-          <option value="medium">中：有明确证据</option>
-          <option value="low">低：仍需补证</option>
-        </select>
-      ) : (
-        <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-xl border border-black/8 bg-white px-3 py-2 text-sm text-[#424245] placeholder:text-[#c7c7cc] focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
-      )}
+      <span className="block text-xs font-semibold text-[#424245] mb-1.5">{label}</span>
+      {children}
     </label>
   );
 }
 
-function InsightPanel({
-  icon,
-  title,
-  subtitle,
-  actionLabel,
-  onAction,
-  onOpenDetail,
-  items,
-  emptyText,
-}: {
-  icon: ReactNode;
-  title: string;
-  subtitle: string;
-  actionLabel: string;
-  onAction?: () => void;
-  onOpenDetail?: () => void;
-  items: string[];
-  emptyText: string;
-}) {
+function SaveBadge({ state }: { state: SaveState }) {
+  if (state === 'idle') return null;
+  const map: Record<SaveState, { icon: typeof CheckCircle2; text: string; cls: string }> = {
+    idle: { icon: CheckCircle2, text: '', cls: '' },
+    saving: { icon: Loader2, text: '保存中…', cls: 'text-amber-600' },
+    saved: { icon: CheckCircle2, text: '已保存', cls: 'text-emerald-600' },
+    error: { icon: AlertTriangle, text: '保存失败', cls: 'text-rose-600' },
+  };
+  const m = map[state];
+  const Icon = m.icon;
   return (
-    <Card>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onOpenDetail}
-        onKeyDown={(event) => {
-          if (!onOpenDetail) return;
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            onOpenDetail();
-          }
-        }}
-        className="p-5 space-y-4 cursor-pointer rounded-[inherit] transition-colors hover:bg-[#fafafa]"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-              {icon}
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-[#1d1d1f]">{title}</p>
-              <p className="text-xs text-[#86868b] mt-0.5">{subtitle}</p>
-            </div>
-          </div>
-          {onAction && (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onAction();
-              }}
-              className="shrink-0 px-3 py-1.5 rounded-xl border border-black/8 bg-white text-xs font-semibold text-[#424245] hover:text-indigo-600 hover:border-indigo-200 transition-all"
-            >
-              {actionLabel}
-            </button>
-          )}
-        </div>
-        {items.length ? (
-          <div className="space-y-2">
-            {items.map((item, index) => (
-              <div key={`${item}-${index}`} className="rounded-xl border border-black/5 bg-[#fafafa] px-3 py-2 text-sm text-[#424245] leading-6">
-                {item}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-black/10 bg-[#fafafa] px-4 py-6 text-sm text-[#86868b] leading-6">
-            {emptyText}
-          </div>
-        )}
-      </div>
-    </Card>
+    <span className={cn('inline-flex items-center gap-1 text-xs font-medium', m.cls)}>
+      <Icon className={cn('w-3.5 h-3.5', state === 'saving' && 'animate-spin')} />
+      {m.text}
+    </span>
   );
 }
 
-function UserDetailShell({
-  title,
-  subtitle,
-  externalLabel,
-  onBack,
-  onExternal,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  externalLabel: string;
-  onBack: () => void;
-  onExternal?: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3 min-w-0">
-          <button
-            type="button"
-            onClick={onBack}
-            className="mt-1 shrink-0 w-9 h-9 rounded-xl border border-black/8 bg-white text-[#86868b] hover:text-indigo-600 hover:border-indigo-200 transition-all flex items-center justify-center"
-            title="返回看用户"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div className="min-w-0">
-            <h3 className="text-xl font-bold text-[#1d1d1f]">{title}</h3>
-            <p className="text-sm text-[#86868b] mt-1 leading-6">{subtitle}</p>
-          </div>
-        </div>
-        {onExternal && (
-          <button
-            type="button"
-            onClick={onExternal}
-            className="shrink-0 px-3 py-2 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-all"
-          >
-            {externalLabel}
-          </button>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function DetailEmptyState({ text }: { text: string }) {
-  return (
-    <Card>
-      <div className="px-4 py-8 text-center text-sm text-[#86868b]">{text}</div>
-    </Card>
-  );
-}
+const inputCls =
+  'w-full px-3 py-2.5 rounded-xl border border-black/8 bg-gradient-to-b from-white to-[#f8f9fb] text-sm text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 transition-all';

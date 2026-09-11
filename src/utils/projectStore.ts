@@ -103,7 +103,7 @@ export function migrateProject(raw: unknown): ResearchProject | null {
     ownerId: typeof raw.ownerId === 'string' ? raw.ownerId : '',
     memberIds: Array.isArray(raw.memberIds) ? (raw.memberIds as string[]) : [],
     status: (raw.status as ResearchProject['status']) ?? 'draft',
-    activeLook: (raw.activeLook as FiveLookId) ?? 'user',
+    activeLook: (raw.activeLook as FiveLookId) ?? 'market',
     fiveLookProgress,
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : nowIso(),
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : nowIso(),
@@ -167,7 +167,7 @@ export async function createProject(
     ownerId: input.ownerId,
     memberIds: [],
     status: 'draft',
-    activeLook: 'user',
+    activeLook: 'market',
     fiveLookProgress: emptyFiveLookProgress(),
     createdAt: now,
     updatedAt: now,
@@ -281,27 +281,19 @@ export function applyLookProgressUpdate(
   };
   let status = project.status;
 
-  const dependents: Record<FiveLookId, FiveLookId[]> = {
-    user: ['market', 'competitor', 'self', 'opportunity'],
-    market: ['competitor', 'self', 'opportunity'],
-    competitor: ['self', 'opportunity'],
-    self: ['opportunity'],
-    opportunity: [],
-  };
-  let invalidated = false;
-  for (const dependent of dependents[look]) {
-    const current = fiveLookProgress[dependent];
-    if (current.status === 'not_started') continue;
-    const reason = `${FIVE_LOOK_LABELS[look]}数据已更新，请复核${FIVE_LOOK_LABELS[dependent]}结论`;
-    fiveLookProgress[dependent] = {
-      ...current,
-      status: 'stale',
-      staleReasons: [...new Set([...current.staleReasons, reason])],
-      updatedAt: nowIso(),
-    };
-    invalidated = true;
+  if (look !== 'opportunity') {
+    const opportunity = fiveLookProgress.opportunity;
+    if (opportunity.status !== 'not_started') {
+      const reason = `${FIVE_LOOK_LABELS[look]}数据已更新，请复核机会结论`;
+      fiveLookProgress.opportunity = {
+        ...opportunity,
+        status: 'stale',
+        staleReasons: [...new Set([...opportunity.staleReasons, reason])],
+        updatedAt: nowIso(),
+      };
+      if (status === 'ready_for_review') status = 'researching';
+    }
   }
-  if (invalidated && status === 'ready_for_review') status = 'researching';
 
   return { fiveLookProgress, status };
 }
@@ -336,7 +328,6 @@ export async function duplicateProject(
     createdAt: now,
     updatedAt: now,
     version: 1,
-    cloudRevision: undefined,
     fiveLookProgress: emptyFiveLookProgress(),
   };
   list.unshift(copy);
@@ -350,7 +341,6 @@ const LOOK_DATA_KEY_PREFIXES = [
   'amzdev_user:',
   'amzdev_competitor:',
   'amzdev_opp:',
-  'amzdev_opp_conclusion:',
   'amzdev_reports:',
 ];
 

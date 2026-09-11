@@ -245,7 +245,7 @@ export async function syncProjects(
       pulled: 0,
       deleted: 0,
       conflicts: 0,
-      projects: dropPendingDeletions(local, pendingDeletionIds),
+      projects: local,
       error: e instanceof Error ? e.message : '同步失败',
     };
   }
