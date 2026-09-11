@@ -9,8 +9,10 @@ import {
   Loader2,
   RefreshCw,
   ShieldCheck,
+  Trash2,
   XCircle,
 } from 'lucide-react';
+import { loadSupabaseConfig, saveSupabaseConfig } from '../utils/supabaseConfig';
 
 /**
  * M0「设置 → 诊断」面板。
@@ -154,6 +156,22 @@ export function SystemDiagnosticsPanel() {
   const [probing, setProbing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastChecked, setLastChecked] = useState<string>('');
+  /**
+   * 客户端遗留配置自检（M1，接回 supabaseConfig 模块）：
+   * 旧版本把 Supabase 配置存在浏览器 localStorage；新架构下客户端不再直连数据库，
+   * 这类残留既是无效配置、也是密钥卫生隐患，因此在诊断里明确提示并提供清除。
+   */
+  const [legacyConfig, setLegacyConfig] = useState<{ url: string } | null>(null);
+
+  useEffect(() => {
+    const cfg = loadSupabaseConfig();
+    setLegacyConfig(cfg ? { url: cfg.url } : null);
+  }, []);
+
+  const clearLegacy = () => {
+    saveSupabaseConfig(null);
+    setLegacyConfig(null);
+  };
 
   const load = useCallback(async (probe: boolean) => {
     if (probe) setProbing(true);
@@ -276,6 +294,31 @@ export function SystemDiagnosticsPanel() {
               />
             );
           })}
+        </div>
+      )}
+
+      {/* 客户端遗留配置自检 */}
+      {legacyConfig && (
+        <div className="rounded-xl border border-amber-100 bg-amber-50 p-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-[#1d1d1f]">检测到浏览器内遗留的 Supabase 配置</p>
+              <p className="text-[11px] text-[#424245] mt-1 break-all">
+                地址：{legacyConfig.url}
+                <br />
+                当前架构下前端<b>不再直连数据库</b>（一律走服务端 API），这份浏览器内配置已无效，且属于密钥卫生隐患，建议清除。
+              </p>
+              <button
+                type="button"
+                onClick={clearLegacy}
+                className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-300 bg-white text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
+              >
+                <Trash2 className="w-3 h-3" />
+                清除浏览器内配置
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
