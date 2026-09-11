@@ -1,4 +1,4 @@
-﻿// 看自己（FR-06）：结构化自评，供「看自己」视角与「看/找机会」机会卡自身适配度使用。
+// 看自己（FR-06）：结构化自评，供「看自己」视角与「看/找机会」机会卡自身适配度使用。
 // 每项支持：已具备 / 部分具备 / 不具备 / 待确认，并可添加备注。
 
 import { get, set } from 'idb-keyval';
@@ -21,9 +21,25 @@ export interface SelfAssessmentItem {
   note?: string;
 }
 
+/**
+ * M1：AI 起草的自身适配结论。
+ * 只做「起草」，不修改 items 里的人工自评；为空时才回填（见 lookAiMerge 的非破坏性规则）。
+ * 字段设计与 phase-0 的 SelfAssessment 富模型（aiSummary/guidingQuestions）保持兼容，便于 M4 合并。
+ */
+export interface SelfAiDraft {
+  conclusion?: string;
+  strengths?: string[];
+  gaps?: string[];
+  hardConstraints?: string[];
+  fitAssessment?: string;
+  updatedAt?: string;
+}
+
 export interface SelfAssessment {
   projectId: string;
   items: SelfAssessmentItem[];
+  /** AI 起草结论（可选） */
+  aiDraft?: SelfAiDraft;
   updatedAt: string;
 }
 

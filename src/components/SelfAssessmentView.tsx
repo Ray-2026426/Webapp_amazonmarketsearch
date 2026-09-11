@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Loader2, AlertTriangle, ClipboardList } from 'lucide-react';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
@@ -14,6 +14,9 @@ import {
 } from '../utils/selfAssessment';
 import { updateLookProgress } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
+import { LookAiBar } from './LookAiBar';
+import { makeMergeAcc, mergeText, mergeList } from '../utils/lookAiMerge';
+import type { SelfAiDraft } from '../utils/selfAssessment';
 
 const STATUS_ORDER: SelfStatus[] = ['have', 'partial', 'lack', 'unknown'];
 
@@ -88,6 +91,33 @@ export function SelfAssessmentView({
     scheduleSave({ ...assessment, items });
   };
 
+  /** M1：把已作答的自评项整理成 AI 可读的问答对（未作答项不传，避免让 AI 凭空判断） */
+  const buildAnswers = (): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const it of assessment.items) {
+      if (it.status === 'unknown') continue;
+      const label = `${SELF_CATEGORY_LABELS[it.category]}·${it.label}`;
+      out[label] = `${SELF_STATUS_LABELS[it.status]}${it.note?.trim() ? `；${it.note.trim()}` : ''}`;
+    }
+    return out;
+  };
+
+  /** M1：AI 起草回填 —— 只填 aiDraft，绝不改动人工自评项 */
+  const applyAi = (out: Record<string, unknown>) => {
+    const acc = makeMergeAcc();
+    const cur: SelfAiDraft = assessment.aiDraft ?? {};
+    const next: SelfAiDraft = {
+      conclusion: mergeText(cur.conclusion ?? '', out.conclusion, '适配度总体判断', acc),
+      strengths: mergeList(cur.strengths ?? [], out.strengths, '自身优势', acc),
+      gaps: mergeList(cur.gaps ?? [], out.gaps, '能力缺口', acc),
+      hardConstraints: mergeList(cur.hardConstraints ?? [], out.hardConstraints, '硬约束与止损边界', acc),
+      fitAssessment: mergeText(cur.fitAssessment ?? '', out.fitAssessment, '对机会卡的适配度评价', acc),
+      updatedAt: new Date().toISOString(),
+    };
+    scheduleSave({ ...assessment, aiDraft: next });
+    return { filled: acc.filled, skipped: acc.skipped };
+  };
+
   if (!assessment) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-[#aeaeb2]">
@@ -118,6 +148,57 @@ export function SelfAssessmentView({
           <SaveBadge state={saveState} />
         </div>
       </div>
+
+      <LookAiBar
+        look="self"
+        extra={{ answers: buildAnswers() }}
+        disabled={answered === 0}
+        onApply={applyAi}
+        hint={
+          answered === 0
+            ? '请先在上面至少标注一项自评（已具备 / 部分具备 / 不具备），AI 才能判断自身适配度。'
+            : `AI 会结合已作答的 ${answered} 项与账号背景，生成适配度判断、优势、缺口与硬约束（只填空，不改你已评的项）。`
+        }
+      />
+
+      {assessment.aiDraft && (
+        <Card className="border-indigo-100 bg-indigo-50/40">
+          <div className="p-5 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-[#1d1d1f]">AI 起草 · 自身适配结论</p>
+              <span className="text-[11px] text-[#86868b]">仅起草，不修改你的自评项</span>
+            </div>
+            {assessment.aiDraft.conclusion && (
+              <p className="text-sm text-[#424245] leading-relaxed">{assessment.aiDraft.conclusion}</p>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {(
+                [
+                  ['自身优势', assessment.aiDraft.strengths, 'text-emerald-700'],
+                  ['能力缺口', assessment.aiDraft.gaps, 'text-amber-700'],
+                  ['硬约束 / 止损边界', assessment.aiDraft.hardConstraints, 'text-rose-700'],
+                ] as const
+              ).map(([label, list, cls]) => (
+                <div key={label} className="rounded-xl border border-black/5 bg-white p-3">
+                  <p className={`text-xs font-semibold ${cls} mb-1.5`}>{label}</p>
+                  {list && list.length > 0 ? (
+                    <ul className="space-y-1">
+                      {list.map((t, i) => (
+                        <li key={i} className="text-[11px] text-[#424245] leading-relaxed">· {t}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[11px] text-[#aeaeb2]">暂无</p>
+                  )}
+                </div>
+              ))}
+            </div>
+            {assessment.aiDraft.fitAssessment && (
+              <p className="text-xs text-[#424245]">对机会卡的适配度：{assessment.aiDraft.fitAssessment}</p>
+            )}
+          </div>
+        </Card>
+      )}
 
       {SELF_CATEGORY_ORDER.map((cat) => {
         const items = assessment.items.filter((i) => i.category === cat);
