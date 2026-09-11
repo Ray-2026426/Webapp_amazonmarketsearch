@@ -57,10 +57,12 @@ export interface GlobalMarketData {
   segmentDescriptions: Record<string, { people: string; scenarios: string; needs: string }>;
 }
 
-const DEMO_RE = /demo|示例|sample/i;
+// 说明：原先用 `DEMO_RE.test(marketplaceCode)` 判断示例数据，但站点码（如 'US'）永远匹配不到
+// /demo|示例|sample/，导致 isDemo 恒为 false（PRD §2.7.4 第 6 条）。现改为读 IDB 的 isDemoData 标记，
+// 与 App 加载示例数据时写入的状态保持一致。
 
 export async function gatherGlobalMarketData(): Promise<GlobalMarketData> {
-  const [products, reviews, keywords, months, marketplace, compWorkspace, segments, asinToSegment, history, segmentDescriptions] = await Promise.all([
+  const [products, reviews, keywords, months, marketplace, compWorkspace, segments, asinToSegment, history, segmentDescriptions, isDemoFlag] = await Promise.all([
     get('products'),
     get('reviews'),
     get('keywords'),
@@ -71,6 +73,7 @@ export async function gatherGlobalMarketData(): Promise<GlobalMarketData> {
     get('asinToSegment'),
     get('history'),
     get('segmentDescriptions'),
+    get('isDemoData'),
   ] as const);
   const productList = Array.isArray(products) ? (products as Product[]) : [];
   const reviewList = Array.isArray(reviews) ? (reviews as Review[]) : [];
@@ -94,7 +97,7 @@ export async function gatherGlobalMarketData(): Promise<GlobalMarketData> {
     reviews: reviewList,
     keywords: keywordList,
     competitorAsins,
-    isDemo: DEMO_RE.test(marketplaceCode),
+    isDemo: Boolean(isDemoFlag),
     segments: segmentList,
     asinToSegment: segMap,
     history: histList,

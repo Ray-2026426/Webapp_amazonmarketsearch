@@ -31,6 +31,11 @@ export const WORKSPACE_IDB_KEYS = [
   'anchorAnnotations',
   'userInsightsWorkspace',
   'segmentationPrompt',
+  // 补齐（PRD §2.7.4 第 7 条）：competitorWorkspace 此前不在白名单，且从未被写入 IDB，
+  // 导致 lookAi.gatherGlobalMarketData 读到的 competitorAsins 恒为空。
+  'competitorWorkspace',
+  'isDemoData',
+  'demoDataVersion',
 ] as const;
 
 export async function clearWorkspaceIndexedDb(): Promise<void> {

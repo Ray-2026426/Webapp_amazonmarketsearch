@@ -571,7 +571,7 @@ export default function App() {
       marketReportCache,
       activeView,
       anchorAnnotations,
-      competitorWorkspace: competitorWorkspace?.hasResult ? competitorWorkspace : competitorWorkspace,
+      competitorWorkspace,
       userInsightsWorkspace,
     });
     if ('error' in res) {
@@ -951,6 +951,13 @@ export default function App() {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isInitializing, isDataLoaded, reviews.length]);
+
+  // 断链修复（PRD §2.3-9 / §2.7.4 第 7 条）：competitorWorkspace 此前「只读不写」——
+  // lookAi.gatherGlobalMarketData 会读这个 IDB 键，但全库没有任何 set，导致 competitorAsins 恒为空。
+  useEffect(() => {
+    if (isInitializing || isRestoring) return;
+    void set('competitorWorkspace', competitorWorkspace);
+  }, [competitorWorkspace, isInitializing, isRestoring]);
 
   // Save state to IndexedDB when it changes（有市场数据或仅有评论数据时都持久化）
   useEffect(() => {
@@ -1386,6 +1393,23 @@ export default function App() {
           >
             <FolderKanban className="w-5 h-5" />
             <span>项目中心</span>
+          </button>
+          {/* M1：全局独立工具（原样照搬老版，不进任何项目）。见 PRD §5.1 / §5.3 */}
+          <button
+            onClick={() => setActiveView('profit')}
+            title="独立工具 · 原样保留老版利润计算器，不进入任何项目"
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'profit' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+          >
+            <Calculator className="w-5 h-5" />
+            <span>利润计算器</span>
+          </button>
+          <button
+            onClick={() => setActiveView('market')}
+            title="独立工具 · 老版市场大盘（全市场），原样保留、不做改变"
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'market' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+          >
+            <BarChart3 className="w-5 h-5" />
+            <span>市场大盘 · 全市场</span>
           </button>
 </nav>
         <div className="p-4 border-t border-black/5 space-y-2">
