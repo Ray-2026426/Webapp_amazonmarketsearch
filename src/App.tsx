@@ -383,9 +383,19 @@ export default function App() {
     setUserInsightsRestoreKey((k) => k + 1);
     setCompetitorDemo(demo.competitorDemo);
     setSelectedCompareAsins(demo.competitorDemo.selectedAsins.slice(0, 5));
-    // 示例报告指纹按「无分层」计算，同步清空分层以免缓存对不上
-    setSegments([]);
-    setAsinToSegment({});
+    // 断链 #8 修复（PRD §2.3-8）：示例数据过去把细分清空，导致演示态下「细分评分 / 竞对自动挑选」
+    // 恒显"还没有细分市场"，五看空转、新用户第一印象是"功能不可用"。
+    // 现在改为：用示例商品自身派生出展示用细分（优先 subCategory，其次价格带），
+    // 并用**同一份细分**计算示例报告指纹 —— 缓存依然命中，示例报告照旧立刻可见。
+    const demoAsinToSegment: Record<string, string> = {};
+    for (const p of demo.products) {
+      const byCat = (p.subCategory || '').trim();
+      const key = byCat || (p.price >= 45 ? '$45+' : p.price >= 30 ? '$30–45' : '<$30');
+      demoAsinToSegment[p.asin] = key;
+    }
+    const demoSegments = Array.from(new Set(Object.values(demoAsinToSegment)));
+    setSegments(demoSegments);
+    setAsinToSegment(demoAsinToSegment);
     setSegmentChildren({});
     setAsinToSubSegment({});
     setSegmentDescriptions({});
@@ -394,9 +404,19 @@ export default function App() {
     setAsinToLevel3Segment({});
     setSegmentLevel3Descriptions({});
     setSegmentDepth(1);
-    // 与空分层默认态指纹对齐，便于打开「市场报告」直接看到示例文案
+    // 与上面同一份细分对齐，示例报告缓存保持命中
     const reportFp = computeMarketReportFingerprint(
-      demo.products, [], {}, {}, {}, {}, {}, {}, {}, {}, 1
+      demo.products,
+      demoSegments,
+      demoAsinToSegment,
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      1
     );
     const reportCache = { fingerprint: reportFp, body: demo.marketReportMarkdown };
     setMarketReportCache(reportCache);
