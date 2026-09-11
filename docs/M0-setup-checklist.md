@@ -180,40 +180,44 @@ Settings → Environment Variables：`SUPABASE_URL`、`SUPABASE_PUBLISHABLE_KEY`
 
 ## 七、推送状态（2026-09 更新）
 
-### 当前状态：**本地提交已就绪，只差凭据**
+### 已完成：**已推送到 phase-0** ✅
 
 | 项 | 状态 |
 | --- | --- |
-| 本地 Git 仓库 | ✅ 已初始化，远端已接，`http.sslBackend=openssl` 已设（绕开 schannel 报错） |
-| `phase-0` 分支 | ✅ 已基于远端建立，HEAD 指向它（**`main` 完全没动**） |
-| 提交 | ✅ 已提交 **`052f64f`**，领先 `origin/phase-0` **1 个提交**（64 文件，+7414/−5951） |
-| 推送管道 | ✅ **已验证可用**（假凭据测试返回 GitHub 服务端拒绝，而非网络/管道错误） |
-| GitHub 凭据 | ❌ **没有**（无 SSH key、无 token、凭据管理器为空）→ 因此还推不上去 |
+| 首次提交 | ✅ `4a5913c`（58 文件，+7444/−4947） |
+| 推送结果 | ✅ `5436f6c..4a5913c  phase-0 -> phase-0`（exit 0） |
+| 远端 `phase-0` | ✅ 已更新为本次提交 |
+| 远端 `main` | ✅ 保持 `63abd4c` 未动 |
+| 凭据卫生 | ✅ remote URL 不含 token、无 credential helper 残留（token 为一次性内联使用） |
 
-### 推送二选一
+> ⚠️ **把 token Revoke 掉**：用于本次推送的 GitHub Token 已出现在会话记录中，请到 GitHub → Settings → Developer settings → Personal access tokens 立即删除/撤销它。
 
-**方式 1（你在本机推，最稳）** —— 前提：你本机装了 Git。
+### 工作区的"正常脏状态"说明
+
+`git status` 会显示 6 个**未暂存的删除**：
+
+```
+ D src/components/TeamSettingsPanel.tsx
+ D src/utils/opportunityAi.ts
+ D src/utils/opportunityHtmlReport.ts
+ D src/utils/projectDecision.ts
+ D src/utils/teamStore.ts
+ D tests/teamStore.test.ts
+```
+
+这是**刻意设计**的：这 6 个 phase-0 能力文件**保留在仓库里**（用户已确认 M4 合并回来，见 `docs/phase0-vs-local-divergence.md`），但不在本地磁盘上（它们与本地已演进的类型冲突，放着会让 `tsc` 报 24 个错）。
+**请不要用 `git add -A` 提交它们的删除**，否则会真的从仓库删掉这些能力。若只想撤销这个"脏状态"，可执行：
+```powershell
+git checkout -- src/utils/opportunityAi.ts src/utils/opportunityHtmlReport.ts src/utils/projectDecision.ts src/utils/teamStore.ts src/components/TeamSettingsPanel.tsx tests/teamStore.test.ts
+```
+（但那样 `tsc` 会重新报错，M4 用 `git show origin/phase-0:<path>` 取回即可。）
+
+### 后续推送命令（凭据自理）
 
 ```powershell
 cd "D:\AI WorkSpace\2.Apps\Web App_亚马逊市场调研"
-git show --stat HEAD          # 先核对提交内容
+git show --stat HEAD          # 先核对
 git push origin phase-0       # 只推 phase-0，不碰 main
-```
-
-**方式 2（把 token 交给 AI 推）** —— 前提：你愿意提供一个 GitHub 令牌。
-
-1. 打开 GitHub → Settings → Developer settings → **Personal access tokens → Fine-grained tokens** → Generate new token；
-2. 设置：**Repository access = Only select repositories** → 只勾 `Webapp_amazonmarketsearch`；**Permissions → Contents = Read and write**；**Expiration 建议 1 天**；
-3. 把 token 发给我，我执行 `git push origin phase-0`；
-4. **推完请立刻 Revoke 该 token**（因为它会出现在本次会话记录里）。
-
-> ⚠️ 注意：GitHub 已不支持用账号密码推送，必须是 token（或 SSH key）。另外仓库是**公开**的，推送前请确认 `git show --stat HEAD` 里没有你不想公开的内容。
-
-### 若想撤销/调整这次本地提交
-
-```powershell
-git reset --soft phase-0      # 撤销提交、保留改动（重新挑文件再提交）
-git reset --hard phase-0      # 完全丢弃本次提交（工作区文件也回退，慎用）
 ```
 
 ---
