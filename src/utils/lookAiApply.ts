@@ -146,6 +146,7 @@ export function mergeMarketLookAi(data: MarketLookData, out: Record<string, unkn
     keyEvidences: mergeList(data.keyEvidences, out.keyEvidences, '关键证据', acc),
     risks: mergeList(data.risks, out.risks, '主要风险', acc),
     openQuestions: mergeList(data.openQuestions, out.openQuestions, '待验证问题', acc),
+    segmentAdvice: mergeText(data.segmentAdvice ?? '', out.segmentAdvice, '细分方案解释', acc),
   };
   return { next, filled: acc.filled, skipped: acc.skipped };
 }

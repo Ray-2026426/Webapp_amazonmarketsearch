@@ -24,6 +24,7 @@ import {
 } from '../utils/marketLook';
 import { updateLookProgress } from '../utils/projectStore';
 import { SegmentScoreCards } from './SegmentScoreCards';
+import { SegmentSchemeChooser } from './SegmentSchemeChooser';
 import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
 import { mergeMarketLookAi } from '../utils/lookAiApply';
@@ -204,10 +205,31 @@ export function MarketLookView({
       {/* 已捕获证据 */}
       {data.evidence && <EvidenceCard evidence={data.evidence} />}
 
+      {/* M2③ 细分方案选择题：需求域 × 商品属性 × 竞品标题聚类，确定性切分 + 用户拍板 */}
+      <SegmentSchemeChooser
+        userId={userId}
+        projectId={project.id}
+        chosenSchemeId={data.segmentSchemeId}
+        chosenSegmentIds={data.chosenSegmentIds ?? []}
+        onChoose={(schemeId, segmentIds) => update({ segmentSchemeId: schemeId, chosenSegmentIds: segmentIds })}
+        onOpenMarketTool={onOpenMarketTool}
+      />
+
       {/* 细分市场评分（确定性公式，机会分排序） */}
       <SegmentScoreCards
         onOpenMarketTool={onOpenMarketTool ?? (() => {})}
       />
+
+      {/* M2③ AI 对三个方案差异的解释（AI 不改分，只解释） */}
+      {((data.segmentAdvice ?? '').trim()) && (
+        <Card>
+          <div className="p-5">
+            <p className="text-sm font-semibold text-[#1d1d1f] mb-1">AI 对三个细分方案的解释</p>
+            <p className="text-xs text-[#aeaeb2] mb-3">只解释差异与盲区；分数与归属由确定性规则决定，AI 改动无效</p>
+            <p className="text-[13px] text-[#424245] leading-relaxed whitespace-pre-wrap">{data.segmentAdvice ?? ''}</p>
+          </div>
+        </Card>
+      )}
 
       {/* 市场吸引力判断 */}
       <Card>

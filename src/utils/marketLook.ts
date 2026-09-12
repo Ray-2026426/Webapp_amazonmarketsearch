@@ -1,4 +1,4 @@
-﻿// 看市场（FR-03）：市场吸引力判断 + 关键证据 + 风险 + 待验证问题，并捕获当前市场工作区数据为证据。
+// 看市场（FR-03）：市场吸引力判断 + 关键证据 + 风险 + 待验证问题，并捕获当前市场工作区数据为证据。
 // 数据按项目分区持久化（IndexedDB），进度由确定性规则计算。
 
 import { get, set } from 'idb-keyval';
@@ -33,6 +33,12 @@ export interface MarketLookData {
   risks: string[];
   /** 对看用户 / 看竞品的待验证问题 */
   openQuestions: string[];
+  /** M2③：AI 对三个细分方案差异与风险的解释（不改分、不换方案）。选填：老记录没有这个字段 */
+  segmentAdvice?: string;
+  /** M2③：用户选定的细分方案（方案 A/B/C），空 = 还没拍板 */
+  segmentSchemeId?: string;
+  /** M2③/④：选定的目标细分（细分 id 列表），供竞对样本池联动使用 */
+  chosenSegmentIds?: string[];
   evidence: MarketEvidence | null;
   updatedAt: string;
 }
@@ -49,6 +55,7 @@ export function defaultMarketLook(projectId: string): MarketLookData {
     keyEvidences: [],
     risks: [],
     openQuestions: [],
+    segmentAdvice: '',
     evidence: null,
     updatedAt: new Date().toISOString(),
   };

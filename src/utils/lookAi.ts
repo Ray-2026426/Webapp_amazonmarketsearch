@@ -7,6 +7,8 @@ import { generateText, loadAiSettings, type AiSettings } from './aiConfig';
 import { loadUserBackground, buildUserBackgroundSystemPrompt } from './userBackground';
 import { loadSnapshot, describeSnapshot, hasSnapshotContent, type ProjectSnapshot } from './projectSnapshot';
 import { type LookAiFailKind } from './lookAiFailure';
+import { loadUserLook, type UnmetNeedCandidate } from './userLook';
+import { synthesizeSegmentSchemes, describeSchemesForPrompt, recommendScheme } from './segmentSynthesis';
 import type { Product, Review, Keyword } from './parser';
 
 export interface LookAiResult {
@@ -48,8 +50,7 @@ function snapshotToGlobalData(snap: ProjectSnapshot): GlobalMarketData {
   };
 }
 
-/** 尝试解析 AI 返回的 JSON（容错：剥离 ```json 包裹、截取第一个 { 到最后一个 }）。 */
-export function tryParseJson<T = Record<string, unknown>>(raw: string): T | null {
+/** 尝试解析 AI 返回的 JSON（容错：剥离 ```json 包裹、截取第一个 { 到最后一个 }）。 */export function tryParseJson<T = Record<string, unknown>>(raw: string): T | null {
   if (!raw) return null;
   let text = raw.trim();
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -259,6 +260,21 @@ interface ScopedData {
   scopeNote: string;
 }
 
+/**
+ * M2③：读取本项目的「未满足需求」（看用户的产出），供细分三方合成使用。
+ * 没有 scope 或读取失败时返回空数组——宁可方案 A 少一个维度，也不拿别的项目的数据来凑。
+ */
+async function loadScopedNeeds(extra?: Record<string, unknown>): Promise<UnmetNeedCandidate[]> {
+  const scope = extra?.scope as { userId?: string; projectId?: string } | undefined;
+  if (!scope?.userId || !scope?.projectId) return [];
+  try {
+    const look = await loadUserLook(scope.userId, scope.projectId);
+    return Array.isArray(look.unmetNeedCandidates) ? look.unmetNeedCandidates : [];
+  } catch {
+    return [];
+  }
+}
+
 async function resolveScopedData(extra?: Record<string, unknown>): Promise<ScopedData> {
   const scope = extra?.scope as { userId?: string; projectId?: string } | undefined;
   if (scope?.userId && scope?.projectId) {
@@ -305,15 +321,24 @@ export async function runLookAnalysis(
 
   if (look === 'market') {
     if (!data.loaded) return { ok: false, reason: 'no-data', error: '尚未加载任何市场数据，请先到「市场大盘」上传 Excel 或加载示例数据。' };
-    prompt = `请基于以下市场数据，完成「看市场」分析，输出 JSON：
+    // M2③：把"三方合成"的细分方案喂给 AI —— AI 只解释方案差异与风险，**不改任何分数、不替用户选方案**
+    const needs = await loadScopedNeeds(extra);
+    const schemes = synthesizeSegmentSchemes({ products: data.products, history: data.history, needs });
+    const rec = recommendScheme(schemes);
+    const schemeText = schemes.length
+      ? `\n\n【细分方案（由确定性规则生成，分数与归属不可修改，你只能解释）】\n${describeSchemesForPrompt(schemes)}` +
+        (rec ? `\n系统按「需求挂钩度 50% + 覆盖率 30% + 收入加权机会分 20%」的确定性公式给出的建议是：${rec.reason}` : '')
+      : '\n\n【细分方案】数据不足，暂时无法生成细分方案。';
+    prompt = `请基于以下市场数据与细分方案，完成「看市场」分析，输出 JSON：
 {
   "attractiveness": "市场吸引力综合判断（规模/趋势/竞争结构/价格带/进入窗口，200字内）",
   "keyEvidences": ["3-5 条关键证据（含数字）"],
   "risks": ["主要市场风险（2-4条）"],
-  "openQuestions": ["对看用户/看竞品的待验证问题（2-4条）"]
+  "openQuestions": ["对看用户/看竞品的待验证问题（2-4条）"],
+  "segmentAdvice": "对方案 A/B/C 的解释：三者切出来的细分有什么实质差别、各自的盲区在哪、如果只能选一个应该看什么指标（不改分、不换方案、不编造数字）"
 }
 数据：
-${summary}`;
+${summary}${schemeText}`;
   } else if (look === 'user') {
     if (data.reviews.length === 0 && data.keywords.length === 0) {
       return { ok: false, reason: 'no-data', error: '尚未加载评论或关键词数据，请先到「关键词分析」或「评论/VOC」加载。' };

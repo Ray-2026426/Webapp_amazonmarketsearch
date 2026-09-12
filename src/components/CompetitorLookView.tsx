@@ -183,8 +183,10 @@ export function CompetitorLookView({
 
       {data.evidence && <CompetitorEvidenceCard evidence={data.evidence} />}
 
-      {/* 自动挑选对标竞品（机会细分 → 头部/跟随者/新品） */}
+      {/* 自动挑选对标竞品（M2④：优先用看市场选定的目标细分 → 头部/跟随者/新品） */}
       <CompetitorPickerPanel
+        userId={userId}
+        projectId={project.id}
         onOpenCompetitorTool={onOpenCompetitorTool ?? (() => {})}
         onPicked={(asins, seg) => {
           // 填充竞品样本池（带角色标注）与标杆 ASIN
