@@ -1279,11 +1279,11 @@ Evidence {
 
 ### 15.12 M6 商用收口 —— 进度记录（2026-09，进行中）
 
-推送区间：`phase-0` 分支 `38856a1 →`（**main 保持 `63abd4c` 未动**）。每步通过 `tsc --noEmit` + 全部 32 个测试套件（297 条断言）+ `vite build`。
+推送区间：`phase-0` 分支 `38856a1 → 34ba8a5`（**main 保持 `63abd4c` 未动**）。每步通过 `tsc --noEmit` + 全部 33 个测试套件（304 条断言）+ `vite build`。
 
 | M6 目标项 | 状态 | 落点 |
 | --- | --- | --- |
-| ① 团队空间与权限收口 | ✅ | `TeamSettingsPanel` 挂进「设置 → 团队空间」（**仅管理员可见**，与管理员后台同一门槛）；角色语义 owner/admin/member/viewer 与项目成员一致；owner 不可被改/移除 |
+| ① 团队空间与权限收口 | ✅ | `TeamSettingsPanel` 挂进「设置 → 团队空间」（**仅管理员可见**）；`teamRoleMapping.ts` 把团队角色（owner/admin/member/viewer）与项目角色（owner/editor/viewer）的映射写死并测试锁定：**只允许等价或降级**（团队 admin → 项目 editor，绝不升为 owner，避免"团队管理员接管别人项目"）；owner 永不可被改/移除；邀请列表不含 owner；面板顶部显示角色口径说明 |
 | ② 上线检查清单 | ✅ | `docs/M6-launch-checklist.md`：8 大节逐项可勾选，每项写明**怎么验**与预期，并区分 [自动]/[人工]/[用户侧] |
 | ③ 操作手册 | ✅ | `docs/M6-user-manual.md`：10 分钟五看流程、每步产物、常见卡点处理表、三条使用纪律 |
 | ④ 定价/订阅实验设计 | ✅ | `docs/M6-pricing-experiment.md`：计量口径直接复用 `usageAccounting`（workspace × 工具 × 次数 + token），三档套餐 + 三个实验（配额感知/配额上限/决策包付费点）+ 何时接支付的前置条件；**本轮不接支付** |
