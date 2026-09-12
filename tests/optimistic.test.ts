@@ -21,6 +21,14 @@ function test(name: string, fn: () => void) {
   }
 }
 
+/**
+ * 固定一份五看进度：`emptyFiveLookProgress()` 每次调用都会写入 nowIso()，
+ * 而本套件的断言前提是"两个 fixture 内容完全相同"（只差被比较的那个字段）。
+ * 若每次新建进度对象，两次调用只要跨过 1 毫秒，时间戳就不同 → "内容相同"前提失真 → 偶发失败。
+ * 这是**测试夹具的非确定性**，不是产品逻辑问题（生产数据里的进度时间戳是真实编辑时间，理应参与内容比较）。
+ */
+const FROZEN_PROGRESS = emptyFiveLookProgress();
+
 function project(overrides: Partial<ResearchProject> = {}): ResearchProject {
   return {
     id: 'p1',
@@ -32,7 +40,7 @@ function project(overrides: Partial<ResearchProject> = {}): ResearchProject {
     memberIds: [],
     status: 'draft',
     activeLook: 'market',
-    fiveLookProgress: emptyFiveLookProgress(),
+    fiveLookProgress: FROZEN_PROGRESS,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     version: 1,

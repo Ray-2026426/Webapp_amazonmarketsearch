@@ -10,6 +10,9 @@ import { type LookAiFailKind } from './lookAiFailure';
 import { loadUserLook, type UnmetNeedCandidate } from './userLook';
 import { loadMarketLook } from './marketLook';
 import { loadCompetitorLook } from './competitorLook';
+import { buildPainMatrix, buildSatisfactionMatrix, buildCompetitorPersona, decideWinningPath, describeCompetitorAnalysisForPrompt } from './competitorAnalysis';
+import { loadSelfAssessment } from './selfAssessment';
+import { buildOurCapability } from './ourCapability';
 import { openQuestionsForPrompt } from './openQuestions';
 import { synthesizeSegmentSchemes, describeSchemesForPrompt, recommendScheme } from './segmentSynthesis';
 import type { Product, Review, Keyword } from './parser';
@@ -304,6 +307,28 @@ async function loadScopedOpenQuestions(
   }
 }
 
+/**
+ * M3③：把「看自己」的自评 + 竞对页里人工指定的能力/财务口径，装配成赢的路径判定所需的自身能力。
+ * 缺什么就是缺什么（unknown 不当作"能"），全部确定性。
+ */
+async function loadScopedCapability(extra?: Record<string, unknown>): Promise<ReturnType<typeof buildOurCapability>> {
+  const scope = extra?.scope as { userId?: string; projectId?: string } | undefined;
+  if (!scope?.userId || !scope?.projectId) return buildOurCapability({});
+  try {
+    const [self, comp] = await Promise.all([
+      loadSelfAssessment(scope.userId, scope.projectId),
+      loadCompetitorLook(scope.userId, scope.projectId),
+    ]);
+    return buildOurCapability({
+      items: self.items,
+      byNeedId: comp.ourCapabilityByNeedId ?? {},
+      financials: comp.ourCapabilityFinancials,
+    });
+  } catch {
+    return buildOurCapability({});
+  }
+}
+
 async function resolveScopedData(extra?: Record<string, unknown>): Promise<ScopedData> {
   const scope = extra?.scope as { userId?: string; projectId?: string } | undefined;
   if (scope?.userId && scope?.projectId) {
@@ -434,15 +459,43 @@ ${summary}`;
     if (data.competitorAsins.length === 0) {
       return { ok: false, reason: 'no-data', error: '尚未选择竞品 ASIN，请先到「竞品对比」添加竞品。' };
     }
-    prompt = `请基于以下竞品数据，完成「看竞品」分析（产品层 + 主体层），输出 JSON：
+    // M3：三块分析 + 赢的路径由确定性规则算出，AI 只解释（不能改分数、改状态、改路径）
+    const needsForCompetitor = await loadScopedNeeds(extra);
+    const ourCapability = await loadScopedCapability(extra);
+    const painMatrices = data.competitorAsins.map((a) => buildPainMatrix(a, data.reviews, needsForCompetitor));
+    const satisfactionMatrices = data.competitorAsins.map((a) =>
+      buildSatisfactionMatrix(a, data.products.find((p) => p.asin === a), data.reviews, needsForCompetitor)
+    );
+    const personas = data.competitorAsins.map((a) => buildCompetitorPersona(a, data.reviews, needsForCompetitor));
+    const decision = decideWinningPath({
+      needs: needsForCompetitor,
+      competitors: data.competitorAsins.map((a) => ({ asin: a, price: data.products.find((p) => p.asin === a)?.price })),
+      matrices: satisfactionMatrices,
+      ours: ourCapability,
+      priceReference: {
+        lowestCompetitorPrice: Math.min(
+          ...data.competitorAsins.map((a) => Number(data.products.find((p) => p.asin === a)?.price) || Number.POSITIVE_INFINITY)
+        ),
+      },
+    });
+    const analysisText = describeCompetitorAnalysisForPrompt({
+      roles: data.competitorAsins.map((a) => ({ asin: a, role: 'head' as const, reason: '用户在竞品工具里选定的竞品' })),
+      painMatrices,
+      satisfactionMatrices,
+      personas,
+      decision,
+    });
+    prompt = `请基于以下竞品数据与**系统已算好的**三块分析/赢的路径，完成「看竞品」分析（产品层 + 主体层），输出 JSON：
 {
   "samplePool": ["竞品样本池分层（按价格带/定位分）"],
   "benchmarkAsins": ["标杆 ASIN（2-3个，说明为何是标杆）"],
   "barriers": "竞争壁垒与经营能力（100字内）",
   "needMatrix": "用户需求满足矩阵（哪些方面满足、哪些不足）",
-  "gaps": ["未充分满足的产品缺口（2-4条）"]
+  "gaps": ["未充分满足的产品缺口（2-4条）"],
+  "winningPathExplain": "解释系统的赢的路径判定：为什么走这条路、需要具备什么前置条件、最大的风险点是什么（禁止修改判定结果或编造数字）"
 }
 竞品 ASIN：${data.competitorAsins.join(', ')}
+${analysisText}
 ${openQuestionsForPrompt(oq.questions, oq.answers)}
 数据：
 ${summary}`;

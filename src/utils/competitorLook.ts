@@ -2,6 +2,9 @@
 import { get, set } from 'idb-keyval';
 import type { FiveLookProgress } from '../types/researchProject';
 import type { OpenQuestionAnswer } from './openQuestions';
+import type { ListingDetail, TrafficDetail } from './listingFields';
+import type { WinningPath } from './competitorAnalysis';
+import type { SelfStatus } from './selfAssessment';
 
 export interface CompetitorContext {
   loaded: boolean;
@@ -26,6 +29,18 @@ export interface CompetitorLookData {
   gaps: string[];
   /** M2⑤：对「看市场」留下的待验证问题在本步给出的回答（修断链 #7） */
   openQuestionAnswers?: OpenQuestionAnswer[];
+  /** M3②：抓到的 listing 全字段明细（三列对比用；缺的字段会显式标"未抓取"） */
+  listingDetails?: Record<string, ListingDetail | undefined>;
+  /** M3②：抓到的流量字段明细 */
+  trafficDetails?: Record<string, TrafficDetail | undefined>;
+  /** M3③：人工/品类选择题给出的"每条需求我们行不行"（覆盖自评推导） */
+  ourCapabilityByNeedId?: Record<string, SelfStatus>;
+  /** M3③：「人优我廉」判定所需的财务口径 */
+  ourCapabilityFinancials?: { targetPrice?: number; marginFloor?: number; estimatedMarginAtPrice?: number };
+  /** M3③：用户对"赢的路径"的覆盖（不填=采用系统确定性判定） */
+  winningPathOverride?: WinningPath;
+  /** M3③：AI 对确定性判定的解释（AI 不能改判定，只能解释前置条件与风险） */
+  winningPathExplain?: string;
   evidence: CompetitorEvidence | null;
   updatedAt: string;
 }

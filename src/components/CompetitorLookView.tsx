@@ -22,6 +22,7 @@ import {
 } from '../utils/competitorLook';
 import { updateLookProgress } from '../utils/projectStore';
 import { CompetitorPickerPanel } from './CompetitorPickerPanel';
+import { CompetitorDeepDive } from './CompetitorDeepDive';
 import { OpenQuestionAnswersCard } from './OpenQuestionAnswersCard';
 import { loadMarketLook } from '../utils/marketLook';
 import type { ResearchProject } from '../types/researchProject';
@@ -223,6 +224,13 @@ export function CompetitorLookView({
           }
           update({ samplePool: pool, benchmarkAsins: benchmark });
         }}
+      />
+
+      {/* M3：全量三列对比 + 每竞对三块分析 + 赢的路径（确定性；AI 不改判定） */}
+      <CompetitorDeepDive
+        userId={userId}
+        project={project}
+        onOpenCompetitorTool={onOpenCompetitorTool}
       />
 
       {/* 竞品样本池 / 标杆 ASIN */}

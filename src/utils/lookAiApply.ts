@@ -163,6 +163,7 @@ export function mergeCompetitorLookAi(
     barriers: mergeText(data.barriers, out.barriers, '竞争壁垒与经营能力', acc),
     needMatrix: mergeText(data.needMatrix, out.needMatrix, '需求满足矩阵', acc),
     gaps: mergeList(data.gaps, out.gaps, '未充分满足的产品缺口', acc),
+    winningPathExplain: mergeText(data.winningPathExplain ?? '', out.winningPathExplain, '赢的路径解释', acc),
   };
   return { next, filled: acc.filled, skipped: acc.skipped };
 }
