@@ -1330,6 +1330,29 @@ devApiPlugin 生成的 `.[action].ts.<pid>.<uuid>.tmpdir/*.tmp`，Windows 上抛
 
 ---
 
+### 15.14 一致性收口 —— 完成记录（2026-09）
+
+推送区间：`phase-0` 分支 `960bdd9 → 8e286f2`（**main 保持 `63abd4c` 未动**）。
+验证：`tsc --noEmit` exit 0；`node tests/runAll.mjs` → **39 套件 / 372 断言 passed / 0 failed**；`vite build` exit 0。
+
+§15.13 留下的三条残留（核对表 ⏳3 残留）本轮全部收口：
+
+| 残留项 | 状态 | 落点 |
+| --- | --- | --- |
+| ① 二级页缺「层筛选」 | ✅ | `SearchPathDetailBlock` 新增「全部 / 认知层 / 考虑层 / 决策层 / 场景层」；**筛选状态由 `UserLookView` 持有**（放在 `if (!data)` 早退之前），内联区块与二级页① 共用同一份状态 → 从二级页返回主屏筛选仍保留；只筛行、不重算（占比/月搜索量/本层合计照旧）；空层显示「该层暂无关键词证据」 |
+| ① 「拖动改层」 | ❌ **故意不做** | 层间顺序与比例是 `computeSearchPathFlow` **量出来的确定性数字**。允许手势改写会把"漏斗"结论变成展示内容，与"数字必须确定性可追溯"冲突；页面上明写「顺序是量出来的，不是偏好设置」，不假装可拖。这是全项目**唯一**一条"故意不做"的线框图项 |
+| ⑬ 点卡片标题不跳转 | ✅ | 卡片标题本身可点开二级页⑬（右下「查看详情」保留） |
+| ⑭ 控制点阈值不可改 | ✅ | 新增 `src/utils/controlPointEditing.ts`：`editControlPointThreshold` / `resetControlPointThreshold` / `canEditThreshold` / `countEditedThresholds` / `controlPointIdentity` / `mergeControlPointsPreservingEdits`。两条硬规则：**阈值一改，「已确认」立即作废**（用户拍的是那个数字）；**人工改过的阈值不被重算静默覆盖**（按 id/身份对齐保留，推导里已消失的人工点也保留）。`buildDecisionPackage` 增 `previousControlPoints`、`generateOpportunityCandidates` 增 `existingCards`，两条路径（AI 给的决策包 / 确定性补全）都做保留合并 |
+
+**本轮新增的工程化护栏**：
+6. `tests/controlPointEditing.test.ts`（16 条）—— 阈值编辑/恢复默认/拒绝空输入/身份稳定性/重算不覆盖人工值的合并规则；
+7. `tests/runAll.mjs` + `npm test` 指向它 —— 一条命令跑完全部套件，并**揪出"没打印 result 行的套件"**（防止"没跑起来却被当成通过"的假绿）；
+8. `docs/M6-ui-acceptance-checklist.md` —— 给验收者（非实现者）的逐条清单：点哪里 → 该看到什么，含主流程 8 屏、二级页抽查、PRD 商用口径（权重 25/25/25/15/10、未选目标细分 ×0.6、覆盖度不入 100 分、AI 只解释不改分）、负面用例（零机会/无竞对/硬约束/游客/非管理员 403），以及**三项"看起来像 bug 其实不是"**的误判清单；已挂进操作手册与上线检查清单（检查项 6.5）。
+
+**至此 Kairo 与 PRD、线框图的一致性已无待修项**；剩下的全部是用户侧验证与上线拍板（见 §16 与 `docs/M6-launch-checklist.md` §8）。
+
+---
+
 ## 17. 国内底座迁移（后置，另行立项）
 
 > 用户已确认（§15.1-23）：现阶段沿用 Vercel + Supabase，先把 App 功能做好；国内迁移（免 VPN）在功能打磨完成后另行立项。
