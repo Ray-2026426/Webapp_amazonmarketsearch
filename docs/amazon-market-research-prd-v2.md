@@ -1207,7 +1207,7 @@ Evidence {
 
 ### 15.11 M5 数据池与管理员后台 —— 进度记录（2026-09，进行中）
 
-推送区间：`phase-0` 分支 `13f7e96 → 84aa6c4`（**main 保持 `63abd4c` 未动**）。每步通过 `tsc --noEmit` + 全部 29 个测试套件（277 条断言）+ `vite build`。
+推送区间：`phase-0` 分支 `13f7e96 → 1e16696`（**main 保持 `63abd4c` 未动**）。每步通过 `tsc --noEmit` + 全部 32 个测试套件（295 条断言）+ `vite build`。
 
 | M5 目标项 | 状态 | 落点 |
 | --- | --- | --- |
@@ -1217,9 +1217,10 @@ Evidence {
 | ③ 用量记账 | ✅ | `src/utils/usageAccounting.ts`（成本表、按工具/用户/项目/供应商汇总、按天趋势、失败率、缓存省下的钱）+ 迁移 `008_usage_events.sql`（含 `audit_events`，RLS 全拒、只允许 service_role） |
 | ④ 管理员后台接口 | ✅ | `api/admin/[action].ts`：health / config / usage / users / audit / projects；管理员校验 + 全部写操作落审计；无 service_role 时优雅降级 |
 | ⑤ 管理员后台面板 | ✅ | `src/components/AdminConsolePanel.tsx`（挂在「设置 → 管理员后台」，仅管理员可见）：环境自检、用量统计、用户管理、配置中心、审计日志、项目与报告 |
-| ⑥ 安全加固 | ✅ | 见下方"发现并修掉的安全缺陷"；另加 `tests/securityKeys.test.ts` 把口径变成会失败的测试 |
+| ⑥ 安全加固 | ✅（主链路） | 见下方"发现并修掉的安全缺陷"；`tests/securityKeys.test.ts` 把口径变成会失败的测试；**出网路由收敛** `dataPoolRouting.ts`（自定义地址 > 服务端网关 > 浏览器直连）+ `dataPoolClient.ts`：登录用户在浏览器里**已无密钥可用、也不需要**，网关失败**不回退**到浏览器直连 |
+| ⑥b 审计事件归一化 | ✅ | `auditEvents.ts`：动作白名单 + 中文标签、未知动作**留痕不丢弃**、缺操作人记 anonymous、明细走 `redactSecrets`（审计日志不能变成泄露渠道）、按动作/操作人聚合 |
 | ⑦ 导出补 MD | ✅ | `buildOpportunityMarkdownReport` + 决策看板「导出 MD」按钮（HTML 已有；**不做 PPT**，用户已确认） |
-| ⑧ 性能（项目中心 ≤2s） | ⏳ 待实测 | 需要用户在有真实项目数据的环境里量；我这边无浏览器无法度量（已把可测的确定性核心全部锁住，性能只能实测） |
+| ⑧ 性能（项目中心 ≤2s） | 🔶 可测化已完成，数值待用户实测 | `perfBudget.ts`：预算表（每条写明 PRD 出处）+ 边界判定（等于预算算达标）+ **中位数口径**汇总；ProjectCenter 加载路径已打点（超预算 console 告警）；管理员后台「环境自检 → 性能基线」直接显示实测中位数/预算/超出百分比。我这边无浏览器，数字必须由用户跑几次后读出 |
 | ⑨ ≥30 项目回放 / NPS 基线 | ⏳ 用户侧 | 属"用户逐轮自测 + 内部试用"阶段 |
 
 **发现并修掉一个真实安全缺陷（这正是 §11.2 要根治的事）**：旧 `/api/settings?action=get` 把 deepseek/sellersprite 等密钥**明文返回给浏览器**，前端 `serverKeys.ts` 还写进 localStorage，MCP 直接在浏览器里带密钥调用——任何能打开浏览器的人都能取走密钥，一次 XSS 即全量泄露。改造：
