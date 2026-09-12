@@ -110,7 +110,15 @@ export interface ControlPoint {
   label: string;
   metric: string;
   threshold: string;
-  /** 默认由系统推导，**必须用户确认**（确认是拍板动作） */
+  /**
+   * 是否被人工改过（线框图二级页⑭「阈值要能改」）。
+   * 语义：`threshold` 这一格已经被用户**手工写过**，不再等于确定性规则的推导值。
+   * 硬规则：**人工改过的阈值必须活过"重算 / 重新生成决策包"**——重算时按 id（退化为
+   * kind+label+metric）对齐，编辑值不得被静默覆盖（见 `utils/controlPointEditing.ts` 的
+   * `mergeControlPointsPreservingEdits`，由 `buildDecisionPackage` 统一调用）。
+   */
+  thresholdEdited?: boolean;
+  /** 默认由系统推导，**必须用户确认**（确认是拍板动作）；阈值一改，之前的确认作废 */
   confirmed: boolean;
   note?: string;
 }

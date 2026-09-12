@@ -12,6 +12,7 @@ import type { ProfitAssumption, RiskItem } from '../types/researchProject';
 import type { UnmetNeedCandidate } from './userLook';
 import { CAPABILITY_ITEMS, type CapabilityLibrary } from './capabilityLibrary';
 import { capabilityHardConstraints } from './capabilityLibrary';
+import { mergeControlPointsPreservingEdits } from './controlPointEditing';
 
 let seq = 0;
 function id(prefix: string): string {
@@ -272,11 +273,16 @@ export function buildDecisionPackage(input: {
   profit?: ProfitAssumption | null;
   risks?: RiskItem[];
   evidenceCount?: number;
+  /**
+   * 上一版控制点（重算场景必传）：人工改过的阈值按 id / 身份对齐后保留，不许被静默覆盖。
+   * 线框图二级页⑭ 明写「控制点为确定性规则，可人工覆盖」——重算只重算**没被人工覆盖的**那些。
+   */
+  previousControlPoints?: ControlPoint[] | null;
 }): OpportunityDecisionPackage {
   return {
     roadmap: buildRoadmap(input),
     resources: buildRequiredResources(input),
-    controlPoints: buildControlPoints(input),
+    controlPoints: mergeControlPointsPreservingEdits(buildControlPoints(input), input.previousControlPoints),
   };
 }
 

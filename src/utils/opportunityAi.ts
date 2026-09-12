@@ -22,6 +22,7 @@ import { loadEvidence, describeEvidence } from './evidence';
 import { normalizeOpportunityCard, createOpportunityId } from './opportunityStore';
 import { scoreOpportunityV2, SCORE_WEIGHTS } from './opportunityScoreV2';
 import { buildDecisionPackage } from './opportunityPlan';
+import { mergeControlPointsPreservingEdits } from './controlPointEditing';
 import { suggestConclusion } from './opportunityConclusion';
 import { loadMarketSegmentContext } from './opportunityContext';
 import { buildSatisfactionMatrix, buildPainMatrix } from './competitorAnalysis';
@@ -150,7 +151,12 @@ async function buildFourLookContext(userId: string, projectId: string): Promise<
  */
 export async function generateOpportunityCandidates(
   userId: string,
-  project: ResearchProject
+  project: ResearchProject,
+  /**
+   * 已有机会卡（线框图二级页⑭「可人工覆盖」）：重算同一需求的机会卡时，
+   * 用它的控制点做对齐基准，**人工改过的阈值不会被重算静默覆盖**。
+   */
+  existingCards: OpportunityCard[] = []
 ): Promise<OpportunityGenerationResult> {
   const settings = loadAiSettings();
   if (!settings.apiKey) {
@@ -248,9 +254,22 @@ ${ctx.text}`;
         evidence: (await loadEvidence(userId, project.id)).filter((e) => refs.some((r) => r.evidenceId === e.id)),
       });
       // 决策包由确定性规则补全（AI 给的会被系统版本覆盖掉缺失部分）
-      const pkg = cleaned.decisionPackage && cleaned.decisionPackage.roadmap.length > 0
-        ? cleaned.decisionPackage
-        : buildDecisionPackage({ need, profit: cleaned.profitAssumption ?? null, risks: cleaned.risks });
+      // 同需求已有卡 → 拿它的控制点做对齐基准：人工改过的阈值必须活过这次重算（阈值是人的决定）
+      const previousPoints =
+        existingCards.find((c) => c.unmetNeedId && c.unmetNeedId === cleaned.unmetNeedId)?.decisionPackage
+          ?.controlPoints ?? null;
+      const pkg =
+        cleaned.decisionPackage && cleaned.decisionPackage.roadmap.length > 0
+          ? {
+              ...cleaned.decisionPackage,
+              controlPoints: mergeControlPointsPreservingEdits(cleaned.decisionPackage.controlPoints, previousPoints),
+            }
+          : buildDecisionPackage({
+              need,
+              profit: cleaned.profitAssumption ?? null,
+              risks: cleaned.risks,
+              previousControlPoints: previousPoints,
+            });
 
       cards.push({
         ...cleaned,

@@ -24,7 +24,14 @@ import {
 import { generateOpportunityCandidates, reviewOpportunityCard, mergeGeneratedCards } from '../utils/opportunityAi';
 import { buildOpportunityHtmlReport, buildOpportunityMarkdownReportForProject, downloadHtmlReport, downloadMarkdownReport } from '../utils/opportunityHtmlReport';
 import { loadProjectDecisionSummary, PROJECT_DECISION_LABELS, type ProjectDecisionSummary } from '../utils/projectDecision';
-import { rankOpportunities } from '../utils/opportunityPlan';
+import { rankOpportunities, buildControlPoints } from '../utils/opportunityPlan';
+import {
+  canEditThreshold,
+  controlPointIdentity,
+  countEditedThresholds,
+  editControlPointThreshold,
+  resetControlPointThreshold,
+} from '../utils/controlPointEditing';
 import { loadEvidence, describeEvidence } from '../utils/evidence';
 import { loadUserLook } from '../utils/userLook';
 import { loadSelfAssessment } from '../utils/selfAssessment';
@@ -39,6 +46,7 @@ import {
   OPPORTUNITY_KIND_LABELS,
   RESOURCE_CATEGORY_LABELS,
   ROADMAP_PHASE_LABELS,
+  type ControlPoint,
   type ControlPointKind,
   type NoOpportunityBlocker,
   type OpportunityConclusion,
@@ -138,7 +146,7 @@ export function OpportunityDecisionBoard({
   const onGenerate = async () => {
     setGenerating(true);
     try {
-      const res = await generateOpportunityCandidates(userId, project);
+      const res = await generateOpportunityCandidates(userId, project, cards);
       if (!res.ok && res.conclusion) {
         await saveOpportunityConclusion(userId, project.id, res.conclusion);
         setConclusion(res.conclusion);
@@ -208,6 +216,46 @@ export function OpportunityDecisionBoard({
         : c
     );
     await persistCards(next);
+  };
+
+  /**
+   * ⏳3 残留 3（线框图二级页⑭ 标「可编辑」）：人工改写控制点阈值。
+   * 与 toggleControlPoint **同一条** persistCards 写回路径；规则本身在
+   * `utils/controlPointEditing.ts`（纯函数）：trim 后原样保存、标记 thresholdEdited、
+   * **把之前的「已确认」作废**（用户确认的是那个数字，数字变了要重新拍板）。
+   * 空白输入在这里就拦住（不写库、给 toast），不产生半成品状态。
+   */
+  const changeControlPointThreshold = async (card: OpportunityCard, cpId: string, nextThreshold: string) => {
+    if (!card.decisionPackage) return;
+    const before = card.decisionPackage.controlPoints;
+    const points = editControlPointThreshold(before, cpId, nextThreshold);
+    if (points === before) {
+      toast.error('阈值不能为空：没保存（不写一个不存在的数）');
+      return;
+    }
+    const next = cards.map((c) =>
+      c.id === card.id && c.decisionPackage
+        ? { ...c, decisionPackage: { ...c.decisionPackage, controlPoints: points }, updatedAt: new Date().toISOString() }
+        : c
+    );
+    await persistCards(next, '控制点阈值已保存（人工修改，已标「已人工修改」；原「已确认」作废，请重新拍板）');
+  };
+
+  /** ⑭：恢复派生默认阈值（默认值由调用方按同一条确定性规则重算后传入，界面不编数字） */
+  const restoreControlPointThreshold = async (card: OpportunityCard, cpId: string, originalThreshold: string) => {
+    if (!card.decisionPackage) return;
+    const before = card.decisionPackage.controlPoints;
+    const points = resetControlPointThreshold(before, cpId, originalThreshold);
+    if (points === before) {
+      toast.error('拿不到这条控制点的派生默认值：没有恢复（不编一个默认值顶上去）');
+      return;
+    }
+    const next = cards.map((c) =>
+      c.id === card.id && c.decisionPackage
+        ? { ...c, decisionPackage: { ...c.decisionPackage, controlPoints: points }, updatedAt: new Date().toISOString() }
+        : c
+    );
+    await persistCards(next, '已恢复派生默认阈值（同样需要重新确认）');
   };
 
   /**
@@ -327,6 +375,8 @@ export function OpportunityDecisionBoard({
         <OpportunityRoadmapBlock
           card={card}
           onToggleControlPoint={(cpId) => void toggleControlPoint(card, cpId)}
+          onEditControlPointThreshold={(cpId, next) => void changeControlPointThreshold(card, cpId, next)}
+          onResetControlPointThreshold={(cpId, original) => void restoreControlPointThreshold(card, cpId, original)}
           variant="sheet"
         />
       );
@@ -592,7 +642,20 @@ export function OpportunityDecisionBoard({
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-[15px] font-bold text-[#1d1d1f]">
-                        <span className="text-[#aeaeb2]">#{index + 1}</span> {card.title}
+                        <span className="text-[#aeaeb2]">#{index + 1}</span>{' '}
+                        {/*
+                          线框图二级页⑬「或点卡片标题」：标题本身也是入口，进的是同一张卡的详情页
+                          （与右下「查看详情」同一个 onOpenL3('13', card.id)）。是真正的 button：
+                          可 Tab 聚焦、有 title 提示、有 focus-visible 焦点环；它不是链接里套按钮的嵌套结构。
+                        */}
+                        <button
+                          type="button"
+                          onClick={() => onOpenL3?.('13', card.id)}
+                          title="打开二级页⑬：机会卡详情（证据 / 推理 / 反证）"
+                          className="cursor-pointer rounded text-left font-bold text-[#1d1d1f] underline-offset-2 hover:text-indigo-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                        >
+                          {card.title}
+                        </button>
                         <span className="ml-2 text-[10px] font-normal text-[#86868b]">
                           {OPPORTUNITY_KIND_LABELS[card.kind ?? 'new_product']} · {CONFIDENCE_LABELS[card.confidence ?? 'low']}
                         </span>
@@ -837,19 +900,32 @@ export function OpportunityEvidenceChain({
   );
 }
 
-/** 线框图 ⑭：执行路线图 / 前置资源 / 控制点，内联与二级页⑭ 同一份实现 */
+/** 线框图 ⑭：执行路线图 / 前置资源 / 控制点（阈值可编辑），内联与二级页⑭ 同一份实现 */
 export function OpportunityRoadmapBlock({
   card,
   onToggleControlPoint,
+  onEditControlPointThreshold,
+  onResetControlPointThreshold,
   onOpenDetail,
   variant = 'inline',
 }: {
   card: OpportunityCard;
   onToggleControlPoint: (controlPointId: string) => void;
+  /** 线框图二级页⑭ 的「阈值要能改」：写入统一走外层 persistCards（与"确认"同一条路径） */
+  onEditControlPointThreshold?: (controlPointId: string, nextThreshold: string) => void;
+  /** 恢复派生默认阈值：默认值由调用方按同一条确定性规则重算后传入 */
+  onResetControlPointThreshold?: (controlPointId: string, originalThreshold: string) => void;
   onOpenDetail?: () => void;
   variant?: L3BlockVariant;
 }) {
   const sheet = variant === 'sheet';
+  /**
+   * 阈值输入的草稿（按控制点 id 存文本）。
+   * **必须在组件级早退 `if (!pkg)` 之前调用**：早退之后再调 hook 会触发 React #310
+   * （线上白屏那次事故），`tests/hookOrder.test.ts` 在 AST 层守着这条。
+   * 它只是输入框里的临时文本，不是数据：真正落库要等用户点「保存」。
+   */
+  const [thresholdDrafts, setThresholdDrafts] = useState<Record<string, string>>({});
   const pkg = card.decisionPackage;
   if (!pkg) {
     // 内联时今天什么都不渲染；二级页里必须解释为什么是空的，否则用户以为页面坏了
@@ -862,6 +938,26 @@ export function OpportunityRoadmapBlock({
       </Card>
     );
   }
+  /**
+   * 派生默认值：按**这张卡自己的**利润假设与风险，跑同一条确定性规则重算（不编数字）。
+   * 找不到对应的推导项（例如这条控制点是 AI 写的、推导规则里没有）时返回 undefined，
+   * 界面显示「未提供」并禁用「恢复默认」—— 宁可说没有，也不假装恢复成功。
+   */
+  const derivedPoints = buildControlPoints({ profit: card.profitAssumption ?? null, risks: card.risks ?? [] });
+  const derivedThresholdOf = (cp: ControlPoint): string | undefined =>
+    derivedPoints.find((d) => controlPointIdentity(d) === controlPointIdentity(cp))?.threshold;
+  const draftOf = (cp: ControlPoint): string => thresholdDrafts[cp.id] ?? cp.threshold;
+  /**
+   * 保存 / 恢复之后把草稿清掉，让输入框重新跟着**已落库的值**走。
+   * 不清的话会留下"输入框里是我刚打的字、但卡上已经换成另一个数"的错位（看起来像保存失败）。
+   */
+  const clearDraft = (cpId: string) =>
+    setThresholdDrafts((d) => {
+      const next = { ...d };
+      delete next[cpId];
+      return next;
+    });
+  const editedCount = countEditedThresholds(pkg.controlPoints);
   const body = (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
       <div>
@@ -911,7 +1007,14 @@ export function OpportunityRoadmapBlock({
       </div>
 
       <div>
-        <p className="text-[11px] font-semibold text-[#424245] mb-1">控制点（点一下即确认）</p>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <p className="text-[11px] font-semibold text-[#424245]">
+            {sheet ? '控制点（阈值可编辑）' : '控制点（点一下即确认）'}
+          </p>
+          {sheet && editedCount > 0 && (
+            <span className="text-[10px] font-semibold text-indigo-700">{editedCount} 条阈值已人工修改</span>
+          )}
+        </div>
         {(['entry', 'process', 'stop'] as ControlPointKind[]).map((kind) => {
           const items = pkg.controlPoints.filter((c) => c.kind === kind);
           if (items.length === 0) return null;
@@ -921,17 +1024,86 @@ export function OpportunityRoadmapBlock({
               <ul className="space-y-0.5">
                 {items.map((c) => (
                   <li key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => onToggleControlPoint(c.id)}
-                      className={cn(
-                        'text-left text-[10px] leading-relaxed rounded px-1 py-0.5 w-full',
-                        c.confirmed ? 'text-emerald-700' : 'text-[#424245] hover:bg-[#f5f5f7]'
-                      )}
-                    >
-                      {c.confirmed ? '☑' : '☐'} {c.label}：{c.metric} {c.threshold}
-                      {!c.confirmed && <span className="text-amber-600">（待确认）</span>}
-                    </button>
+                    {sheet ? (
+                      /* ⑭-sheet-阈值编辑：二级页⑭ 形态 —— 阈值是可编辑输入 + 保存 / 恢复默认（全站唯一实现） */
+                      <div className="rounded-lg border border-black/8 bg-white px-2 py-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[10px] font-semibold text-[#424245]">{c.label}</span>
+                          <span className="text-[10px] text-[#86868b]">{c.metric}</span>
+                          {c.thresholdEdited === true && (
+                            <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-700">
+                              已人工修改
+                            </span>
+                          )}
+                          {!c.confirmed && <span className="text-[10px] text-amber-600">（待确认）</span>}
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <input
+                            value={draftOf(c)}
+                            onChange={(e) => setThresholdDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
+                            aria-label={`控制点阈值：${c.label}`}
+                            title="控制点阈值：人工可改；保存后原「已确认」作废，需重新拍板"
+                            data-control-point-threshold-input="sheet"
+                            className="w-40 rounded-lg border border-black/10 bg-white px-2 py-1 text-[11px] text-[#1d1d1f] focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                          />
+                          <button
+                            type="button"
+                            disabled={!canEditThreshold(draftOf(c)) || draftOf(c).trim() === c.threshold}
+                            onClick={() => {
+                              onEditControlPointThreshold?.(c.id, draftOf(c));
+                              clearDraft(c.id);
+                            }}
+                            title="保存人工阈值（空白不保存；保存后需重新确认）"
+                            className="rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
+                          >
+                            保存
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!derivedThresholdOf(c)}
+                            onClick={() => {
+                              const original = derivedThresholdOf(c);
+                              if (original) onResetControlPointThreshold?.(c.id, original);
+                              clearDraft(c.id);
+                            }}
+                            title="恢复到确定性规则推导的默认阈值（找不到推导值时不提供）"
+                            className="rounded-lg border border-black/10 bg-white px-2 py-1 text-[10px] font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-40"
+                          >
+                            恢复默认
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onToggleControlPoint(c.id)}
+                            className={cn(
+                              'rounded-lg border px-2 py-1 text-[10px] font-semibold',
+                              c.confirmed
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                : 'border-black/10 bg-white text-[#424245] hover:border-indigo-300 hover:text-indigo-700'
+                            )}
+                          >
+                            {c.confirmed ? '☑ 已确认' : '☐ 确认这个阈值'}
+                          </button>
+                        </div>
+                        <p className="mt-1 text-[9px] leading-relaxed text-[#86868b]">
+                          派生默认值（按当前利润假设 / 风险重算）：{derivedThresholdOf(c) ?? '未提供'}
+                          {c.thresholdEdited === true && '；这条已被人工改写，重算不会覆盖它'}
+                        </p>
+                      </div>
+                    ) : (
+                      /* ⑭-inline-只读：内联形态 —— 保持今天的样子（点一下即确认的只读一行），不放输入框 */
+                      <button
+                        type="button"
+                        onClick={() => onToggleControlPoint(c.id)}
+                        className={cn(
+                          'text-left text-[10px] leading-relaxed rounded px-1 py-0.5 w-full',
+                          c.confirmed ? 'text-emerald-700' : 'text-[#424245] hover:bg-[#f5f5f7]'
+                        )}
+                      >
+                        {c.confirmed ? '☑' : '☐'} {c.label}：{c.metric} {c.threshold}
+                        {c.thresholdEdited === true && <span className="text-indigo-700">（已人工修改）</span>}
+                        {!c.confirmed && <span className="text-amber-600">（待确认）</span>}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -946,7 +1118,9 @@ export function OpportunityRoadmapBlock({
     <div className="space-y-2">
       <p className="text-[11px] text-[#86868b]">
         这一页就是这张卡上「先做 / 后做 / 前置资源 / 控制点」的完整版：同一份数据、同一份实现。
-        控制点阈值来自确定性规则（人工确认才算拍板），点一下即确认；改动作/阈值请回到看机会主屏这张卡。
+        控制点的默认值来自确定性规则（按利润假设与风险推导），**阈值可以直接在这里改**：
+        保存后写进这张卡，并把你之前对这个数字的「已确认」作废（确认的是那个数字，数字变了要重新拍板）；
+        不想要人工值就点「恢复默认」回到推导值。这里只改阈值，评分 / 覆盖度 / 资源缺口都不受影响。
       </p>
       {body}
     </div>

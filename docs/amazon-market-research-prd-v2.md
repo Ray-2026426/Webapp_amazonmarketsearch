@@ -1316,7 +1316,7 @@ devApiPlugin 生成的 `.[action].ts.<pid>.<uuid>.tmpdir/*.tmp`，Windows 上抛
 | ⑤ 决策草稿全程常驻（⏳1） | ✅ 已推 | 线框图 Screen 2 标为"核心 IA 变化"：抽出 `DecisionDraftRail`，由 `ProjectWorkspace` 在 `xl:sticky` 右栏常驻（六个 Tab 都在）；向导内重复列删除，保存后 `bumpDraft()` 刷新右栏 |
 | ⑥ 线上白屏 `React #310` | ✅ 已推 | 根因：`UserLookView` 的 `useState` 落在 `if (!data) return <加载中/>` **之后**（条件 hook）。已移回 hook 区并加注释；新增 `tests/hookOrder.test.ts`（AST 级）守死"hook 不得出现在任何 early return 之后" |
 | ⑦ 导出报告 §1-§7 固定叙事（⏳2） | ✅ 已推 | HTML/MD 改为「首页只放结论 → §1 研究目标 → §2 用户需求 → §3 市场细分 → §4 竞品缺口 → §5 自身适配 → §6 机会结论 → §7 证据索引」；两份导出共用同一份 block 文档模型（标题/顺序不可能漂移）；缺数据一律"未提供"、listing 缺字段"未抓取"；取数口径与看竞对界面完全一致（同一对比池与确定性算法），无竞对列时**不判赢面** |
-| ⑧ 二级页 ①②③④⑪⑫⑬⑭ 独立页（⏳3） | ✅ 已推 | `l3Pages.ts`（8 页契约表，四句抄自线框图 note）+ 唯一页壳 `L3Sheet`（全屏、返回/Esc、dialog 语义、滚动锁、契约条常驻）；**内联与二级页共用同一份实现**（`variant='inline'` / `'sheet'`，状态留在拥有数据的视图里，经 `onRegisterL3Bodies` 注册正文，避免复制 markup 与业务逻辑）；残留三处已如实记入核对表（① 层筛选/拖动、⑬ 点标题不跳转、⑭ 控制点阈值不可在页面改） |
+| ⑧ 二级页 ①②③④⑪⑫⑬⑭ 独立页（⏳3） | ✅ 已推 | `l3Pages.ts`（8 页契约表，四句抄自线框图 note）+ 唯一页壳 `L3Sheet`（全屏、返回/Esc、dialog 语义、滚动锁、契约条常驻）；**内联与二级页共用同一份实现**（`variant='inline'` / `'sheet'`，状态留在拥有数据的视图里，经 `onRegisterL3Bodies` 注册正文，避免复制 markup 与业务逻辑）。残留三处已收口（详见核对表 ⏳3 残留）：① 层筛选已补（状态由 `UserLookView` 持有，内联与二级页共用）；⑬ 点卡片标题已能进详情；⑭ 控制点阈值已可在二级页⑭ 改（`utils/controlPointEditing.ts`，改阈值即作废「已确认」，重算不覆盖人工值）。唯一"故意不做"的是线框图 ① 的**拖动改层**：层间保留比例是量出来的确定性数字，不接受手势改写 |
 | ⑨ 管理员身份恒为 false（本轮额外发现） | ✅ 已推 | 真实故障：`AiSettingsPanel` 写 `isAdminSession(undefined)` → `Boolean(user) && …` 恒 false，**两个管理员 Tab 对所有人都不显示**。已改为 `getCurrentUser()`；并把管理员身份收回**服务端权威**（`ADMIN_EMAILS` 白名单，随 login/register/新增的 `/api/auth/me` 下发 `isAdmin`），前端启动时 `refreshAdminFlag()` 重新确认；`tests/adminGate.test.ts` 7 条断言守死。开通步骤见 `docs/M6-launch-checklist.md` §3.0 |
 
 **本轮新增的确定性护栏**（都不依赖 AI 判断）：

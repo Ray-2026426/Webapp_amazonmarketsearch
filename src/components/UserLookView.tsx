@@ -22,6 +22,7 @@ import {
   EVIDENCE_STRENGTH_LABELS,
   SEARCH_PATH_LAYER_LABELS,
   SEARCH_PATH_LAYER_HINTS,
+  SEARCH_PATH_LAYER_ORDER,
   PRICE_SENSITIVITY_LABELS,
   computeNeedEvidenceStrength,
   computeSearchPathFlow,
@@ -34,6 +35,7 @@ import {
   type EvidenceStrength,
   type SearchPath,
   type SearchPathFlow,
+  type SearchPathLayerId,
   type SearchPreference,
 } from '../utils/userLook';
 import { updateLookProgress } from '../utils/projectStore';
@@ -78,6 +80,14 @@ export function UserLookView({
    * （2026-09 线上预览就是这样崩的）。
    */
   const [standardOpen, setStandardOpen] = useState(false);
+  /**
+   * ⏳3 残留 1（线框图 ①「保留层筛选」）：搜索路径图的层筛选。
+   * **必须放在组件级早退 `if (!data)` 之前**（hook 顺序，见 tests/hookOrder.test.ts），
+   * 而且必须由**这一层**持有：内联区块与二级页① 是同一个组件的两个实例，
+   * 状态放在 `SearchPathDetailBlock` 内部就变成"各筛各的"，返回主屏也就不可能保留筛选。
+   * 它只是"看哪些层"，不写回数据、不进 localStorage、也不参与任何数值计算。
+   */
+  const [searchLayerFilter, setSearchLayerFilter] = useState<'all' | SearchPathLayerId>('all');
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -153,7 +163,16 @@ export function UserLookView({
   l3BodyRef.current = (id) => {
     if (!data) return null;
     const saveCandidates = (list: UnmetNeedCandidate[]) => scheduleSave({ ...data, unmetNeedCandidates: list });
-    if (id === '1') return <SearchPathDetailBlock searchPath={data.searchPath} flow={searchFlow} variant="sheet" />;
+    if (id === '1')
+      return (
+        <SearchPathDetailBlock
+          searchPath={data.searchPath}
+          flow={searchFlow}
+          layerFilter={searchLayerFilter}
+          onLayerFilterChange={setSearchLayerFilter}
+          variant="sheet"
+        />
+      );
     if (id === '2') return <SearchPreferenceDetailBlock preference={data.searchPreference} variant="sheet" />;
     if (id === '3') {
       return (
@@ -189,7 +208,9 @@ export function UserLookView({
     if (!onRegisterL3Bodies || !data) return;
     onRegisterL3Bodies((id, cardId) => l3BodyRef.current?.(id, cardId) ?? null);
     return () => onRegisterL3Bodies(null);
-  }, [onRegisterL3Bodies, data]);
+    // searchLayerFilter 也要在依赖里：二级页① 的正文是"注册出去"的元素，
+    // 筛选状态变了必须重新注册，页壳才会拿到带新筛选的正文（否则页面上点了筛选不生效）。
+  }, [onRegisterL3Bodies, data, searchLayerFilter]);
 
   if (!data) {
     return (
@@ -273,6 +294,8 @@ export function UserLookView({
           <SearchPathDetailBlock
             searchPath={data.searchPath}
             flow={searchFlow}
+            layerFilter={searchLayerFilter}
+            onLayerFilterChange={setSearchLayerFilter}
             onOpenDetail={() => onOpenL3?.('1')}
           />
 
@@ -372,19 +395,42 @@ export function buildCategoryOptions(
   return [...map.values()];
 }
 
+/**
+ * ⏳3 残留 1：二级页① 的层筛选选项（全部 / 认知层 / 考虑层 / 决策层 / 场景层）。
+ * 顺序直接取自 `SEARCH_PATH_LAYER_ORDER`（确定性顺序的唯一来源），不在这里另抄一遍。
+ */
+const SEARCH_PATH_LAYER_FILTERS: { key: 'all' | SearchPathLayerId; label: string }[] = [
+  { key: 'all', label: '全部' },
+  ...SEARCH_PATH_LAYER_ORDER.map((l) => ({ key: l, label: SEARCH_PATH_LAYER_LABELS[l] })),
+];
+
 /** 线框图 ①：搜索路径图（四层漏斗 + 每层流向），内联与二级页① 同一份实现 */
 export function SearchPathDetailBlock({
   searchPath,
   flow,
+  layerFilter,
+  onLayerFilterChange,
   onOpenDetail,
   variant = 'inline',
 }: {
   searchPath?: SearchPath;
   flow: SearchPathFlow[];
+  /**
+   * ⏳3 残留 1：层筛选（线框图 ①「返回看用户主屏，保留层筛选」）。
+   * 状态**不在本组件里**，而是由拥有数据的 `UserLookView` 持有后传下来：
+   * 内联区块与二级页① 是两个实例，状态放这里就等于各筛各的，返回主屏也就"保留"不了筛选。
+   * 它只是"看哪些层"，不写回数据、不持久化、**不参与任何数值计算**。
+   */
+  layerFilter: 'all' | SearchPathLayerId;
+  onLayerFilterChange: (next: 'all' | SearchPathLayerId) => void;
   onOpenDetail?: () => void;
   variant?: L3BlockVariant;
 }) {
   const sheet = variant === 'sheet';
+  const allLayers = searchPath?.layers ?? [];
+  /** 要显示的层：'all' 时按数据里的顺序全给；选了某一层就只给这一层（数据里没有也要给，才能显示空态） */
+  const layerIdsToShow: SearchPathLayerId[] =
+    layerFilter === 'all' ? allLayers.map((l) => l.layer) : [layerFilter];
   return (
     <Card>
       <div className="p-5">
@@ -405,6 +451,16 @@ export function SearchPathDetailBlock({
           </div>
         </div>
         {searchPath?.summary && <p className="text-xs text-[#424245] mb-2 leading-relaxed">{searchPath.summary}</p>}
+        {/*
+          ⏳3 残留 1 的诚实说明（线框图 ① 写了「拖动结果」，本轮**故意不做**）：
+          四层顺序是漏斗的定义（固定），层与层之间的保留比例是**测得**的搜索量（缺量时退化为词数口径）
+          确定性算出来的。所以这里不做拖动排序、也不做"把词拖到别的层"：一旦允许拖动，
+          漏斗声称的结论就变成可以由一次手势改写的展示内容，而不是量出来的事实。
+        */}
+        <p className="text-[10px] text-[#86868b] mb-2 leading-relaxed">
+          漏斗的四层顺序固定，层间保留比例由各层测得的搜索量（缺量时退化为词数口径）确定性算出：
+          <b>不支持拖动排序</b> —— 顺序与比例都是量出来的，不是偏好设置。
+        </p>
         {/* M2① 流向（确定性）：每层相对上一层保留多少需求 */}
         {flow.length > 0 && (
           <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2 mb-3">
@@ -414,46 +470,78 @@ export function SearchPathDetailBlock({
             </p>
           </div>
         )}
-        <div className="space-y-3">
-          {(searchPath?.layers ?? []).map((layer) => (
-            <div key={layer.layer} className="rounded-xl border border-black/5 bg-[#f8f9fb] p-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold text-[#1d1d1f]">{SEARCH_PATH_LAYER_LABELS[layer.layer]}</span>
-                <span className="text-[10px] text-[#86868b]">{SEARCH_PATH_LAYER_HINTS[layer.layer]}</span>
-                {(() => {
-                  const f = flow.find((x) => x.layer === layer.layer);
-                  if (!f) return null;
-                  return (
-                    <span className="ml-auto inline-flex items-center gap-1.5 text-[10px] text-[#86868b]">
-                      {f.volume > 0 && <span>本层量 {f.volume.toLocaleString()}</span>}
-                      {f.retention !== null && f.layer !== 'awareness' && (
-                        <span className="rounded-full bg-white border border-black/8 px-1.5 py-0.5 font-semibold text-[#424245]">
-                          保留 {Math.round(f.retention * 100)}%
-                        </span>
-                      )}
-                    </span>
-                  );
-                })()}
-              </div>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {layer.words.map((w) => (
-                  <span
-                    key={`${layer.layer}-${w.word}`}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white border border-black/8 text-[11px] text-[#424245]"
-                  >
-                    {w.word}
-                    {w.share !== undefined && <span className="text-[#aeaeb2]">{Math.round(w.share * 100)}%</span>}
-                    {w.volume !== undefined && <span className="text-[#aeaeb2]">{w.volume.toLocaleString()}</span>}
-                  </span>
-                ))}
-              </div>
-              {layer.note && <p className="text-[10px] text-[#86868b] mt-1.5 leading-relaxed">{layer.note}</p>}
-              {(() => {
-                const f = flow.find((x) => x.layer === layer.layer);
-                return f?.note ? <p className="text-[10px] text-amber-600 mt-1 leading-relaxed">{f.note}</p> : null;
-              })()}
-            </div>
+        {/* ⏳3 残留 1：层筛选（全部 / 认知层 / 考虑层 / 决策层 / 场景层）——只筛行，不重算 */}
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] text-[#86868b]">按层筛选</span>
+          {SEARCH_PATH_LAYER_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => onLayerFilterChange(f.key)}
+              aria-pressed={layerFilter === f.key}
+              title={f.key === 'all' ? '显示全部四层' : `只看${f.label}（不改任何数字）`}
+              className={cn(
+                'rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors',
+                layerFilter === f.key
+                  ? 'border-indigo-600 bg-indigo-600 text-white'
+                  : 'border-black/8 bg-white text-[#424245] hover:border-indigo-300 hover:text-indigo-700'
+              )}
+            >
+              {f.label}
+            </button>
           ))}
+        </div>
+        <div className="space-y-3">
+          {layerIdsToShow.length === 0 ? (
+            <p className="rounded-xl border border-black/8 bg-[#f8f9fb] p-3 text-[11px] text-[#aeaeb2]">
+              搜索路径还没有分层数据（未抓取）：先补关键词，或跑一次「看用户」的 AI 生成。
+            </p>
+          ) : (
+            layerIdsToShow.map((layerId) => {
+              const layer = allLayers.find((l) => l.layer === layerId);
+              const words = layer?.words ?? [];
+              const f = flow.find((x) => x.layer === layerId);
+              return (
+                <div key={layerId} className="rounded-xl border border-black/5 bg-[#f8f9fb] p-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-[#1d1d1f]">{SEARCH_PATH_LAYER_LABELS[layerId]}</span>
+                    <span className="text-[10px] text-[#86868b]">{SEARCH_PATH_LAYER_HINTS[layerId]}</span>
+                    {f && (
+                      <span className="ml-auto inline-flex items-center gap-1.5 text-[10px] text-[#86868b]">
+                        {f.volume > 0 && <span>本层合计 {f.volume.toLocaleString()}</span>}
+                        {f.retention !== null && f.layer !== 'awareness' && (
+                          <span className="rounded-full bg-white border border-black/8 px-1.5 py-0.5 font-semibold text-[#424245]">
+                            保留 {Math.round(f.retention * 100)}%
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  {words.length === 0 ? (
+                    /* 空态必须写明白，不能给一个空盒子让人以为页面坏了（也不编一个词出来） */
+                    <p className="text-[11px] text-[#aeaeb2] mt-2">该层暂无关键词证据</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {words.map((w) => (
+                        <span
+                          key={`${layerId}-${w.word}`}
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white border border-black/8 text-[11px] text-[#424245]"
+                        >
+                          {w.word}
+                          {w.share !== undefined && <span className="text-[#aeaeb2]">占比 {Math.round(w.share * 100)}%</span>}
+                          {w.volume !== undefined && (
+                            <span className="text-[#aeaeb2]">月搜索量 {w.volume.toLocaleString()}</span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {layer?.note && <p className="text-[10px] text-[#86868b] mt-1.5 leading-relaxed">{layer.note}</p>}
+                  {f?.note ? <p className="text-[10px] text-amber-600 mt-1 leading-relaxed">{f.note}</p> : null}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </Card>
