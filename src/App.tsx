@@ -33,7 +33,7 @@ import { Toaster, toast } from 'sonner';
 import { getAuthToken, getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
 import { ensureAdminMcpDefaults, loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
 import { loadAiSettings, saveAiSettings, sanitizeAiSettings, AiSettings } from './utils/aiConfig';
-import { fetchServerKeys, saveServerKeys } from './utils/serverKeys';
+import { fetchServerKeyStatuses, migrateLegacyKeys } from './utils/serverKeys';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
 import type { MarketContext } from './utils/marketLook';
@@ -145,16 +145,22 @@ export default function App() {
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
   const [activeProject, setActiveProject] = useState<ResearchProject | null>(null);
 
-  // 管理员登录后：拉取服务器 Key，再初始化 MCP/AI 默认值
+  // 管理员登录后：① 迁移浏览器里残留的明文密钥到服务端 ② 读取"服务端配没配"的状态。
+  // M5 安全加固：前端不再保存/持有密钥（旧实现把明文存进 localStorage，已废弃）。
   useEffect(() => {
     if (!isAdminSession(currentUser)) return;
     const token = getAuthToken();
     if (!token) return;
     let cancelled = false;
     void (async () => {
-      const keys = await fetchServerKeys(token);
+      const migration = await migrateLegacyKeys(token);
       if (cancelled) return;
-      saveServerKeys(keys);
+      if (migration.names.length > 0) {
+        if (migration.migrated) toast.success(migration.message);
+        else toast.warning(migration.message);
+      }
+      await fetchServerKeyStatuses(token); // 只缓存状态（configured + 指纹）
+      if (cancelled) return;
       try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
       setAiSettings(loadAiSettings());
     })();

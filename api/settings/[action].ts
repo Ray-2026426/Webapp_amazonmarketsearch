@@ -1,8 +1,30 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getServiceSupabase, verifyToken, isAdminEmail, json } from '../auth/_shared.js';
+import { describeKeys, maskKey } from '../../src/utils/keyMasking.js';
 
 function env(name: string): string {
   return (process.env[name] || '').trim();
+}
+
+/**
+ * M5 安全加固（PRD §11.2「密钥只在服务端，前端永不接触」）：
+ * 这个接口**不再返回密钥明文**，只返回"配没配 + 指纹"（掩码口径见 src/utils/keyMasking.ts）。
+ *
+ * 为什么必须改：旧实现把 deepseek/sellersprite 的 Key 明文返回给浏览器，
+ * 前端还会写进 localStorage——任何拿到浏览器的人都能取走密钥。
+ * 现在前端拿不到密钥，所有需要密钥的调用一律走服务端网关（/api/data/*）。
+ */
+const KEY_NAMES = ['deepseek', 'sellersprite', 'xydc', 'lingxing', 'sorftime'] as const;
+type KeyName = (typeof KEY_NAMES)[number];
+
+function envKeys(): Record<KeyName, string> {
+  return {
+    deepseek: env('DEEPSEEK_API_KEY'),
+    sellersprite: env('SELLERSPRITE_SECRET_KEY'),
+    xydc: env('XYDC_SECRET_KEY'),
+    lingxing: env('LINGXING_SECRET_KEY'),
+    sorftime: env('SORFTIME_SECRET_KEY'),
+  };
 }
 
 async function get(req: VercelRequest, res: VercelResponse, auth: { userId: string; email: string }) {
@@ -12,25 +34,25 @@ async function get(req: VercelRequest, res: VercelResponse, auth: { userId: stri
     return json(res, 200, {
       ok: true,
       cloudDisabled: true,
-      keys: {
-        deepseek: env('DEEPSEEK_API_KEY'),
-        sellersprite: env('SELLERSPRITE_SECRET_KEY'),
-        xydc: env('XYDC_SECRET_KEY'),
-        lingxing: env('LINGXING_SECRET_KEY'),
-        sorftime: env('SORFTIME_SECRET_KEY'),
-      },
+      keys: describeKeys(envKeys()),
+      note: '仅返回"是否已配置"与指纹，不回显密钥值；实际调用走服务端数据池 /api/data/*',
     });
   }
   const { data } = await s.auth.admin.getUserById(auth.userId);
   const meta = (data?.user?.user_metadata?.appKeys ?? {}) as Record<string, string>;
-  const keys = {
+  const keys: Record<KeyName, string> = {
     deepseek: String(meta.deepseek || env('DEEPSEEK_API_KEY') || '').trim(),
     sellersprite: String(meta.sellersprite || env('SELLERSPRITE_SECRET_KEY') || '').trim(),
     xydc: String(meta.xydc || env('XYDC_SECRET_KEY') || '').trim(),
     lingxing: String(meta.lingxing || env('LINGXING_SECRET_KEY') || '').trim(),
     sorftime: String(meta.sorftime || env('SORFTIME_SECRET_KEY') || '').trim(),
   };
-  return json(res, 200, { ok: true, keys });
+  // 只回"是否已配置 + 指纹"，绝不回显明文（M5 安全加固）
+  return json(res, 200, {
+    ok: true,
+    keys: describeKeys(keys),
+    note: '仅返回"是否已配置"与指纹，不回显密钥值；实际调用走服务端数据池 /api/data/*',
+  });
 }
 
 async function save(req: VercelRequest, res: VercelResponse, auth: { userId: string; email: string }, body: Record<string, unknown>) {
