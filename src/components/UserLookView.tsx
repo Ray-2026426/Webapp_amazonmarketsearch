@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   MessageCircle,
   Search,
+  Layers,
 } from 'lucide-react';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
@@ -28,6 +29,7 @@ import {
   type UserContext,
   type UserEvidence,
   type UserLookData,
+  type SegmentStandard,
   type UnmetNeedCandidate,
   type EvidenceStrength,
 } from '../utils/userLook';
@@ -122,6 +124,30 @@ export function UserLookView({
   }
 
   const update = (patch: Partial<UserLookData>) => scheduleSave({ ...data, ...patch });
+
+  /** 线框图 Screen 3 ④：细分标准（勾选的需求域，第一个为主标准） */
+  const standard: SegmentStandard = data.segmentStandard ?? { categories: [] };
+  const [standardOpen, setStandardOpen] = useState(false);
+  const categoryOptions = (() => {
+    const map = new Map<string, { name: string; needs: number; evidence: number }>();
+    for (const c of data.unmetNeedCandidates) {
+      const name = (c.category || '未分类需求').trim() || '未分类需求';
+      const cur = map.get(name) ?? { name, needs: 0, evidence: 0 };
+      cur.needs += 1;
+      if ((c.evidence?.reviewQuotes?.length ?? 0) > 0 || (c.evidence?.asins?.length ?? 0) > 0) cur.evidence += 1;
+      map.set(name, cur);
+    }
+    return [...map.values()];
+  })();
+  const toggleStandardCategory = (name: string) => {
+    const has = standard.categories.includes(name);
+    const categories = has ? standard.categories.filter((c) => c !== name) : [...standard.categories, name];
+    update({ segmentStandard: { ...standard, categories, updatedAt: new Date().toISOString() } });
+  };
+  const setPrimaryStandard = (name: string) => {
+    const categories = [name, ...standard.categories.filter((c) => c !== name)];
+    update({ segmentStandard: { ...standard, categories, updatedAt: new Date().toISOString() } });
+  };
 
   /** M2①：四层流向（确定性计算，AI 无法修改） */
   const searchFlow = computeSearchPathFlow(data.searchPath);
@@ -360,6 +386,187 @@ export function UserLookView({
 
       {/* 已满足需求 */}
       <StringListCard title="已满足需求" hint="现有产品已经较好满足的需求，用于对照" value={data.satisfiedNeeds} onAdd={() => addList('satisfiedNeeds')} onChange={(i, v) => updateList('satisfiedNeeds', i, v)} onRemove={(i) => removeList('satisfiedNeeds', i)} />
+
+      {/* 线框图 Screen 3 ④：细分标准（把需求域标成"作为细分标准"，联动看市场） */}
+
+      <Card>
+
+        <div className="p-5">
+
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+
+            <div className="flex items-center gap-2">
+
+              <Layers className="w-4 h-4 text-indigo-600" />
+
+              <p className="text-sm font-semibold text-[#1d1d1f]">④ 细分标准</p>
+
+              <span className="text-[11px] text-[#aeaeb2]">勾选"作为细分标准"的需求域 → 看市场的方案 A 会优先按它切</span>
+
+            </div>
+
+            <button
+
+              type="button"
+
+              onClick={() => setStandardOpen((v) => !v)}
+
+              className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700"
+
+            >
+
+              {standardOpen ? '收起明细' : '细分标准设置（②级页④）'}
+
+            </button>
+
+          </div>
+
+          <p className="text-[11px] text-[#86868b] mb-3 leading-relaxed">
+
+            细分标准决定"后面所有对比按什么切"。这里勾的是**需求域**（来自上面的需求分类树），
+
+            第一个勾选的是主标准；不勾也可以，看市场会退回默认的三方案对比。
+
+          </p>
+
+          {categoryOptions.length === 0 ? (
+
+            <p className="text-[11px] text-amber-700">还没有需求域：先在上面加至少 1 条未满足需求（填「需求域」字段）。</p>
+
+          ) : (
+
+            <div className="space-y-1.5">
+
+              {categoryOptions.map((c) => {
+
+                const idx = standard.categories.indexOf(c.name);
+
+                const checked = idx >= 0;
+
+                return (
+
+                  <div key={c.name} className="flex flex-wrap items-center gap-2 rounded-xl border border-black/8 bg-[#f8f9fb] px-3 py-2">
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+
+                      <input
+
+                        type="checkbox"
+
+                        checked={checked}
+
+                        onChange={() => toggleStandardCategory(c.name)}
+
+                        className="w-3.5 h-3.5 accent-indigo-600"
+
+                      />
+
+                      <span className="text-[12px] font-semibold text-[#1d1d1f]">{c.name}</span>
+
+                    </label>
+
+                    <span className="text-[10px] text-[#86868b]">
+
+                      {c.needs} 条需求{c.evidence > 0 ? ` · ${c.evidence} 条带证据` : ' · 暂无证据'}
+
+                    </span>
+
+                    {checked && (
+
+                      <span className="ml-auto flex items-center gap-2">
+
+                        {idx === 0 ? (
+
+                          <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-semibold text-white">主标准</span>
+
+                        ) : (
+
+                          <button
+
+                            type="button"
+
+                            onClick={() => setPrimaryStandard(c.name)}
+
+                            className="rounded-lg border border-black/10 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#86868b] hover:border-indigo-300 hover:text-indigo-700"
+
+                          >
+
+                            设为主标准
+
+                          </button>
+
+                        )}
+
+                      </span>
+
+                    )}
+
+                  </div>
+
+                );
+
+              })}
+
+              <div className="pt-1">
+
+                <label className="text-[11px] text-[#86868b]">主标准的理由（一句话，给管理层看的）</label>
+
+                <input
+
+                  value={standard.basis ?? ''}
+
+                  onChange={(e) => update({ segmentStandard: { ...standard, categories: standard.categories, basis: e.target.value, updatedAt: new Date().toISOString() } })}
+
+                  placeholder="例如：睡姿决定高度需求，且#U3 需求在评论里被反复抱怨"
+
+                  className={inputCls}
+
+                />
+
+              </div>
+
+              {standardOpen && (
+
+                <div className="mt-2 rounded-xl border border-black/8 bg-white px-3 py-2">
+
+                  <p className="text-[11px] font-semibold text-[#1d1d1f] mb-1">细分标准下的需求明细（二级页④）</p>
+
+                  <ul className="space-y-0.5">
+
+                    {data.unmetNeedCandidates.map((c) => (
+
+                      <li key={c.id} className="text-[10px] text-[#424245] leading-relaxed">
+
+                        · <span className="text-[#86868b]">{(c.category || '未分类').trim()}</span> ｜ {(c.needStatement || '(未填写)').trim()}
+
+                        {c.evidence && (
+
+                          <span className="text-[#aeaeb2]">
+
+                            （关键词 {(c.evidence.keywords ?? []).length} · 评论原文 {(c.evidence.reviewQuotes ?? []).length} · 覆盖 ASIN {(c.evidence.asins ?? []).length}）
+
+                          </span>
+
+                        )}
+
+                      </li>
+
+                    ))}
+
+                  </ul>
+
+                </div>
+
+              )}
+
+            </div>
+
+          )}
+
+        </div>
+
+      </Card>
+
 
       {/* 未满足需求候选 */}
       <div className="space-y-3">

@@ -144,6 +144,8 @@ export default function App() {
   const [isAvatarSettingsOpen, setIsAvatarSettingsOpen] = useState(false);
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
   const [activeProject, setActiveProject] = useState<ResearchProject | null>(null);
+  /** 线框图 Screen 4：从看市场点「查看完整大盘」时带过来的细分（大盘顶部显示筛选上下文） */
+  const [marketSegmentFocus, setMarketSegmentFocus] = useState<string | null>(null);
 
   // 管理员登录后：① 迁移浏览器里残留的明文密钥到服务端 ② 读取"服务端配没配"的状态。
   // M5 安全加固：前端不再保存/持有密钥（旧实现把明文存进 localStorage，已废弃）。
@@ -1672,6 +1674,15 @@ export default function App() {
               onLoadDemo={() => applyDemoWorkspace({ toastMsg: true })}
               onOpenSettings={() => setIsAvatarSettingsOpen(true)}
               onSendToComparison={sendAsinsToComparison}
+              onOpenMarketSegment={(segment) => {
+                setMarketSegmentFocus(segment);
+                setActiveView('market');
+                if (activeProject) setToolReturn({ projectId: activeProject.id, look: 'market' });
+              }}
+              onOpenUserInsights={() => {
+                setActiveView('insights');
+                if (activeProject) setToolReturn({ projectId: activeProject.id, look: 'competitor' });
+              }}
               onProjectChange={(updated) => setActiveProject(updated)}
             />
           ) : (
@@ -1695,6 +1706,25 @@ export default function App() {
             <>
               {activeView === 'market' && isDataLoaded &&
                 <div className="max-w-7xl mx-auto space-y-8" data-annotate-anchor="market-root">
+                {/* 线框图 Screen 4 ⑤：从看市场点「查看完整大盘」带过来的筛选上下文 */}
+                {marketSegmentFocus && (
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 flex flex-wrap items-center gap-2">
+                    <Layers className="w-4 h-4 text-indigo-600" />
+                    <span className="text-sm font-semibold text-indigo-800">
+                      当前：{marketSegmentFocus}（来自看市场 · 已选中该细分）
+                    </span>
+                    <span className="text-[11px] text-indigo-700/80">
+                      本页为老版「市场大盘」整页复用；要按细分筛选请用下方「细分」筛选器，或切到全市场。
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setMarketSegmentFocus(null)}
+                      className="ml-auto rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:border-indigo-400"
+                    >
+                      切到全市场（清除筛选）
+                    </button>
+                  </div>
+                )}
                 {/* KPI Cards Header */}
                 <div className="flex flex-col space-y-4" data-annotate-anchor="market-kpi-header">
                   {/* ── Market Scorecard（默认隐藏，设置 → 功能开关 中开启） ── */}

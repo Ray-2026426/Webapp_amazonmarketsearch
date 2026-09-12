@@ -39,6 +39,7 @@ export function CompetitorLookView({
   onProjectChange,
   onOpenCompetitorTool,
   onSendToComparison,
+  onOpenUserInsights,
 }: {
   userId: string;
   project: ResearchProject;
@@ -47,6 +48,8 @@ export function CompetitorLookView({
   onOpenCompetitorTool?: () => void;
   /** M3⑥ 断链 #4：把竞对 ASIN 送入「竞品明细」对比池 */
   onSendToComparison?: (asins: string[]) => void;
+  /** 线框图 ⑩：打开「评论 VOC / 用户洞察」（看竞对的评论与画像证据页） */
+  onOpenUserInsights?: () => void;
 }) {
   const [data, setData] = useState<CompetitorLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -236,6 +239,7 @@ export function CompetitorLookView({
         project={project}
         onOpenCompetitorTool={onOpenCompetitorTool}
         onSendToComparison={onSendToComparison}
+        onOpenUserInsights={onOpenUserInsights}
       />
 
       {/* 竞品样本池 / 标杆 ASIN */}

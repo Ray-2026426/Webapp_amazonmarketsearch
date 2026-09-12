@@ -37,7 +37,8 @@ export function SegmentScoreCards({
   onSelectOpportunitySegment,
   onCaptured,
 }: {
-  onOpenMarketTool: () => void;
+  /** 线框图 ⑤：可带细分名 → 打开完整大盘（自动带入筛选上下文） */
+  onOpenMarketTool: (segment?: string) => void;
   onSelectOpportunitySegment?: (segment: string) => void;
   onCaptured?: (segments: string[]) => void;
 }) {
@@ -98,7 +99,7 @@ export function SegmentScoreCards({
                 </p>
                 <button
                   type="button"
-                  onClick={onOpenMarketTool}
+                  onClick={() => onOpenMarketTool()}
                   className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]"
                 >
                   去市场大盘做细分 <ArrowRight className="w-3.5 h-3.5" />
@@ -111,15 +112,16 @@ export function SegmentScoreCards({
             {(results ?? []).map((r) => {
               const isSel = selected === r.segment;
               return (
+                // 线框图 Screen 4：细分卡 + 独立的「查看完整大盘 →」（不能把按钮嵌套在按钮里）
+                <div key={r.segment} className="flex flex-col">
                 <button
-                  key={r.segment}
                   type="button"
                   onClick={() => {
                     setSelected(isSel ? null : r.segment);
                     onSelectOpportunitySegment?.(r.segment);
                   }}
                   className={cn(
-                    'text-left rounded-2xl border p-4 transition-all',
+                    'text-left rounded-2xl border p-4 transition-all flex-1',
                     isSel
                       ? 'border-indigo-300 ring-2 ring-indigo-500/20 bg-indigo-50/40'
                       : 'border-black/8 bg-white hover:border-indigo-200 hover:shadow-sm'
@@ -139,6 +141,15 @@ export function SegmentScoreCards({
                     <DimBar label="竞争" value={r.competition} icon={<Swords className="w-3 h-3" />} />
                   </div>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenMarketTool?.(r.segment)}
+                  title="打开老版市场大盘整页，并带入该细分的筛选上下文"
+                  className="mt-1.5 w-full rounded-xl border border-indigo-100 bg-white px-3 py-1.5 text-[11px] font-semibold text-indigo-700 hover:border-indigo-300"
+                >
+                  查看完整大盘 →
+                </button>
+                </div>
               );
             })}
           </div>

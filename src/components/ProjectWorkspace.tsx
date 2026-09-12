@@ -90,6 +90,8 @@ export function ProjectWorkspace({
   onLoadDemo,
   onOpenSettings,
   onSendToComparison,
+  onOpenUserInsights,
+  onOpenMarketSegment,
 }: {
   userId: string;
   project: ResearchProject;
@@ -110,6 +112,10 @@ export function ProjectWorkspace({
   onOpenSettings?: () => void;
   /** M3⑥ 断链 #4：把竞对 ASIN 送入「竞品明细」对比池 */
   onSendToComparison?: (asins: string[]) => void;
+  /** 线框图 ⑩：打开「评论 VOC / 用户洞察」（看竞对的评论与画像证据页） */
+  onOpenUserInsights?: () => void;
+  /** 线框图 ⑤：从看市场点「查看完整大盘」时把细分带进市场大盘 */
+  onOpenMarketSegment?: (segment: string) => void;
 }) {
   const [p, setP] = useState<ResearchProject>(project);
   const [tab, setTab] = useState<Tab>(project.activeLook);
@@ -288,11 +294,11 @@ export function ProjectWorkspace({
       ) : tab === 'self' ? (
         <SelfAssessmentView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
       ) : tab === 'market' ? (
-        <MarketLookView userId={userId} project={p} marketContext={marketContext} onProjectChange={applyProjectUpdate} onOpenMarketTool={() => onOpenTool('market', 'market')} />
+        <MarketLookView userId={userId} project={p} marketContext={marketContext} onProjectChange={applyProjectUpdate} onOpenMarketTool={(segment) => (onOpenMarketSegment ? onOpenMarketSegment(segment) : onOpenTool('market', 'market'))} />
       ) : tab === 'user' ? (
         <UserLookView userId={userId} project={p} userContext={userContext} onProjectChange={applyProjectUpdate} />
       ) : tab === 'competitor' ? (
-        <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} onOpenCompetitorTool={() => onOpenTool('competitors', 'competitor')} onSendToComparison={onSendToComparison} />
+        <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} onOpenCompetitorTool={() => onOpenTool('competitors', 'competitor')} onSendToComparison={onSendToComparison} onOpenUserInsights={onOpenUserInsights} />
       ) : tab === 'opportunity' ? (
         <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} onNavigateLook={(look) => void switchToLook(look)} />
       ) : (

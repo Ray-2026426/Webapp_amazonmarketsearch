@@ -87,12 +87,15 @@ export function CompetitorDeepDive({
   project,
   onOpenCompetitorTool,
   onSendToComparison,
+  onOpenUserInsights,
 }: {
   userId: string;
   project: ResearchProject;
   onOpenCompetitorTool?: () => void;
   /** M3⑥ 断链 #4：把这几个竞对送进「竞品明细」对比池（主图逐张/A+/流量词） */
   onSendToComparison?: (asins: string[]) => void;
+  /** 线框图 ⑩：打开「评论 VOC / 用户洞察」看该竞对的评论与画像证据 */
+  onOpenUserInsights?: () => void;
 }) {
   const [data, setData] = useState<CompetitorLookData | null>(null);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -481,6 +484,43 @@ export function CompetitorDeepDive({
                     >
                       {swapFor === asin ? '取消换人' : '换人'}
                     </button>
+                  </div>
+
+                  {/* 线框图 Screen 5：L3 下钻入口 ⑦⑧⑨⑩（老版模块复用，自动带入当前 ASIN） */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] text-[#86868b]">下钻：</span>
+                    <button
+                      type="button"
+                      onClick={() => onSendToComparison?.([asin])}
+                      className="rounded-lg border border-black/10 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700"
+                    >
+                      ⑦ 单竞对深度页
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSendToComparison?.([asin])}
+                      title="在竞品明细里逐张对比主图（第 1-7 张）"
+                      className="rounded-lg border border-black/10 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700"
+                    >
+                      ⑧ 主图逐张对比
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSendToComparison?.([asin])}
+                      title="在竞品明细里看流量词与广告结构"
+                      className="rounded-lg border border-black/10 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700"
+                    >
+                      ⑨ 流量结构
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => (onOpenUserInsights ? onOpenUserInsights() : onSendToComparison?.([asin]))}
+                      title="打开评论 VOC / 用户洞察，看该竞对的评论与画像证据"
+                      className="rounded-lg border border-black/10 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700"
+                    >
+                      ⑩ 评论与画像
+                    </button>
+                    <span className="text-[10px] text-[#aeaeb2]">（⑦⑧⑨ 在竞品明细内切换对应视图，ASIN 已带入）</span>
                   </div>
 
                   {/* M3① 换人：从目标细分候选池里按角色规则挑（每人一句"为什么它也行"） */}

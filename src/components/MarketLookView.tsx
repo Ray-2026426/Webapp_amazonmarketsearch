@@ -51,7 +51,8 @@ export function MarketLookView({
   project: ResearchProject;
   marketContext: MarketContext;
   onProjectChange: (updated: ResearchProject) => void;
-  onOpenMarketTool?: () => void;
+  /** 线框图 ⑤：可带上细分名 → 打开完整大盘（自动带入筛选上下文） */
+  onOpenMarketTool?: (segment?: string) => void;
 }) {
   const [data, setData] = useState<MarketLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -212,7 +213,7 @@ export function MarketLookView({
         chosenSchemeId={data.segmentSchemeId}
         chosenSegmentIds={data.chosenSegmentIds ?? []}
         onChoose={(schemeId, segmentIds) => update({ segmentSchemeId: schemeId, chosenSegmentIds: segmentIds })}
-        onOpenMarketTool={onOpenMarketTool}
+        onOpenMarketTool={(segment) => onOpenMarketTool?.(segment)}
       />
 
       {/* 细分市场评分（确定性公式，机会分排序） */}

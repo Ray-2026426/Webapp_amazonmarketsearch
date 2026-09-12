@@ -356,6 +356,45 @@ export function OpportunityDecisionBoard({
         </div>
       </Card>
 
+      {/* 线框图 Screen 7：全局先后建议（确定性排序 + 理由，最终由用户拍板） */}
+      {ranked.length > 1 && (
+        <Card>
+          <div className="p-5 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-[#1d1d1f]">全局先后建议</p>
+              <span className="text-[10px] text-[#86868b]">系统按「评分 → 覆盖度 → 前置资源缺口」排序；先做哪个由你拍板</span>
+            </div>
+            <ol className="space-y-1.5">
+              {ranked.map((r, i) => {
+                const card = cards.find((c) => c.id === r.cardId);
+                const decided = card?.decision && card.decision !== 'undecided';
+                return (
+                  <li key={r.cardId} className="rounded-xl border border-black/8 bg-[#f8f9fb] px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-indigo-600 text-white px-2 py-0.5 text-[10px] font-semibold">先 {i + 1}</span>
+                      <span className="text-[12px] font-semibold text-[#1d1d1f]">{r.title}</span>
+                      <span className="text-[10px] text-[#86868b]">
+                        评分 {r.score}｜覆盖度 {(r.coverage * 100).toFixed(0)}%
+                      </span>
+                      {decided && (
+                        <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                          已拍板：{PROJECT_DECISION_LABELS[card!.decision === 'enter' ? 'go' : card!.decision === 'validate_first' ? 'validate_first' : card!.decision === 'hold' ? 'hold' : 'reject']}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-[#424245] mt-0.5 leading-relaxed">{r.reason}</p>
+                  </li>
+                );
+              })}
+            </ol>
+            <p className="text-[10px] text-[#86868b]">
+              说明：这里的排序是**确定性建议**（AI 不改分、也不排序）；若两张卡共用供应链或同一批素材，
+              先做前一张能摊薄后一张的成本——这一点需要你自己判断并在卡上拍板。
+            </p>
+          </div>
+        </Card>
+      )}
+
       {/* ② 零机会结论（两种合法结论，人工确认） */}
       <Card>
         <div className="p-5 space-y-2">

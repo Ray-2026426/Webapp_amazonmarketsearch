@@ -261,6 +261,15 @@ export function describeSearchPathFlow(flows: SearchPathFlow[]): string {
 
 import type { OpenQuestionAnswer } from './openQuestions';
 
+/** 线框图 Screen 3 ④：细分标准（用户在看用户里把需求域标成"作为细分标准"，联动看市场） */
+export interface SegmentStandard {
+  /** 勾选为细分标准的需求域（有序：第一个是主标准） */
+  categories: string[];
+  /** 选它当主标准的理由（一句话人话，用户填；可空） */
+  basis?: string;
+  updatedAt?: string;
+}
+
 export interface UserLookData {
   projectId: string;
   targetUser: string;
@@ -274,6 +283,8 @@ export interface UserLookData {
   searchPreference?: SearchPreference;
   /** M2⑤：对「看市场」留下的待验证问题在本步给出的回答（修断链 #7） */
   openQuestionAnswers?: OpenQuestionAnswer[];
+  /** 线框图 Screen 3 ④：细分标准（勾选的需求域，第一个为主标准；看市场方案 A 优先采用） */
+  segmentStandard?: SegmentStandard;
   evidence: UserEvidence | null;
   updatedAt: string;
 }
@@ -308,6 +319,7 @@ export function defaultUserLook(projectId: string): UserLookData {
     satisfiedNeeds: [],
     unmetNeedCandidates: [],
     openQuestionAnswers: [],
+    segmentStandard: { categories: [] },
     evidence: null,
     updatedAt: new Date().toISOString(),
   };
@@ -323,6 +335,13 @@ export async function loadUserLook(userId: string, projectId: string): Promise<U
         satisfiedNeeds: Array.isArray(raw.satisfiedNeeds) ? raw.satisfiedNeeds : [],
         unmetNeedCandidates: Array.isArray(raw.unmetNeedCandidates) ? raw.unmetNeedCandidates : [],
         openQuestionAnswers: Array.isArray(raw.openQuestionAnswers) ? raw.openQuestionAnswers : [],
+        segmentStandard: {
+          categories: Array.isArray(raw.segmentStandard?.categories)
+            ? raw.segmentStandard!.categories.map((c) => String(c || '').trim()).filter(Boolean)
+            : [],
+          basis: typeof raw.segmentStandard?.basis === 'string' ? raw.segmentStandard.basis : '',
+          updatedAt: raw.segmentStandard?.updatedAt,
+        },
       };
     }
   } catch {

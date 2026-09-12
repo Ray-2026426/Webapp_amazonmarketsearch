@@ -38,7 +38,8 @@ export function SegmentSchemeChooser({
   /** 已选目标细分（细分 id 列表） */
   chosenSegmentIds: string[];
   onChoose: (schemeId: string, segmentIds: string[]) => void;
-  onOpenMarketTool?: () => void;
+  /** 线框图 ⑤：查看该细分对应的完整大盘（老版大盘 + 自动筛选上下文）；也可不带参数直接打开大盘 */
+  onOpenMarketTool?: (segment?: string) => void;
 }) {
   const [schemes, setSchemes] = useState<SegmentScheme[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,7 +119,7 @@ export function SegmentSchemeChooser({
                 {onOpenMarketTool && (
                   <button
                     type="button"
-                    onClick={onOpenMarketTool}
+                    onClick={() => onOpenMarketTool?.()}
                     className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700"
                   >
                     打开市场大盘取数
@@ -211,6 +212,13 @@ export function SegmentSchemeChooser({
                                   )}
                                 </div>
                                 <p className="text-[10px] text-[#86868b] mt-1 leading-relaxed">切法：{seg.rule}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenMarketTool?.(seg.name)}
+                                  className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700"
+                                >
+                                  查看完整大盘 →（自动带入该细分）
+                                </button>
                                 <p className="text-[10px] text-[#86868b] mt-0.5">
                                   {seg.productCount} 个商品 · 收入占比 {(seg.revenueShare * 100).toFixed(1)}% · 机会分{' '}
                                   <b className="text-[#1d1d1f]">{seg.score.opportunity}</b>
