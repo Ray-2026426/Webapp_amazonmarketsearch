@@ -4,6 +4,7 @@ import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { getAuthToken, isAdminSession, getCurrentUser } from '../utils/auth';
 import { describeUsage, summarizeUsage, type UsageSummary } from '../utils/usageAccounting';
+import { clearPerfSamples, loadPerfSamples, summarizePerf } from '../utils/perfBudget';
 
 /**
  * M5 · 管理员后台面板（PRD §11.4）。
@@ -90,6 +91,8 @@ export function AdminConsolePanel() {
   const [projects, setProjects] = useState<Record<string, unknown>[]>([]);
   const [configKeys, setConfigKeys] = useState<Record<string, { configured: boolean; fingerprint: string }>>({});
   const [keyDraft, setKeyDraft] = useState<{ name: string; value: string }>({ name: 'sellersprite', value: '' });
+  // M5 性能基线：本地打点（项目中心加载等）的判定结果
+  const [perf, setPerf] = useState(() => summarizePerf(loadPerfSamples()));
 
   const load = useCallback(
     async (which: AdminTab) => {
@@ -164,8 +167,7 @@ export function AdminConsolePanel() {
       )}
 
       {/* ① 环境自检 */}
-      {tab === 'health' && health && (
-        <Card>
+      {tab === 'health' && health && (        <Card>
           <div className="p-4 space-y-2">
             <p className="text-sm font-semibold text-[#1d1d1f]">环境自检（{fmtTime(health.checkedAt)}）</p>
             <p className="text-[11px] text-[#86868b]">{health.note || '只返回"是否已配置 + 指纹"，不回显密钥值'}</p>
@@ -213,6 +215,40 @@ export function AdminConsolePanel() {
               >
                 <BarChart3 className="w-3 h-3" /> 查看数据池状态
               </button>
+            </div>
+
+            {/* M5 性能基线：把 ≤2s 这类验收线变成可读数字（本地打点，中位数口径） */}
+            <div className="rounded-xl border border-black/8 bg-white px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold text-[#424245]">性能基线（本地实测）</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearPerfSamples();
+                    setPerf(summarizePerf([]));
+                  }}
+                  className="rounded-lg border border-black/10 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#86868b] hover:border-indigo-300 hover:text-indigo-700"
+                >
+                  清空打点
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-[#424245]">{perf.summary}</p>
+              {perf.verdicts.length > 0 && (
+                <ul className="mt-1 space-y-0.5">
+                  {perf.verdicts.map((v) => (
+                    <li key={v.key} className="flex items-center gap-2">
+                      <StatusPill ok={v.ok} label={v.label} />
+                      <span className="text-[10px] text-[#86868b]">
+                        {v.durationMs}ms / 预算 {v.budgetMs}ms（中位数）
+                        {!v.ok && ` — 超 ${Math.round(v.overBy * 100)}%`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-1 text-[10px] text-[#86868b]">
+                打点位置：项目中心加载（PRD §12 M5「≤2s」）。跑几次项目中心后回到本页刷新，即可看到实测数字。
+              </p>
             </div>
           </div>
         </Card>

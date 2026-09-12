@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { Select } from './ui/Select';
+import { startPerf } from '../utils/perfBudget';
 import { recordPendingCloudDeletion } from '../utils/cloudDeletionStore';
 import { purgeProjectAssets } from '../utils/projectAssets';
 import { getAuthToken } from '../utils/auth';
@@ -148,10 +149,19 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    // M5 性能预算：项目中心加载 ≤2s（PRD §12 M5）。打点只做测量与本地记录，不影响业务逻辑。
+    const done = startPerf('project_center_load');
     try {
       const list = await loadProjects(userId);
       setProjects(list);
+      const verdict = done({ projects: list.length });
+      if (!verdict.ok) {
+        // 超预算时如实提示（含超了多少），不静默——这条是验收线
+        // eslint-disable-next-line no-console
+        console.warn(`[perf] ${verdict.verdict}`);
+      }
     } catch {
+      done({ error: 1 });
       toast.error('项目列表读取失败');
     } finally {
       setLoading(false);

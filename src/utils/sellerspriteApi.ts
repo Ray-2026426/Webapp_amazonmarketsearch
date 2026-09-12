@@ -1,4 +1,6 @@
 import type { Keyword, Review } from './parser';
+import { callDataPool, canUseDataPool } from './dataPoolClient';
+import { decideOutboundRoute, poolTypeForTool, usageToolForTool } from './dataPoolRouting';
 import {
   getActiveSellerSpriteProvider,
   getSellerSpriteEndpoint,
@@ -178,8 +180,7 @@ async function mcpHttp(
   };
 }
 
-function resolveSellerSpriteAuth(settings?: McpSettings | null): { secretKey: string; endpoint: string } {
-  const cfg = settings ?? loadMcpSettings();
+function resolveSellerSpriteAuth(settings?: McpSettings | null): { secretKey: string; endpoint: string } {  const cfg = settings ?? loadMcpSettings();
   const ss = getActiveSellerSpriteProvider(cfg);
   const secretKey = (ss?.secretKey || cfg.secretKey || '').trim();
   if (!secretKey) {
@@ -311,6 +312,27 @@ async function callSellerSpriteToolBrowser(
   args: Record<string, unknown>,
   settings?: McpSettings | null
 ): Promise<unknown> {
+  // M5：出网路由交给纯函数决定（规则见 dataPoolRouting.decideOutboundRoute）。
+  // 顺序：自定义地址 > 服务端网关 > 浏览器直连（游客兜底）。
+  const cfgForGateway = settings ?? loadMcpSettings();
+  const route = decideOutboundRoute({ mcpUrl: cfgForGateway.mcpUrl, hasToken: canUseDataPool() });
+  if (route.route === 'gateway') {
+    const gateway = await callDataPool({
+      provider: 'sellersprite',
+      tool: toolName,
+      args,
+      type: poolTypeForTool(toolName),
+      usageTool: usageToolForTool(toolName),
+    });
+    if (gateway.ok && gateway.data !== undefined) {
+      return extractToolPayload(gateway.data);
+    }
+    // 网关失败时**不回退到浏览器直连**（那需要密钥，而前端已经不应该有密钥）：
+    // 把服务端的失败原因如实抛出去，让用户看到真实原因（配额/未配置/外部错误）。
+    throw new Error(gateway.error || '数据池调用失败');
+  }
+  // route === 'browser-legacy'（未登录游客）或 'custom-endpoint'（用户自定义地址）才走旧路径。
+
   const { secretKey, endpoint } = resolveSellerSpriteAuth(settings);
   const rpcBody = {
     jsonrpc: '2.0' as const,
