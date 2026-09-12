@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { TEAM_ROLES, describeRoleMapping } from '../utils/teamRoleMapping';
 import { Crown, Mail, Plus, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { Select } from './ui/Select';
@@ -99,6 +100,21 @@ export function TeamSettingsPanel({ currentUser }: { currentUser?: SessionUser |
     <div className="space-y-4 overflow-y-auto">
       <div className="rounded-2xl bg-indigo-50 border border-indigo-100 px-4 py-3 text-sm text-indigo-900 leading-relaxed">
         团队用于管理 OG&huhu 的协作成员。当前先保存在本机浏览器，后续可接入云同步后承载跨账号邀请与权限。
+      </div>
+
+      {/* M6：角色映射说明（团队角色 vs 项目角色；项目内权限以项目成员角色为准，团队角色不会自动提升项目权限） */}
+      <div className="rounded-2xl border border-black/10 bg-white px-4 py-3">
+        <p className="text-xs font-bold text-[#1d1d1f] mb-1">角色与权限口径</p>
+        <ul className="space-y-0.5">
+          {TEAM_ROLES.map((r) => (
+            <li key={r} className="text-[11px] text-[#424245] leading-relaxed">
+              · {describeRoleMapping(r)}
+            </li>
+          ))}
+        </ul>
+        <p className="text-[10px] text-[#86868b] mt-1.5">
+          说明：团队角色只决定"能不能管理团队"，以及新增成员时的**默认项目角色**；项目里能不能改内容，一律看该项目的成员角色。
+        </p>
       </div>
 
       <div className="rounded-2xl border border-black/10 bg-white p-4 space-y-3">
