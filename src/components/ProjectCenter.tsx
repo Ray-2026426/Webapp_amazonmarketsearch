@@ -224,7 +224,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
         <div>
           <h2 className="text-2xl font-bold text-[#1d1d1f]">项目中心</h2>
           <p className="text-sm text-[#86868b] mt-1">
-            用一次市调项目承载「看市场 → 看用户 → 看竞品 → 看自己 → 看/找机会」全流程
+            用一次市调项目承载「看市场 → 看用户 → 看竞对 → 看自己 → 看/找机会」全流程
           </p>
         </div>
         <button

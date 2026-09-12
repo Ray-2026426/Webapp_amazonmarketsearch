@@ -31,7 +31,7 @@ export interface MarketLookData {
   keyEvidences: string[];
   /** 主要市场风险 */
   risks: string[];
-  /** 对看用户 / 看竞品的待验证问题 */
+  /** 对看用户 / 看竞对的待验证问题 */
   openQuestions: string[];
   /** M2③：AI 对三个细分方案差异与风险的解释（不改分、不换方案）。选填：老记录没有这个字段 */
   segmentAdvice?: string;

@@ -253,7 +253,7 @@ export function MarketLookView({
 
       <Card>
         <div className="p-5">
-          <p className="text-sm font-semibold text-[#1d1d1f] mb-1">对看用户 / 看竞品的待验证问题（选填）</p>
+          <p className="text-sm font-semibold text-[#1d1d1f] mb-1">对看用户 / 看竞对的待验证问题（选填）</p>
           <p className="text-xs text-[#aeaeb2] mb-3">这些问题将带到后续视角去验证</p>
           <div className="space-y-2">
             {data.openQuestions.map((q, i) => (

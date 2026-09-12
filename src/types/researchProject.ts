@@ -23,7 +23,7 @@ export const FIVE_LOOKS: FiveLookId[] = ['user', 'market', 'competitor', 'self',
 export const FIVE_LOOK_LABELS: Record<FiveLookId, string> = {
   market: '看市场',
   user: '看用户',
-  competitor: '看竞品',
+  competitor: '看竞对',
   self: '看自己',
   opportunity: '看/找机会',
 };

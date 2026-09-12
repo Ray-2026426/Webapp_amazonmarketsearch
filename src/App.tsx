@@ -331,7 +331,7 @@ export default function App() {
   /** 是否打开「点页面添加批注」模式 */
   const [annotateMode, setAnnotateMode] = useState(false);
   const [selectedCompareAsins, setSelectedCompareAsins] = useState<string[]>([]);
-  /** 示例竞品快照：游客/示例模式下让竞品分析页直接有结果可看 */
+  /** 示例竞品快照：游客/示例模式下让竞品明细页直接有结果可看 */
   const [competitorDemo, setCompetitorDemo] = useState<CompetitorDemoSnapshot | null>(null);
   /** 竞品工作区（由 CompetitorHub 同步上来，供保存数据） */
   const [competitorWorkspace, setCompetitorWorkspace] = useState<CompetitorWorkspaceState | null>(null);
@@ -351,7 +351,7 @@ export default function App() {
   const handleCompetitorWorkspaceSync = useCallback((state: CompetitorWorkspaceState) => {
     setCompetitorWorkspace(state);
     if (state?.aiReportHtml) {
-      archiveProjectReport('competitor', state.selected.join(','), '看竞品报告', competitorReportToMarkdown(state.aiReportHtml, '看竞品报告'), `comp:${state.selected.length}`);
+      archiveProjectReport('competitor', state.selected.join(','), '看竞对报告', competitorReportToMarkdown(state.aiReportHtml, '看竞对报告'), `comp:${state.selected.length}`);
     }
   }, [archiveProjectReport]);
 
@@ -439,7 +439,7 @@ export default function App() {
     setSelectedCompareAsins((prev) => {
       if (prev.includes(asin)) return prev.filter((a) => a !== asin);
       if (prev.length >= 5) {
-        toast.warning('竞品对比最多选 5 个 ASIN，请先取消一个再选');
+        toast.warning('竞品明细最多选 5 个 ASIN，请先取消一个再选');
         return prev;
       }
       return [...prev, asin];
@@ -604,7 +604,7 @@ export default function App() {
       toast.error(res.error);
       return;
     }
-    const withComp = competitorWorkspace?.hasResult ? '（含竞品分析）' : '';
+    const withComp = competitorWorkspace?.hasResult ? '（含竞品明细）' : '';
     toast.success(`已保存数据到本机历史${withComp}`);
   }, [
     isRegisteredUser,
@@ -1529,7 +1529,7 @@ export default function App() {
             )}
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight text-[#1d1d1f]">
-                {activeView === 'projects' ? '项目中心' : activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品分析' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
+                {activeView === 'projects' ? '项目中心' : activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品明细' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
               </h1>
               <p className="text-[15px] text-[#86868b] mt-1">
                 {activeView === 'projects'
@@ -1619,7 +1619,7 @@ export default function App() {
                 <div className="flex items-center gap-2 text-sm text-indigo-800">
                   <Sparkles className="w-4 h-4 shrink-0" />
                   <span>
-                    当前为<strong>示例</strong>：含 ASIN 主图、销量趋势、评论、关键词洞察与竞品对比，可直接点左侧各板块预览。
+                    当前为<strong>示例</strong>：含 ASIN 主图、销量趋势、评论、关键词洞察与竞品明细，可直接点左侧各板块预览。
                     上传你自己的市场数据即可切换为工作台。
                   </span>
                 </div>
@@ -1857,7 +1857,7 @@ export default function App() {
                           return;
                         }
                         setActiveView('competitors');
-                        toast.success(`已带入 ${selectedCompareAsins.length} 个 ASIN 到竞品对比`);
+                        toast.success(`已带入 ${selectedCompareAsins.length} 个 ASIN 到竞品明细`);
                       }}
                       maxSelect={5}
                     />

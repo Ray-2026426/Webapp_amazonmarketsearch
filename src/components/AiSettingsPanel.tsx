@@ -690,7 +690,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
 
                     {idx === 0 && p.kind === 'sellersprite' && (
                       <p className="text-[11px] text-violet-700/80">
-                        提示：用户洞察、关键词、竞品分析的在线抓取，都会优先用启用中的卖家精灵。
+                        提示：用户洞察、关键词、竞品明细的在线抓取，都会优先用启用中的卖家精灵。
                       </p>
                     )}
                     {p.kind === 'xydc' && (

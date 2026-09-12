@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "tsx tests/progress.test.ts && tsx tests/cloudSync.test.ts && tsx tests/authAccount.test.ts && tsx tests/aiConfig.test.ts && tsx tests/members.test.ts && tsx tests/optimistic.test.ts && tsx tests/assets.test.ts && tsx tests/lookOptimize.test.ts && tsx tests/lookAiMerge.test.ts && tsx tests/evidence.test.ts && tsx tests/lookAiApply.test.ts && tsx tests/needEvidence.test.ts && tsx tests/lookAiFailure.test.ts && tsx tests/segmentSynthesis.test.ts && tsx tests/openQuestions.test.ts && tsx tests/searchPathFlow.test.ts && tsx tests/competitorAnalysis.test.ts && tsx tests/competitorPicker.test.ts && tsx tests/listingFields.test.ts && tsx tests/ourCapability.test.ts && tsx tests/capabilityQuiz.test.ts"
+    "test": "tsx tests/progress.test.ts && tsx tests/cloudSync.test.ts && tsx tests/authAccount.test.ts && tsx tests/aiConfig.test.ts && tsx tests/members.test.ts && tsx tests/optimistic.test.ts && tsx tests/assets.test.ts && tsx tests/lookOptimize.test.ts && tsx tests/lookAiMerge.test.ts && tsx tests/evidence.test.ts && tsx tests/lookAiApply.test.ts && tsx tests/needEvidence.test.ts && tsx tests/lookAiFailure.test.ts && tsx tests/segmentSynthesis.test.ts && tsx tests/openQuestions.test.ts && tsx tests/searchPathFlow.test.ts && tsx tests/competitorAnalysis.test.ts && tsx tests/competitorPicker.test.ts && tsx tests/listingFields.test.ts && tsx tests/ourCapability.test.ts && tsx tests/capabilityQuiz.test.ts && tsx tests/terminology.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

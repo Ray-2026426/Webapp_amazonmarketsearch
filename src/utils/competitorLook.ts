@@ -1,4 +1,4 @@
-// 看竞品（FR-05）：竞品样本池、标杆 ASIN、产品与经营壁垒、需求满足矩阵与产品缺口。
+// 看竞对（FR-05）：竞品样本池、标杆 ASIN、产品与经营壁垒、需求满足矩阵与产品缺口。
 import { get, set } from 'idb-keyval';
 import type { FiveLookProgress } from '../types/researchProject';
 import type { OpenQuestionAnswer } from './openQuestions';

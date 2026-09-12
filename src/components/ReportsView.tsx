@@ -11,7 +11,7 @@ import type { ResearchProject } from '../types/researchProject';
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   market: '看市场报告',
   user: '看用户报告',
-  competitor: '看竞品报告',
+  competitor: '看竞对报告',
   self: '看自己适配报告',
   opportunity: '机会与决策报告',
   asin: '单 ASIN 深度报告',

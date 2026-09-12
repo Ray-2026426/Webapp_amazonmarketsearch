@@ -189,7 +189,7 @@ export function ProjectWorkspace({
       : tab === 'user'
         ? [{ label: '打开关键词工具', view: 'keywords' }, { label: '打开评论 / VOC 工具', view: 'insights' }]
         : tab === 'competitor'
-          ? [{ label: '打开竞品对比工具', view: 'competitors' }]
+          ? [{ label: '打开竞品明细工具', view: 'competitors' }]
           : tab === 'self'
             ? [{ label: '打开利润计算器', view: 'profit' }]
             : [];

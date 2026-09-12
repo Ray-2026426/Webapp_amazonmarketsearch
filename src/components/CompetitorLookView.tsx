@@ -149,7 +149,7 @@ export function CompetitorLookView({
             <Crosshair className="w-5 h-5 text-indigo-600" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-[#1d1d1f]">看竞品 · 竞争格局</h3>
+            <h3 className="text-lg font-semibold text-[#1d1d1f]">看竞对 · 竞争格局</h3>
             <p className="text-sm text-[#86868b] mt-0.5 max-w-xl">
               理解现有竞品如何满足需求、壁垒在哪，以及为什么仍存在未满足需求。
             </p>
@@ -199,7 +199,7 @@ export function CompetitorLookView({
             </div>
           ) : (
             <p className="text-xs text-[#aeaeb2]">
-              尚未加载竞品数据 —— 可到左侧「竞品分析」选定 ASIN 后再回来捕获。
+              尚未加载竞品数据 —— 可到左侧「竞品明细」选定 ASIN 后再回来捕获。
             </p>
           )}
         </div>

@@ -85,7 +85,7 @@ const ANCHOR_LABELS: Record<string, string> = {
   'market-kpi-ops': '市场大盘 · 产品/运营指标',
   'market-charts': '市场大盘 · 图表区',
   'market-asin-list': '市场大盘 · ASIN 列表',
-  'competitors-root': '竞品分析',
+  'competitors-root': '竞品明细',
   'insights-root': '用户洞察',
   'keywords-root': '关键词分析',
   'profit-root': '利润计算器',
@@ -100,7 +100,7 @@ export function getViewTabLabel(view: AnnotationView): string {
     case 'market':
       return '市场大盘';
     case 'competitors':
-      return '竞品分析';
+      return '竞品明细';
     case 'insights':
       return '用户洞察';
     case 'keywords':

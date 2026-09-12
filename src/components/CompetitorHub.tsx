@@ -49,7 +49,7 @@ interface CompetitorHubProps {
   marketplaceCode?: string;
   domain?: string;
   preselectedAsins?: string[];
-  /** 示例模式：直接展示真实竞品对比结果（无需再点「开始对比」） */
+  /** 示例模式：直接展示真实竞品明细结果（无需再点「开始对比」） */
   demoSnapshot?: CompetitorDemoSnapshot | null;
   /** 登录用户 id；游客用 guest，用于本机历史隔离 */
   userId?: string;
@@ -738,7 +738,7 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
         <div>
           <h2 className="text-[24px] font-bold text-[#1d1d1f] tracking-tight flex items-center gap-2">
             <Crosshair className="w-6 h-6 text-indigo-600" />
-            竞品分析
+            竞品明细
           </h2>
           <p className="text-[#86868b] text-sm mt-1">
             可从市场大盘 ASIN 列表勾选带入，或手动添加。对比完成后可一键生成「Listing + 流量 + 产品矩阵」综合 AI 报告。
@@ -1240,7 +1240,7 @@ function ListingBuyerView({
       : '';
     const trendSection = trendLines ? `\n## 历史月度销量 / 销售额 / 价格趋势\n${trendLines}\n` : '';
     const dataScopeLines = [
-      '- 来源: 竞品分析模块中的卖家精灵 MCP Listing 详情数据',
+      '- 来源: 竞品明细模块中的卖家精灵 MCP Listing 详情数据',
       `- 站点: ${marketplace}`,
       ...(trendLines ? ['- 历史月度销量/销售额: 已通过卖家精灵 asin_sales_trend 抓取'] : []),
     ].join('\n');

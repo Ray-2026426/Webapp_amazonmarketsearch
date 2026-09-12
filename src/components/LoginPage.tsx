@@ -377,7 +377,7 @@ const Docs: React.FC<{ c: () => void }> = ({ c }) => (
         </section>
         <section>
           <h4 className="text-[#1d1d1f] font-semibold mb-2 flex items-center gap-2">
-            <span className="text-indigo-600 font-mono text-xs">05</span> 竞品对比与利润
+            <span className="text-indigo-600 font-mono text-xs">05</span> 竞品明细与利润
           </h4>
           <ul className="list-disc list-inside space-y-1 text-[13px] text-[#86868b]">
             <li>竞品：选 ASIN → 对照 Listing / 流量 / 父体矩阵 → AI 综合报告</li>

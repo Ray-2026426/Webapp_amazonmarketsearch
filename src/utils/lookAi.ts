@@ -252,7 +252,7 @@ export interface SelfAnalysisOutput {
 
 function buildSystemPromptFor(look: string): string {
   const bg = buildUserBackgroundSystemPrompt();
-  return `你是资深亚马逊市场调研与选品决策顾问，擅长用「看市场 / 看用户 / 看竞品 / 看自己」五看方法论输出结构化结论。请严格输出 JSON 对象，不要输出 Markdown 代码块或解释文字。${bg ? bg + '\n\n' : '\n\n'}以下分析只基于所提供的真实数据，不要虚构未提供的数据。`;
+  return `你是资深亚马逊市场调研与选品决策顾问，擅长用「看市场 / 看用户 / 看竞对 / 看自己」五看方法论输出结构化结论。请严格输出 JSON 对象，不要输出 Markdown 代码块或解释文字。${bg ? bg + '\n\n' : '\n\n'}以下分析只基于所提供的真实数据，不要虚构未提供的数据。`;
 }
 
 /**
@@ -393,7 +393,7 @@ export async function runLookAnalysis(
   "attractiveness": "市场吸引力综合判断（规模/趋势/竞争结构/价格带/进入窗口，200字内）",
   "keyEvidences": ["3-5 条关键证据（含数字）"],
   "risks": ["主要市场风险（2-4条）"],
-  "openQuestions": ["对看用户/看竞品的待验证问题（2-4条）"],
+  "openQuestions": ["对看用户/看竞对的待验证问题（2-4条）"],
   "segmentAdvice": "对方案 A/B/C 的解释：三者切出来的细分有什么实质差别、各自的盲区在哪、如果只能选一个应该看什么指标（不改分、不换方案、不编造数字）"
 }
 数据：
@@ -457,7 +457,7 @@ ${openQuestionsForPrompt(oq.questions, oq.answers)}
 ${summary}`;
   } else if (look === 'competitor') {
     if (data.competitorAsins.length === 0) {
-      return { ok: false, reason: 'no-data', error: '尚未选择竞品 ASIN，请先到「竞品对比」添加竞品。' };
+      return { ok: false, reason: 'no-data', error: '尚未选择竞品 ASIN，请先到「竞品明细」添加竞品。' };
     }
     // M3：三块分析 + 赢的路径由确定性规则算出，AI 只解释（不能改分数、改状态、改路径）
     const needsForCompetitor = await loadScopedNeeds(extra);
@@ -485,7 +485,7 @@ ${summary}`;
       personas,
       decision,
     });
-    prompt = `请基于以下竞品数据与**系统已算好的**三块分析/赢的路径，完成「看竞品」分析（产品层 + 主体层），输出 JSON：
+    prompt = `请基于以下竞品数据与**系统已算好的**三块分析/赢的路径，完成「看竞对」分析（产品层 + 主体层），输出 JSON：
 {
   "samplePool": ["竞品样本池分层（按价格带/定位分）"],
   "benchmarkAsins": ["标杆 ASIN（2-3个，说明为何是标杆）"],
