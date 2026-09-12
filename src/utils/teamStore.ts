@@ -109,7 +109,7 @@ export function createTeam(user: SessionUser, name: string): Team {
       {
         id: createId('tm'),
         email: ownerEmail,
-        name: user.nickname || user.username || ownerEmail,
+        name: user.username || ownerEmail,
         role: 'owner',
         status: 'active',
         invitedAt: now,

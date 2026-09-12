@@ -156,7 +156,7 @@ export function TeamSettingsPanel({ currentUser }: { currentUser?: SessionUser |
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <p className="text-sm font-bold text-[#1d1d1f]">{activeTeam.name}</p>
-                  <p className="text-xs text-[#86868b] mt-0.5">创建者：{currentUser.nickname || currentUser.username}</p>
+                  <p className="text-xs text-[#86868b] mt-0.5">创建者：{currentUser.username || currentUser.email || '—'}</p>
                 </div>
                 <div className="flex gap-2">
                   <input

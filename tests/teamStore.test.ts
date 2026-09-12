@@ -48,7 +48,6 @@ const user: SessionUser = {
   id: 'user_owner',
   username: 'ray',
   email: 'ray@example.com',
-  nickname: 'Ray',
   role: 'admin',
 };
 

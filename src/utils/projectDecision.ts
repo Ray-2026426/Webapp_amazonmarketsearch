@@ -1,108 +1,199 @@
-import type { FiveLookId, ResearchProject } from '../types/researchProject';
-import { loadUserLook } from './userLook';
-import { loadMarketLook } from './marketLook';
-import { loadCompetitorLook } from './competitorLook';
-import { loadSelfAssessment } from './selfAssessment';
+// M4 · 项目决策摘要（Go / No-Go 汇总，PRD §6.5）。
+//
+// 判断逻辑是**纯函数**（summarizeProjectDecision），因为它是全项目对外的一句话结论，
+// 必须可测、可复核、不依赖 AI：AI 只负责把理由写得更清楚，不负责决定状态。
+//
+// 六种状态（§6.5 的 Go/No-Go 汇总口径）：
+//   go              进入（有已决策为"进入"的卡，且无硬约束否决）
+//   validate_first  验证后进入（有已决策为"验证后进入"，或硬约束否决）
+//   hold            暂缓
+//   reject          放弃
+//   no_opportunity  无机会（零机会结论 = 已判断无机会）
+//   insufficient    证据不足（零机会结论 = 证据不足）
+//   undecided       还没拍板
+
+import type { OpportunityCard, ResearchProject } from '../types/researchProject';
+import type { OpportunityConclusion } from '../types/opportunity';
 import { loadOpportunities, loadOpportunityConclusion } from './opportunityStore';
+import { loadSelfAssessment } from './selfAssessment';
+import { rankOpportunities } from './opportunityPlan';
+
+export type ProjectDecisionStatus =
+  | 'go'
+  | 'validate_first'
+  | 'hold'
+  | 'reject'
+  | 'no_opportunity'
+  | 'insufficient'
+  | 'undecided';
+
+export const PROJECT_DECISION_LABELS: Record<ProjectDecisionStatus, string> = {
+  go: '进入',
+  validate_first: '验证后进入',
+  hold: '暂缓',
+  reject: '放弃',
+  no_opportunity: '无机会',
+  insufficient: '证据不足',
+  undecided: '还未拍板',
+};
 
 export interface ProjectDecisionSummary {
-  judgement: string;
+  status: ProjectDecisionStatus;
+  /** 一句话结论（可直接放报告页/导出件顶部） */
+  headline: string;
+  /** 判断依据（每条都能复核） */
+  reasons: string[];
+  cardCount: number;
+  decidedCount: number;
+  /** 硬约束是否否决（决定"进入"能否成立） */
+  hardBlocked: boolean;
+  hardNotes: string[];
+  /** 下一步该做什么（人话） */
   nextAction: string;
-  nextLook: FiveLookId;
-  stageLabel: string;
-  completedLooks: number;
-  confirmedOpportunities: number;
-  candidateOpportunities: number;
-  selectedNeeds: string[];
-  selectedSegment: string;
-  largestGap: string;
+  /** 最高分机会（供报告展示） */
+  topOpportunity?: { title: string; score: number; coverage: number; decision: OpportunityCard['decision'] };
 }
 
-export async function loadProjectDecisionSummary(userId: string, project: ResearchProject): Promise<ProjectDecisionSummary> {
-  const [user, market, competitor, self, opportunities, conclusion] = await Promise.all([
-    loadUserLook(userId, project.id),
-    loadMarketLook(userId, project.id),
-    loadCompetitorLook(userId, project.id),
-    loadSelfAssessment(userId, project.id),
+/**
+ * 纯函数：由机会卡 + 零机会结论 + 硬约束推出项目级结论。
+ * 优先级（严格顺序）：硬约束 → 无机会/证据不足 → 已拍板的卡 → 未拍板。
+ */
+export function summarizeProjectDecision(input: {
+  cards: OpportunityCard[];
+  conclusion?: OpportunityConclusion | null;
+  hardConstraint?: { blocked: boolean; notes: string[] } | null;
+}): ProjectDecisionSummary {
+  const cards = Array.isArray(input.cards) ? input.cards : [];
+  const conclusion = input.conclusion ?? null;
+  const hardBlocked = Boolean(input.hardConstraint?.blocked);
+  const hardNotes = input.hardConstraint?.notes ?? [];
+  const reasons: string[] = [];
+
+  const decided = cards.filter((c) => c.decision !== 'undecided');
+  const ranked = rankOpportunities(
+    cards.map((c) => ({
+      id: c.id,
+      title: c.title,
+      score: c.score,
+      coverage: c.coverage,
+      knownResourceGaps: (c.decisionPackage?.resources ?? []).filter((r) => r.knownGap).length,
+    }))
+  );
+  const topCard = ranked.length > 0 ? cards.find((c) => c.id === ranked[0].cardId) : undefined;
+  const topOpportunity = topCard
+    ? { title: topCard.title, score: topCard.score, coverage: topCard.coverage, decision: topCard.decision }
+    : undefined;
+
+  const base = {
+    cardCount: cards.length,
+    decidedCount: decided.length,
+    hardBlocked,
+    hardNotes,
+    nextAction: '',
+    topOpportunity,
+  };
+
+  // ① 硬约束否决最优先：进入这条路直接封死
+  if (hardBlocked) {
+    reasons.push(`硬约束否决：${hardNotes.join('；') || '存在不满足的决策边界'}`);
+    reasons.push('按 §6.4，关联机会最高只能"验证后进入"，不能推荐"直接进入"');
+    return {
+      ...base,
+      status: 'validate_first',
+      headline: '验证后进入（硬约束未通过）',
+      reasons,
+      nextAction: '先解决硬约束（认证/毛利红线/MOQ），或把机会降级为"先验证"的小规模测试',
+    };
+  }
+
+  // ② 零机会结论（人工确认过的才作为项目结论）
+  if (cards.length === 0 && conclusion) {
+    if (conclusion.kind === 'judged_none') {
+      reasons.push(conclusion.reason);
+      reasons.push(conclusion.confirmed ? '该结论已人工确认' : '该结论尚未人工确认（零机会也是结论，需要拍板）');
+      return {
+        ...base,
+        status: 'no_opportunity',
+        headline: '无机会',
+        reasons,
+        nextAction: '换细分/换需求方向，或把这个品类的结论归档（写清卡在哪一环即可复用）',
+      };
+    }
+    reasons.push(conclusion.reason);
+    if (conclusion.missingData?.length) reasons.push(`缺：${conclusion.missingData.join('、')}`);
+    return {
+      ...base,
+      status: 'insufficient',
+      headline: '证据不足，暂不能判断',
+      reasons,
+      nextAction: `补齐这些数据后再下结论：${(conclusion.missingData ?? []).slice(0, 3).join('、') || '需求证据 / 竞对矩阵 / 自身适配'}`,
+    };
+  }
+
+  // ③ 有卡但还没生成零机会结论（且没有任何卡被拍板）
+  if (decided.length === 0) {
+    reasons.push(cards.length > 0 ? `已有 ${cards.length} 张机会卡，但都还没拍板（状态：AI 候选）` : '还没有机会卡');
+    reasons.push('机会卡需要你逐条确认（确认/编辑/合并/删除），系统不替你拍板');
+    return {
+      ...base,
+      status: 'undecided',
+      headline: '还未拍板',
+      reasons,
+      nextAction: cards.length > 0 ? '逐条核对机会卡的证据与决策包，给出 Go / No-Go' : '先点「生成机会卡」',
+    };
+  }
+
+  // ④ 已拍板的卡：按"最保守的结论"汇总（放弃/暂缓优先于进入）
+  const counts = {
+    enter: decided.filter((c) => c.decision === 'enter').length,
+    validate_first: decided.filter((c) => c.decision === 'validate_first').length,
+    hold: decided.filter((c) => c.decision === 'hold').length,
+    reject: decided.filter((c) => c.decision === 'reject').length,
+  };
+  reasons.push(`已拍板 ${decided.length} 张：进入 ${counts.enter} / 验证后进入 ${counts.validate_first} / 暂缓 ${counts.hold} / 放弃 ${counts.reject}`);
+
+  let status: ProjectDecisionStatus = 'undecided';
+  let headline = '还未拍板';
+  let nextAction = '';
+  if (counts.enter > 0) {
+    status = 'go';
+    headline = '进入';
+    const top = ranked.find((r) => cards.find((c) => c.id === r.cardId)?.decision === 'enter');
+    reasons.push(
+      top
+        ? `最先做「${top.title}」（评分 ${top.score}）：${top.reason}`
+        : '有已确认进入的机会卡'
+    );
+    nextAction = '按机会卡里的执行路线图推进：先做 0-30 天的打样/测评/认证，并盯住准入控制点';
+  } else if (counts.validate_first > 0) {
+    status = 'validate_first';
+    headline = '验证后进入';
+    reasons.push('没有直接进入的卡，但有需要先验证的机会：先花最小成本证伪');
+    nextAction = '按路线图"先做"段执行验证动作，达到准入控制点后再进入';
+  } else if (counts.hold > 0) {
+    status = 'hold';
+    headline = '暂缓';
+    reasons.push('全部已拍板机会都是"暂缓"：条件未成熟');
+    nextAction = '写清暂缓的触发条件（什么变化后重新评估），避免无限期挂着';
+  } else if (counts.reject > 0 && counts.reject === decided.length) {
+    status = 'reject';
+    headline = '放弃';
+    reasons.push('已拍板的机会全部放弃');
+    nextAction = '换个细分或需求方向重新走一遍五看';
+  }
+
+  return { ...base, status, headline, reasons, nextAction };
+}
+
+/** 异步装载 + 汇总（UI 与导出件共用，保证口径一致） */
+export async function loadProjectDecisionSummary(
+  userId: string,
+  project: ResearchProject
+): Promise<ProjectDecisionSummary> {
+  const [cards, conclusion, self] = await Promise.all([
     loadOpportunities(userId, project.id),
     loadOpportunityConclusion(userId, project.id),
+    loadSelfAssessment(userId, project.id),
   ]);
-  const selectedNeeds = user.unmetNeedCandidates
-    .filter((need) => need.selectedForSegmentation)
-    .map((need) => need.category || need.needStatement)
-    .filter(Boolean);
-  const confirmed = opportunities.filter((card) => card.reviewStatus === 'confirmed');
-  const candidates = opportunities.filter((card) => card.reviewStatus !== 'confirmed');
-  const completedLooks = Object.values(project.fiveLookProgress).filter((progress) => progress.status === 'completed').length;
-
-  let nextLook: FiveLookId = 'user';
-  let nextAction = '开始看用户，形成需求分类';
-  let largestGap = project.fiveLookProgress.user.missingRequirements[0] || '尚未形成需求分类';
-  if (user.unmetNeedCandidates.length > 0 && selectedNeeds.length === 0) {
-    nextAction = '确认要用于市场细分的需求分类';
-    largestGap = '需求候选尚未确认为细分标准';
-  } else if (selectedNeeds.length > 0 && !market.selectedOpportunitySegment?.trim()) {
-    nextLook = 'market';
-    nextAction = '比较并选择目标细分市场';
-    largestGap = '尚未选择目标细分市场';
-  } else if (!competitor.samplePool.length || !competitor.gaps.length) {
-    nextLook = 'competitor';
-    nextAction = '分析头部、跟随者和新进入者';
-    largestGap = !competitor.samplePool.length ? '缺少代表竞对样本' : '尚未形成可攻击缝隙';
-  } else if (!(self.guidingQuestions ?? []).some((question) => question.answer.trim()) && !self.aiSummary?.trim()) {
-    nextLook = 'self';
-    nextAction = '回答品类专属的自身适配问题';
-    largestGap = '尚未确认团队能否承接机会';
-  } else if (opportunities.length === 0 && conclusion?.resultStatus !== 'no_opportunity') {
-    nextLook = 'opportunity';
-    nextAction = '综合五看判断 0–N 个机会';
-    largestGap = '尚未运行综合机会判断';
-  } else if (candidates.length > 0) {
-    nextLook = 'opportunity';
-    nextAction = '复核并确认 AI 候选机会';
-    largestGap = `${candidates.length} 个候选机会等待人工确认`;
-  } else {
-    nextLook = 'opportunity';
-    nextAction = '查看最终机会结论并导出报告';
-    largestGap = confirmed.length ? '结论已形成，可进入审核' : '当前未确认机会';
-  }
-
-  let judgement = '尚未形成需求分类，当前不能判断品类机会。';
-  if (conclusion?.resultStatus === 'no_opportunity' && conclusion.reviewed) {
-    judgement = `已确认当前品类没有达到立项标准的机会。${conclusion.reasons[0] ? `主要原因：${conclusion.reasons[0]}` : ''}`;
-    nextLook = 'opportunity';
-    nextAction = '查看无机会结论并导出报告';
-    largestGap = '结论已形成，可交给同事审核';
-  } else if (conclusion?.resultStatus === 'insufficient_evidence') {
-    judgement = `当前证据不足，暂不能判断是否存在机会。${conclusion.reasons[0] ? `主要缺口：${conclusion.reasons[0]}` : ''}`;
-  } else if (confirmed.length > 0) {
-    const top = [...confirmed].sort((a, b) => b.score - a.score)[0];
-    judgement = `已确认 ${confirmed.length} 个机会，当前最高优先级为“${top.title}”（${top.score} 分）。`;
-  } else if (candidates.length > 0) {
-    judgement = `AI 已识别 ${candidates.length} 个候选机会，尚待人工复核。`;
-  } else if (market.selectedOpportunitySegment?.trim()) {
-    judgement = `已选择“${market.selectedOpportunitySegment}”细分市场，仍需补齐竞对、自身或综合机会判断。`;
-  } else if (selectedNeeds.length > 0) {
-    judgement = `已确认 ${selectedNeeds.length} 类需求作为市场细分标准，等待比较细分机会。`;
-  } else if (user.unmetNeedCandidates.length > 0) {
-    judgement = `已识别 ${user.unmetNeedCandidates.length} 个需求候选，等待人工确认分类。`;
-  }
-
-  const stageLabel = nextLook === 'user' ? '看用户'
-    : nextLook === 'market' ? '看市场'
-      : nextLook === 'competitor' ? '看竞对'
-        : nextLook === 'self' ? '看自己'
-          : '看机会';
-  return {
-    judgement,
-    nextAction,
-    nextLook,
-    stageLabel,
-    completedLooks,
-    confirmedOpportunities: confirmed.length,
-    candidateOpportunities: candidates.length,
-    selectedNeeds,
-    selectedSegment: market.selectedOpportunitySegment?.trim() || '',
-    largestGap,
-  };
+  return summarizeProjectDecision({ cards, conclusion, hardConstraint: self.hardConstraintVerdict ?? null });
 }
