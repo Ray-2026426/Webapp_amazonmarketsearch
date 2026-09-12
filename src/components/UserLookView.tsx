@@ -34,6 +34,8 @@ import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
 import { mergeUserLookAi } from '../utils/lookAiApply';
 import { addEvidence } from '../utils/evidence';
+import { loadMarketLook } from '../utils/marketLook';
+import { OpenQuestionAnswersCard } from './OpenQuestionAnswersCard';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -52,7 +54,19 @@ export function UserLookView({
 }) {
   const [data, setData] = useState<UserLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  /** M2⑤：看市场提出的待验证问题（断链 #7 的下游消费者） */
+  const [marketQuestions, setMarketQuestions] = useState<string[]>([]);
   const saveTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadMarketLook(userId, project.id).then((m) => {
+      if (!cancelled) setMarketQuestions(m.openQuestions.filter((q) => q.trim().length > 0));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, project.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,6 +180,15 @@ export function UserLookView({
         projectId={project.id}
         onApply={applyAi}
         hint="已经加载了关键词与评论数据时，AI 会把它们合并成需求地图（目标用户 / 场景 / JTBD / 已满足 / 未满足候选），并吸收市场细分里的人群·场景·需求描述。"
+      />
+
+      {/* M2⑤ 修断链 #7：看市场留下的待验证问题，在本步就地回答 */}
+      <OpenQuestionAnswersCard
+        questions={marketQuestions}
+        answers={data.openQuestionAnswers}
+        onChange={(next) => update({ openQuestionAnswers: next })}
+        hint="这些问题由「看市场」提出、需要在这一步用关键词与 VOC 证据验证；答不出来就留空，不要编。"
+        inputCls={inputCls}
       />
 
       {/* M2：搜索路径图 + 搜索偏好卡（结论先行的第一屏） */}

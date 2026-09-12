@@ -8,6 +8,9 @@ import { loadUserBackground, buildUserBackgroundSystemPrompt } from './userBackg
 import { loadSnapshot, describeSnapshot, hasSnapshotContent, type ProjectSnapshot } from './projectSnapshot';
 import { type LookAiFailKind } from './lookAiFailure';
 import { loadUserLook, type UnmetNeedCandidate } from './userLook';
+import { loadMarketLook } from './marketLook';
+import { loadCompetitorLook } from './competitorLook';
+import { openQuestionsForPrompt } from './openQuestions';
 import { synthesizeSegmentSchemes, describeSchemesForPrompt, recommendScheme } from './segmentSynthesis';
 import type { Product, Review, Keyword } from './parser';
 
@@ -275,6 +278,32 @@ async function loadScopedNeeds(extra?: Record<string, unknown>): Promise<UnmetNe
   }
 }
 
+/**
+ * M2⑤（修断链 #7）：把「看市场」留下的待验证问题与已有回答取出来，
+ * 让下游的看用户 / 看竞对 AI **必须正面回答**，而不是各写各的。
+ */
+async function loadScopedOpenQuestions(
+  extra: Record<string, unknown> | undefined,
+  look: 'user' | 'competitor'
+): Promise<{ questions: string[]; answers: { question: string; answer: string }[] }> {
+  const scope = extra?.scope as { userId?: string; projectId?: string } | undefined;
+  if (!scope?.userId || !scope?.projectId) return { questions: [], answers: [] };
+  try {
+    const [market, own] = await Promise.all([
+      loadMarketLook(scope.userId, scope.projectId),
+      look === 'user' ? loadUserLook(scope.userId, scope.projectId) : loadCompetitorLook(scope.userId, scope.projectId),
+    ]);
+    const questions = (market.openQuestions || []).map((q) => String(q || '').trim()).filter(Boolean);
+    const own_ = (own as { openQuestionAnswers?: { question: string; answer: string }[] }).openQuestionAnswers;
+    return {
+      questions,
+      answers: Array.isArray(own_) ? own_.map((a) => ({ question: a.question, answer: a.answer || '' })) : [],
+    };
+  } catch {
+    return { questions: [], answers: [] };
+  }
+}
+
 async function resolveScopedData(extra?: Record<string, unknown>): Promise<ScopedData> {
   const scope = extra?.scope as { userId?: string; projectId?: string } | undefined;
   if (scope?.userId && scope?.projectId) {
@@ -315,6 +344,11 @@ export async function runLookAnalysis(
   const scoped = await resolveScopedData(extra);
   const data = scoped.market;
   const summary = `${scoped.scopeNote ? `【数据范围】${scoped.scopeNote}\n\n` : ''}${summarizeMarketData(data)}`;
+  // M2⑤：下游那一看要正面回答「看市场」留下的待验证问题（含用户已填的初步回答）
+  const oq =
+    look === 'user' || look === 'competitor'
+      ? await loadScopedOpenQuestions(extra, look)
+      : { questions: [] as string[], answers: [] as { question: string; answer: string }[] };
 
   let prompt: string;
   let system: string = buildSystemPromptFor(look);
@@ -393,6 +427,7 @@ ${summary}${schemeText}`;
    证据不足时宁可少给候选，也不要编造证据。
 3) searchPath 必须严格按 awareness → consideration → decision → scenario 四层输出（每层都要有），每层 3-8 个词；有搜索量就给 volume，并给出该层内占比 share（同一层内合计约为 1）。**只使用数据中真实出现的词，不要编造词或搜索量**。
 4) searchPreference 必须基于词表的真实统计（占比、长尾结构、词性倾向），没有依据的字段就留空并在 note 里写"缺乏数据支撑"。
+${openQuestionsForPrompt(oq.questions, oq.answers)}
 数据：
 ${summary}`;
   } else if (look === 'competitor') {
@@ -408,6 +443,7 @@ ${summary}`;
   "gaps": ["未充分满足的产品缺口（2-4条）"]
 }
 竞品 ASIN：${data.competitorAsins.join(', ')}
+${openQuestionsForPrompt(oq.questions, oq.answers)}
 数据：
 ${summary}`;
   } else {

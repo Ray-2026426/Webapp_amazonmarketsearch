@@ -1,6 +1,7 @@
-﻿// 看竞品（FR-05）：竞品样本池、标杆 ASIN、产品与经营壁垒、需求满足矩阵与产品缺口。
+// 看竞品（FR-05）：竞品样本池、标杆 ASIN、产品与经营壁垒、需求满足矩阵与产品缺口。
 import { get, set } from 'idb-keyval';
 import type { FiveLookProgress } from '../types/researchProject';
+import type { OpenQuestionAnswer } from './openQuestions';
 
 export interface CompetitorContext {
   loaded: boolean;
@@ -23,6 +24,8 @@ export interface CompetitorLookData {
   barriers: string;
   needMatrix: string;
   gaps: string[];
+  /** M2⑤：对「看市场」留下的待验证问题在本步给出的回答（修断链 #7） */
+  openQuestionAnswers?: OpenQuestionAnswer[];
   evidence: CompetitorEvidence | null;
   updatedAt: string;
 }
@@ -40,6 +43,7 @@ export function defaultCompetitorLook(projectId: string): CompetitorLookData {
     barriers: '',
     needMatrix: '',
     gaps: [],
+    openQuestionAnswers: [],
     evidence: null,
     updatedAt: new Date().toISOString(),
   };
@@ -55,6 +59,7 @@ export async function loadCompetitorLook(userId: string, projectId: string): Pro
         samplePool: Array.isArray(raw.samplePool) ? raw.samplePool : [],
         benchmarkAsins: Array.isArray(raw.benchmarkAsins) ? raw.benchmarkAsins : [],
         gaps: Array.isArray(raw.gaps) ? raw.gaps : [],
+        openQuestionAnswers: Array.isArray(raw.openQuestionAnswers) ? raw.openQuestionAnswers : [],
       };
     }
   } catch {

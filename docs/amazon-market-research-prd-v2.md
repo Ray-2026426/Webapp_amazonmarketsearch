@@ -1070,15 +1070,15 @@ Evidence {
 
 ### 15.8 M2 看用户 V2 —— 进度记录（2026-09，进行中）
 
-推送区间：`phase-0` 分支 `45e908a →`（**main 保持 `63abd4c` 未动**）。每步均通过 `tsc --noEmit` + 全部 13 个测试套件（110 条断言）+ `vite build`。
+推送区间：`phase-0` 分支 `45e908a → 4a6dc3b`（**main 保持 `63abd4c` 未动**）。每步均通过 `tsc --noEmit` + 全部 15 个测试套件（131 条断言）+ `vite build`。
 
 | M2 目标项（§12） | 状态 | 落点 |
 | --- | --- | --- |
 | ① 搜索路径图 + 搜索偏好卡 | ✅ 已推送 `f334f7e` | `userLook.ts`（`SearchPath`/`SearchPathLayer`/`SearchPreference`）、`lookAiApply.normalizeSearchPath/normalizeSearchPreference`、`UserLookView` 四层漏斗（认知→考虑→决策→场景）+ 偏好卡（价格敏感度/品牌倾向/长尾程度） |
 | ② 带证据需求分类树 | ✅ 本轮落地 | `NeedEvidence`（关键词 + 评论原文 + 覆盖 ASIN）、候选 `category/subCategory/evidence`、`computeNeedEvidenceStrength` 确定性证据分、`UserLookView` 按**需求域 → 需求卡**分组 + 证据链区（词 chip / 评论原文带 ASIN / 覆盖 ASIN / 证据分） |
-| ③ 细分三方合成（需求分类 × 商品属性 × 竞品标题聚类 → AI 2-3 方案选择题） | ⏳ 待做 | §6.2 步骤 3 |
-| ④ 目标细分选择联动竞对样本池 | ⏳ 待做 | §6.2 步骤 3 → §6.3 |
-| ⑤ 修断链 #7（看市场 `openQuestions` 被下游消费） | ⏳ 待做 | §6.2 步骤 5、二级页⑤ |
+| ③ 细分三方合成（需求分类 × 商品属性 × 竞品标题聚类 → AI 2-3 方案选择题） | ✅ 本轮落地 | `segmentSynthesis.ts` + `SegmentSchemeChooser`（§6.2 步骤 3） |
+| ④ 目标细分选择联动竞对样本池 | ✅ 本轮落地 | `CompetitorPickerPanel` 改为项目作用域 + 读看市场选定目标细分（§6.2 步骤 3 → §6.3） |
+| ⑤ 修断链 #7（看市场 `openQuestions` 被下游消费） | ✅ 本轮落地 | `openQuestions.ts` + `OpenQuestionAnswersCard`（看用户/看竞对页顶同意回答）+ 下游 AI 提示词强制正面回应 |
 
 **M2② 关键设计（确定性优先，AI 只解释不改分）**：
 
@@ -1089,14 +1089,28 @@ Evidence {
 | AI 输出不可信 | `normalizeNeedEvidence`：空白词/空引用过滤、搜索量非正数丢弃、评论引用**逐字保留不改写**（≤400 字）、ASIN 大写 + `^[A-Z0-9]{6,}$` 清洗 + 条数上限（词 10 / 引用 8 / ASIN 20） |
 | 人工内容永不覆盖 | 已有任何一条人工候选 → AI 一条都不动（`acc.skipped`） |
 
-**新增测试**：`tests/needEvidence.test.ts`（10 条：折算公式与上限、跨来源加分、归一化清洗、过短 ASIN 丢弃、证据优先于 AI 档位、无证据兜底）、`tests/lookAiFailure.test.ts`（7 条：失败归类 + "缺 Key 绝不算跳过"回归）。测试套件由 11 个增至 **13 个，共 110 条断言全绿**。
+**新增测试**：`tests/needEvidence.test.ts`（10 条：折算公式与上限、跨来源加分、归一化清洗、过短 ASIN 丢弃、证据优先于 AI 档位、无证据兜底）、`tests/lookAiFailure.test.ts`（7 条：失败归类 + "缺 Key 绝不算跳过"回归）、`tests/segmentSynthesis.test.ts`（16 条：分词/词表确定性、单归属不变式、需求挂钩、方案比较与推荐、空数据不造假）、`tests/openQuestions.test.ts`（6 条：问答对齐与"不编造"）。测试套件由 11 个增至 **15 个，共 131 条断言全绿**。
 
 **本轮修掉的一个真实 bug（我自己引入的）**：向导在无数据时保存了**空快照**并被当成有效范围，导致 AI 永久跳过取数。已修为「空快照忽略并重新采集」，并在向导"缺数据"卡上给了可点按钮（去取数 / 加载示例）。用户此前反馈的"四步都被跳过"即由此而来。
 
 **同时修掉"看起来正常、其实是没配置"**：旧逻辑用 `/尚未|请先/` 正则把一切都算「已跳过」，导致**没配 AI 模型 Key 时也显示"四步都被跳过"**（用户会以为流程正常）。新增 `src/utils/lookAiFailure.ts`：失败收敛为 `no-key / no-data / parse / other` 四类，**只有 `no-data` 才叫「跳过」**；缺 Key 时向导显示红色结论「四步都没跑：还没有配置 AI 模型 Key（这不是"跳过"）」并给一个直达「设置 → API 与模型」的按钮（`LookWizardPanel` → `ProjectWorkspace` → `App` 透传 `onOpenSettings`）。
 
-**环境备注（便于下次接手）**：本机 `git` 不在 PATH 上，位于
-`C:\Users\A\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\git\cmd\git.exe`（提交/推送需用全路径调用）；`optimistic.test.ts` 的偶发失败只在**与 `vite build` 并发抢占 CPU** 时出现，独立连跑 6 次 + 13 套件串行全跑均全绿，判定为环境噪音，未改动断言。
+**M2③ 细分三方合成（用户核心诉求："细分逻辑没跟上一步挂钩"）**：
+
+| 方案 | 切法（全部确定性） | 什么时候选它 |
+| --- | --- | --- |
+| A 需求域 | 细分名 = 看用户的需求域；商品按"标题命中该需求的词"**单归属**；每个细分挂上命中的未满足需求 + 证据分 | 结论要能直接回到用户需求与 VOC 证据 |
+| B 价格段 × 商品属性 | 价格按分位切三段，段内按样本里最普遍的商品属性（固定词表）对半分 | 要定价、算利润、定卖点 |
+| C 竞品标题聚类 | 标题词频（document frequency）取前 4 个词簇，单归属，命中词表给中文释义 | 找"竞对反复强调却仍被差评"的点 |
+
+- 三个方案都是**真切分**：商品不重叠、收入占比合计 ≤ 100%、未归属商品显式计数（不藏长尾）；
+- 评分复用 `segmentScore`（趋势 × 体量 × 竞争 → 机会分）；**AI 只能解释差异，不能改分、不能替用户选方案**（prompt 里明写）；
+- 推荐公式（确定性）：需求挂钩度 50% + 覆盖率 30% + 收入加权机会分 20%，平局优先需求域方案，且必须声明"最终方案由你选"；
+- 选定结果写回看市场（`segmentSchemeId` / `chosenSegmentIds`），看竞对的样本池据此挑选（M2④）。
+
+**M2⑤ 断链 #7 的真实闭环**（不只是显示）：看市场的待验证问题 → 看用户/看竞对页顶**可就地回答**（回答存在下游那一看自己身上）→ 下游 AI 提示词里被强制"必须正面回应，不要编造数据"。
+
+**环境备注（便于下次接手）**：本机 `git` 不在 PATH 上，位于`C:\Users\A\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\git\cmd\git.exe`（提交/推送需用全路径调用）；`optimistic.test.ts` 的偶发失败只在**与 `vite build` 并发抢占 CPU** 时出现，独立连跑 6 次 + 13 套件串行全跑均全绿，判定为环境噪音，未改动断言。
 
 ---
 

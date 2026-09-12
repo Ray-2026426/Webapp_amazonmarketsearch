@@ -152,6 +152,8 @@ export const PRICE_SENSITIVITY_LABELS: Record<'low' | 'medium' | 'high', string>
   high: '高',
 };
 
+import type { OpenQuestionAnswer } from './openQuestions';
+
 export interface UserLookData {
   projectId: string;
   targetUser: string;
@@ -163,6 +165,8 @@ export interface UserLookData {
   searchPath?: SearchPath;
   /** M2：搜索偏好卡 */
   searchPreference?: SearchPreference;
+  /** M2⑤：对「看市场」留下的待验证问题在本步给出的回答（修断链 #7） */
+  openQuestionAnswers?: OpenQuestionAnswer[];
   evidence: UserEvidence | null;
   updatedAt: string;
 }
@@ -196,6 +200,7 @@ export function defaultUserLook(projectId: string): UserLookData {
     jobToBeDone: '',
     satisfiedNeeds: [],
     unmetNeedCandidates: [],
+    openQuestionAnswers: [],
     evidence: null,
     updatedAt: new Date().toISOString(),
   };
@@ -210,6 +215,7 @@ export async function loadUserLook(userId: string, projectId: string): Promise<U
         ...raw,
         satisfiedNeeds: Array.isArray(raw.satisfiedNeeds) ? raw.satisfiedNeeds : [],
         unmetNeedCandidates: Array.isArray(raw.unmetNeedCandidates) ? raw.unmetNeedCandidates : [],
+        openQuestionAnswers: Array.isArray(raw.openQuestionAnswers) ? raw.openQuestionAnswers : [],
       };
     }
   } catch {

@@ -22,6 +22,8 @@ import {
 } from '../utils/competitorLook';
 import { updateLookProgress } from '../utils/projectStore';
 import { CompetitorPickerPanel } from './CompetitorPickerPanel';
+import { OpenQuestionAnswersCard } from './OpenQuestionAnswersCard';
+import { loadMarketLook } from '../utils/marketLook';
 import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
 import { mergeCompetitorLookAi } from '../utils/lookAiApply';
@@ -44,7 +46,19 @@ export function CompetitorLookView({
 }) {
   const [data, setData] = useState<CompetitorLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  /** M2⑤：看市场提出的待验证问题（断链 #7 的下游消费者） */
+  const [marketQuestions, setMarketQuestions] = useState<string[]>([]);
   const saveTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadMarketLook(userId, project.id).then((m) => {
+      if (!cancelled) setMarketQuestions(m.openQuestions.filter((q) => q.trim().length > 0));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, project.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,6 +163,15 @@ export function CompetitorLookView({
         projectId={project.id}
         onApply={applyAi}
         hint="已选择竞品 ASIN 时，AI 会做产品层 + 主体层拆解：样本池分层、标杆 ASIN、壁垒、需求满足矩阵与产品缺口。"
+      />
+
+      {/* M2⑤ 修断链 #7：看市场留下的待验证问题，在本步就地回答（回答存在看竞对自己身上） */}
+      <OpenQuestionAnswersCard
+        questions={marketQuestions}
+        answers={data.openQuestionAnswers}
+        onChange={(next) => update({ openQuestionAnswers: next })}
+        hint="这些问题由「看市场」提出、需要在这一步用竞品数据验证；答不出来就留空，不要编。"
+        inputCls={inputCls}
       />
 
       {/* 数据上下文 */}
