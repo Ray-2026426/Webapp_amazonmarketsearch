@@ -386,7 +386,51 @@ export function OpportunityDecisionBoard({
         </div>
       </Card>
 
-      {/* ③ 机会卡（含决策包） */}
+      {/* ③ 优先级矩阵（分数 × 覆盖度，§6.5） */}
+      {ranked.length > 0 && (
+        <Card>
+          <div className="p-5">
+            <p className="text-sm font-semibold text-[#1d1d1f] mb-1">优先级矩阵（评分 × 覆盖度）</p>
+            <p className="text-[11px] text-[#86868b] mb-2">
+              横轴评分、纵轴覆盖度；右上角是"又高分又有证据"，右下角是"高分但证据单薄"（要先补证据，别急着投钱）。
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: 'high-high', title: '高分 · 高覆盖（优先做）', test: (s: number, c: number) => s >= 60 && c >= 0.7, cls: 'border-emerald-200 bg-emerald-50/50' },
+                { key: 'high-low', title: '高分 · 低覆盖（先补证据）', test: (s: number, c: number) => s >= 60 && c < 0.7, cls: 'border-amber-200 bg-amber-50/50' },
+                { key: 'low-high', title: '低分 · 高覆盖（证据够但价值低）', test: (s: number, c: number) => s < 60 && c >= 0.7, cls: 'border-black/8 bg-[#f8f9fb]' },
+                { key: 'low-low', title: '低分 · 低覆盖（先放一放）', test: (s: number, c: number) => s < 60 && c < 0.7, cls: 'border-black/8 bg-[#f8f9fb]' },
+              ].map((q) => {
+                const items = ranked.filter((r) => {
+                  const card = cards.find((c) => c.id === r.cardId);
+                  return card ? q.test(card.score, card.coverage) : false;
+                });
+                return (
+                  <div key={q.key} className={cn('rounded-xl border px-3 py-2', q.cls)}>
+                    <p className="text-[11px] font-semibold text-[#1d1d1f]">{q.title}</p>
+                    {items.length === 0 ? (
+                      <p className="text-[10px] text-[#aeaeb2] mt-0.5">（无）</p>
+                    ) : (
+                      <ul className="mt-0.5 space-y-0.5">
+                        {items.map((r) => (
+                          <li key={r.cardId} className="text-[10px] text-[#424245]">
+                            {r.title}
+                            <span className="text-[#aeaeb2]">
+                              （{r.score} / {(r.coverage * 100).toFixed(0)}%）
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* ④ 机会卡（含决策包） */}
       {cards.length === 0 ? (
         <Card>
           <div className="p-5">
