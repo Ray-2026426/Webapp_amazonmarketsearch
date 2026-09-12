@@ -425,7 +425,7 @@ ${summary}${schemeText}`;
    - reviewQuotes 必须**逐字**取自提供的评论（禁止编造、禁止改写、禁止拼凑），并标注该评论所属 asin；
    - asins 填这条需求覆盖到的 ASIN（来自标题/评论）。
    证据不足时宁可少给候选，也不要编造证据。
-3) searchPath 必须严格按 awareness → consideration → decision → scenario 四层输出（每层都要有），每层 3-8 个词；有搜索量就给 volume，并给出该层内占比 share（同一层内合计约为 1）。**只使用数据中真实出现的词，不要编造词或搜索量**。
+3) searchPath 必须严格按 awareness → consideration → decision → scenario 四层输出（每层都要有），每层 3-8 个词；有搜索量就给 volume，并给出该层内占比 share（同一层内合计约为 1）。**只使用数据中真实出现的词，不要编造词或搜索量**。层与层之间的"流向/保留比例"由系统按你给的 volume 确定性计算，**你不需要也不要输出任何流向百分比**。
 4) searchPreference 必须基于词表的真实统计（占比、长尾结构、词性倾向），没有依据的字段就留空并在 note 里写"缺乏数据支撑"。
 ${openQuestionsForPrompt(oq.questions, oq.answers)}
 数据：

@@ -23,6 +23,8 @@ import {
   SEARCH_PATH_LAYER_HINTS,
   PRICE_SENSITIVITY_LABELS,
   computeNeedEvidenceStrength,
+  computeSearchPathFlow,
+  describeSearchPathFlow,
   type UserContext,
   type UserEvidence,
   type UserLookData,
@@ -121,6 +123,9 @@ export function UserLookView({
 
   const update = (patch: Partial<UserLookData>) => scheduleSave({ ...data, ...patch });
 
+  /** M2①：四层流向（确定性计算，AI 无法修改） */
+  const searchFlow = computeSearchPathFlow(data.searchPath);
+
   const updateCandidate = (id: string, patch: Partial<UnmetNeedCandidate>) => {
     update({ unmetNeedCandidates: data.unmetNeedCandidates.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
   };
@@ -201,7 +206,18 @@ export function UserLookView({
                 <span className="text-[11px] text-[#86868b]">认知 → 考虑 → 决策 → 场景</span>
               </div>
               {data.searchPath?.summary && (
-                <p className="text-xs text-[#424245] mb-3 leading-relaxed">{data.searchPath.summary}</p>
+                <p className="text-xs text-[#424245] mb-2 leading-relaxed">{data.searchPath.summary}</p>
+              )}
+              {/* M2① 流向（确定性）：每层相对上一层保留多少需求 */}
+              {searchFlow.length > 0 && (
+                <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2 mb-3">
+                  <p className="text-[11px] font-semibold text-indigo-800">
+                    流向：{describeSearchPathFlow(searchFlow)}
+                  </p>
+                  <p className="text-[10px] text-indigo-700/70 mt-0.5">
+                    由各层词搜索量（缺量时退化词数口径）确定性算出，AI 不改这个比例。
+                  </p>
+                </div>
               )}
               <div className="space-y-3">
                 {(data.searchPath?.layers ?? []).map((layer) => (
@@ -209,6 +225,20 @@ export function UserLookView({
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-semibold text-[#1d1d1f]">{SEARCH_PATH_LAYER_LABELS[layer.layer]}</span>
                       <span className="text-[10px] text-[#86868b]">{SEARCH_PATH_LAYER_HINTS[layer.layer]}</span>
+                      {(() => {
+                        const flow = searchFlow.find((f) => f.layer === layer.layer);
+                        if (!flow) return null;
+                        return (
+                          <span className="ml-auto inline-flex items-center gap-1.5 text-[10px] text-[#86868b]">
+                            {flow.volume > 0 && <span>本层量 {flow.volume.toLocaleString()}</span>}
+                            {flow.retention !== null && flow.layer !== 'awareness' && (
+                              <span className="rounded-full bg-white border border-black/8 px-1.5 py-0.5 font-semibold text-[#424245]">
+                                保留 {Math.round(flow.retention * 100)}%
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {layer.words.map((w) => (
@@ -223,6 +253,12 @@ export function UserLookView({
                       ))}
                     </div>
                     {layer.note && <p className="text-[10px] text-[#86868b] mt-1.5 leading-relaxed">{layer.note}</p>}
+                    {(() => {
+                      const flow = searchFlow.find((f) => f.layer === layer.layer);
+                      return flow?.note ? (
+                        <p className="text-[10px] text-amber-600 mt-1 leading-relaxed">{flow.note}</p>
+                      ) : null;
+                    })()}
                   </div>
                 ))}
               </div>

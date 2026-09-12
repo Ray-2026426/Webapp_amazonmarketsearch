@@ -152,6 +152,113 @@ export const PRICE_SENSITIVITY_LABELS: Record<'low' | 'medium' | 'high', string>
   high: '高',
 };
 
+/** 固定四层顺序：无论 AI 以什么顺序返回，流向都按这个顺序算（确定性） */
+export const SEARCH_PATH_LAYER_ORDER: SearchPathLayerId[] = ['awareness', 'consideration', 'decision', 'scenario'];
+
+export interface SearchPathFlow {
+  layer: SearchPathLayerId;
+  /** 该层有词的词数 */
+  wordCount: number;
+  /** 该层词搜索量合计（只累加有合法 volume 的词） */
+  volume: number;
+  /** 有合法搜索量的词数（用于判断口径是否可比） */
+  volumeWordCount: number;
+  /**
+   * 相对上一层"保留"的比例 0-1（首层为 1）。
+   * 优先用搜索量口径（两层都有量时），否则退化为词数口径；两者都没有则为 null。
+   */
+  retention: number | null;
+  /** 口径：volume=搜索量 / words=词数 / null=算不出来 */
+  basis: 'volume' | 'words' | null;
+  /** 上一层流失比例 = 1 - retention（首层为 null） */
+  dropOff: number | null;
+  /** 口径不一致时给出人话说明（例如某层词没有搜索量） */
+  note?: string;
+}
+
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/**
+ * M2① 搜索路径的「流向」（确定性，不由 AI 给）：
+ * 把四层按固定顺序对齐，算出每层相对上一层的保留/流失比例。
+ * - 两层都有搜索量 → 用搜索量口径（真实需求收缩）；
+ * - 否则退化到词数口径，并明确标注口径（绝不混着算，也不假装精确）；
+ * - 搜索量为 0 或缺失时不编造比例，返回 null 并给出 note。
+ */
+export function computeSearchPathFlow(path: SearchPath | undefined | null): SearchPathFlow[] {
+  const layers = Array.isArray(path?.layers) ? path!.layers! : [];
+  const byLayer = new Map<SearchPathLayerId, SearchPathLayer>();
+  for (const l of layers) {
+    if (l && SEARCH_PATH_LAYER_ORDER.includes(l.layer)) byLayer.set(l.layer, l);
+  }
+
+  const flows: SearchPathFlow[] = [];
+  let prevVolume = 0;
+  let prevVolumeWords = 0;
+  let prevWordCount = 0;
+
+  SEARCH_PATH_LAYER_ORDER.forEach((layerId, index) => {
+    const layer = byLayer.get(layerId);
+    const words = (layer?.words ?? []).filter((w) => w && String(w.word || '').trim().length > 0);
+    const volumes = words
+      .map((w) => Number(w.volume))
+      .filter((v) => Number.isFinite(v) && v > 0);
+    const volume = volumes.reduce((s, v) => s + v, 0);
+    const wordCount = words.length;
+    const volumeWordCount = volumes.length;
+
+    let retention: number | null = null;
+    let basis: 'volume' | 'words' | null = null;
+    let note: string | undefined;
+
+    if (index === 0) {
+      retention = wordCount > 0 || volume > 0 ? 1 : null;
+      basis = retention === null ? null : volume > 0 ? 'volume' : 'words';
+      if (retention === null) note = '本层没有词，无法计算流向';
+    } else if (volume > 0 && prevVolume > 0) {
+      retention = round3(volume / prevVolume);
+      basis = 'volume';
+      if (volumeWordCount < wordCount) {
+        note = `本层有 ${wordCount - volumeWordCount} 个词没有搜索量，未计入流向`;
+      }
+    } else if (wordCount > 0 && prevWordCount > 0) {
+      retention = round3(wordCount / prevWordCount);
+      basis = 'words';
+      note = '缺搜索量，改用词数口径（只反映层级宽度，不代表需求收缩）';
+    } else if (wordCount === 0) {
+      note = '本层没有词，无法计算流向';
+    } else {
+      note = '上一层没有可用于比较的数据，无法计算流向';
+    }
+
+    flows.push({
+      layer: layerId,
+      wordCount,
+      volume,
+      volumeWordCount,
+      retention,
+      basis,
+      dropOff: retention === null ? null : round3(Math.max(0, 1 - retention)),
+      note,
+    });
+
+    prevVolume = volume > 0 ? volume : prevVolume;
+    prevVolumeWords = volumeWordCount > 0 ? volumeWordCount : prevVolumeWords;
+    prevWordCount = wordCount > 0 ? wordCount : prevWordCount;
+  });
+
+  return flows;
+}
+
+/** 流向的人话摘要（给主屏/卡片头部用）：例如「认知 100% → 考虑 42% → 决策 17% → 场景 6%（搜索量口径）」 */
+export function describeSearchPathFlow(flows: SearchPathFlow[]): string {
+  const usable = flows.filter((f) => f.retention !== null);
+  if (usable.length === 0) return '流向数据不足（各层缺搜索量）';
+  const basis = usable.some((f) => f.basis === 'volume') ? '搜索量口径' : '词数口径';
+  const chain = usable.map((f) => `${SEARCH_PATH_LAYER_LABELS[f.layer]} ${Math.round((f.retention ?? 0) * 100)}%`).join(' → ');
+  return `${chain}（${basis}）`;
+}
+
 import type { OpenQuestionAnswer } from './openQuestions';
 
 export interface UserLookData {
