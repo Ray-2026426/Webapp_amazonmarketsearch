@@ -36,6 +36,27 @@
 | 3.2 | 接口层也拦 | 用普通账号 token 调 `/api/admin/health` | 403「需要管理员权限」 |
 | 3.3 | 团队角色语义一致 | 设置 → 团队空间：邀请/改角色/移除 | owner 不可被改/移除；admin 与项目成员权限一致 |
 | 3.4 | 不能禁用自己 | 管理员后台 → 用户管理 → 对自己点禁用 | 明确拒绝（避免把自己锁在门外） |
+| 3.5 | **自己就是管理员（开通方式）** | 见下方「3.0 怎么把自己设成管理员」 | 设置里能看到「管理员后台」与「团队空间」 |
+
+**3.0 怎么把自己设成管理员（2026-09 修过一个真 bug）**
+
+管理员身份 = **服务端环境变量 `ADMIN_EMAILS`（逗号分隔的邮箱白名单）**，这是唯一权威来源。
+服务端在 `login / register / me` 响应里下发 `isAdmin`，前端据此显示两个 Tab。
+
+> 曾经的真实故障：`AiSettingsPanel` 里写的是 `isAdminSession(undefined)`，而该函数第一步就是 `Boolean(user) && …`
+> → **恒为 false**，导致「管理员后台 / 团队空间」对所有人（包括你）都不显示，无论白名单怎么配。
+> 已修，并加 `tests/adminGate.test.ts` 7 条断言守死（含"全仓库不得再出现 isAdminSession(undefined)"）。
+
+开通步骤（二选一，**都不需要重新部署**）：
+
+| 环境 | 做法 |
+| --- | --- |
+| 线上（Vercel） | Project → Settings → Environment Variables 加 `ADMIN_EMAILS=你的邮箱`（Production 与 Preview 都勾上）→ 保存后**刷新页面**即可（`/api/auth/me` 会用 token 重新确认身份）。无需 Redeploy。 |
+| 本机 | `.env.local` 加 `ADMIN_EMAILS=你的邮箱` → **重启 dev server**（服务端变量在启动时读入）→ 刷新页面。 |
+
+注意两点：
+1. 别再往 `VITE_ADMIN_EMAILS` 上想办法 —— 它是**构建期**注入：既要把管理员邮箱明文打进公开 JS 包，又必须重新部署才生效。它现在只作为老响应格式的兜底保留。
+2. 前端藏 Tab 只是体验，**接口层同样会拦**（`api/admin/*` 与 `api/data/*` 的管理员动作都校验 `isAdminEmail` 并返回 403）；所以"看不到 Tab"不等于"没有权限"，"改前端也没用"。
 
 ## 4. 数据池与成本（`[自动]` + `[用户侧]`）
 

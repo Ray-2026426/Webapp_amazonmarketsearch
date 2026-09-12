@@ -31,7 +31,7 @@ import { clearWorkspaceIndexedDb } from './utils/workspaceIdb';
 import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, formatRevenue, computeMarketReportFingerprint } from './utils/parser';
 import { get, set, del } from 'idb-keyval';
 import { Toaster, toast } from 'sonner';
-import { getAuthToken, getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
+import { getAuthToken, getCurrentUser, isAdminSession, logout, refreshAdminFlag, type SessionUser } from './utils/auth';
 import { ensureAdminMcpDefaults, loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
 import { loadAiSettings, saveAiSettings, sanitizeAiSettings, AiSettings } from './utils/aiConfig';
 import { fetchServerKeyStatuses, migrateLegacyKeys } from './utils/serverKeys';
@@ -150,6 +150,25 @@ export default function App() {
 
   // 管理员登录后：① 迁移浏览器里残留的明文密钥到服务端 ② 读取"服务端配没配"的状态。
   // M5 安全加固：前端不再保存/持有密钥（旧实现把明文存进 localStorage，已废弃）。
+  /**
+   * 管理员身份以**服务端**为准：刷新页面时用 token 问一次 /api/auth/me。
+   * 这样改了 ADMIN_EMAILS 白名单之后，用户刷新即生效 —— 不必退出重登，也不必重新部署
+   * （VITE_ADMIN_EMAILS 是构建期注入，改它必须重新打包，还会把管理员邮箱打进公开 JS 包）。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const refreshed = await refreshAdminFlag();
+      if (cancelled || !refreshed) return;
+      setCurrentUser((prev) => {
+        if (!prev || prev.id !== refreshed.id) return prev;
+        if (prev.role === refreshed.role) return prev;
+        return { ...prev, role: refreshed.role };
+      });
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     if (!isAdminSession(currentUser)) return;
     const token = getAuthToken();

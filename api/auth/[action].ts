@@ -1,6 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getPublicSupabase, getServiceSupabase, localAccountUser, signToken, json } from './_shared.js';
+import { getPublicSupabase, getServiceSupabase, localAccountUser, signToken, verifyToken, json, isAdminEmail } from './_shared.js';
 import { accountError, normalizeAccount } from './account.js';
+
+/**
+ * 管理员身份由**服务端**说了算（ADMIN_EMAILS 白名单）。
+ * 前端不再依赖构建期注入的 VITE_ADMIN_EMAILS：那样既要把管理员邮箱打进公开 JS 包，
+ * 又必须重新部署才能生效（改一次管理员=改一次代码）。这里直接把 isAdmin 发给前端。
+ */
+function withAdmin<T extends { email?: string | null }>(user: T) {
+  return { ...user, isAdmin: isAdminEmail(user?.email) };
+}
 
 async function login(req: VercelRequest, res: VercelResponse, body: Record<string, unknown>) {
   const account = normalizeAccount((body.account ?? body.email) as string | undefined);
@@ -12,7 +21,7 @@ async function login(req: VercelRequest, res: VercelResponse, body: Record<strin
   if (!s) {
     const user = localAccountUser(account.account);
     const token = signToken({ sub: user.id, email: user.email, account: user.account, mode: 'local' }, 30 * 24 * 3600 * 1000);
-    return json(res, 200, { ok: true, token, user, cloudDisabled: true });
+    return json(res, 200, { ok: true, token, user: withAdmin(user), cloudDisabled: true });
   }
 
   const { data, error } = await s.auth.signInWithPassword({ email: account.authEmail, password });
@@ -25,7 +34,7 @@ async function login(req: VercelRequest, res: VercelResponse, body: Record<strin
     ok: true,
     token,
     supabaseAccessToken: data.session?.access_token,
-    user: { id: data.user.id, email: data.user.email, account: account.account },
+    user: withAdmin({ id: data.user.id, email: data.user.email, account: account.account }),
   });
 }
 
@@ -41,7 +50,7 @@ async function register(req: VercelRequest, res: VercelResponse, body: Record<st
     if (!publicSupabase) {
       const user = localAccountUser(account.account);
       const token = signToken({ sub: user.id, email: user.email, account: user.account, mode: 'local' }, 30 * 24 * 3600 * 1000);
-      return json(res, 200, { ok: true, token, user, cloudDisabled: true });
+      return json(res, 200, { ok: true, token, user: withAdmin(user), cloudDisabled: true });
     }
     const { data, error } = await publicSupabase.auth.signUp({
       email: account.authEmail,
@@ -67,7 +76,7 @@ async function register(req: VercelRequest, res: VercelResponse, body: Record<st
       ok: true,
       token,
       supabaseAccessToken: data.session.access_token,
-      user: { id: user.id, email: user.email, account: account.account },
+      user: withAdmin({ id: user.id, email: user.email, account: account.account }),
     });
   }
 
@@ -85,12 +94,28 @@ async function register(req: VercelRequest, res: VercelResponse, body: Record<st
   if (!user) return json(res, 500, { ok: false, error: '注册失败' });
 
   const token = signToken({ sub: user.id, email: user.email, account: account.account }, 30 * 24 * 3600 * 1000);
-  return json(res, 200, { ok: true, token, user: { id: user.id, email: user.email, account: account.account } });
+  return json(res, 200, { ok: true, token, user: withAdmin({ id: user.id, email: user.email, account: account.account }) });
+}
+
+/**
+ * 用当前 JWT 换回"我是不是管理员"。
+ * 用途：管理员白名单（ADMIN_EMAILS）改过之后，已登录的用户刷新页面即可生效，
+ * 不必退出重登，更不必重新部署。
+ */
+async function me(req: VercelRequest, res: VercelResponse, body: Record<string, unknown>) {
+  const token = String(body.token || req.headers['x-auth-token'] || '');
+  const auth = await verifyToken(token);
+  if (!auth) return json(res, 401, { ok: false, error: '登录已过期，请重新登录' });
+  return json(res, 200, {
+    ok: true,
+    user: withAdmin({ id: auth.userId, email: auth.email }),
+  });
 }
 
 const handlers: Record<string, (req: VercelRequest, res: VercelResponse, body: Record<string, unknown>) => Promise<void>> = {
   login,
   register,
+  me,
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

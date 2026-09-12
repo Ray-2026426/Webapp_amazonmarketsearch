@@ -274,9 +274,11 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     { id: 'prompts', label: 'Prompt', icon: <FileText className="w-4 h-4" /> },
     { id: 'diagnostics', label: '诊断', icon: <ShieldCheck className="w-4 h-4" /> },
     // M5：管理员后台（仅管理员显示；非管理员即使手动切到该 tab 也只会看到一句说明）
-    ...(isAdminSession(undefined) ? [{ id: 'admin' as SettingsTab, label: '管理员后台', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
+    // 注意：必须传 getCurrentUser()。以前这里写的是 isAdminSession(undefined)，
+    // 而 isAdminSession 第一个判断就是 Boolean(user) → 永远 false，导致这两个 Tab 对**所有人**都不显示。
+    ...(isAdminSession(getCurrentUser()) ? [{ id: 'admin' as SettingsTab, label: '管理员后台', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
     // M6：团队空间（仅管理员可管理团队与成员）
-    ...(isAdminSession(undefined) ? [{ id: 'team' as SettingsTab, label: '团队空间', icon: <Users className="w-4 h-4" /> }] : []),
+    ...(isAdminSession(getCurrentUser()) ? [{ id: 'team' as SettingsTab, label: '团队空间', icon: <Users className="w-4 h-4" /> }] : []),
   ];
 
   return (

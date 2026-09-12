@@ -44,14 +44,53 @@ function readSession(): SessionUser | null {
   }
 }
 
-function writeSession(user: { id: string; username: string; email?: string }): void {
+/**
+ * 写入本地会话。
+ * 管理员身份**优先采信服务端**（登录/注册/me 返回的 isAdmin，来源是服务端 ADMIN_EMAILS 白名单）；
+ * 只有服务端没给这一项时才回退到构建期注入的 VITE_ADMIN_EMAILS（兼容老响应）。
+ */
+function writeSession(user: { id: string; username: string; email?: string; isAdmin?: boolean }): void {
   const session: SessionUser = {
     id: user.id,
     username: user.username,
     email: user.email,
-    role: isAdminEmail(user.email) ? 'admin' : 'user',
+    role: user.isAdmin === true || (user.isAdmin !== false && isAdminEmail(user.email)) ? 'admin' : 'user',
   };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+/**
+ * 用已有 token 向服务端确认一次管理员身份。
+ * 场景：管理员白名单（ADMIN_EMAILS）改过之后，用户刷新页面即可生效 —— 不用退出重登，
+ * 更不用为了加一个管理员而重新部署（VITE_* 是构建期注入，改了必须重打包）。
+ * 失败时静默保留本地会话，不影响离线/后端不可用的情形。
+ */
+export async function refreshAdminFlag(): Promise<SessionUser | null> {
+  const current = getCurrentUser();
+  const token = getAuthToken();
+  if (!current || !token) return current;
+  try {
+    const res = await fetch('/api/auth/me', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    if (!res.ok) return current;
+    const body = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      user?: { id: string; email?: string; account?: string; isAdmin?: boolean };
+    };
+    if (!body.ok || !body.user || body.user.isAdmin === undefined) return current;
+    writeSession({
+      id: body.user.id || current.id,
+      username: body.user.account || current.username,
+      email: body.user.email || current.email,
+      isAdmin: body.user.isAdmin === true,
+    });
+    return getCurrentUser();
+  } catch {
+    return current;
+  }
 }
 
 function writeToken(token: string): void {
@@ -99,13 +138,13 @@ export async function register(account: string, password: string): Promise<Regis
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account, password }),
     });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; supabaseAccessToken?: string; user?: { id: string; email?: string; account?: string } };
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; supabaseAccessToken?: string; user?: { id: string; email?: string; account?: string; isAdmin?: boolean } };
     if (!res.ok || !body.ok || !body.token || !body.user) {
       return { success: false, error: body.error || '注册失败' };
     }
     writeToken(body.token);
     writeSupabaseToken(body.supabaseAccessToken);
-    writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email });
+    writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email, isAdmin: body.user.isAdmin });
     return { success: true };
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : '注册失败' };
@@ -124,13 +163,13 @@ export async function login(account: string, password: string): Promise<LoginRes
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account, password }),
     });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; supabaseAccessToken?: string; user?: { id: string; email?: string; account?: string } };
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; supabaseAccessToken?: string; user?: { id: string; email?: string; account?: string; isAdmin?: boolean } };
     if (!res.ok || !body.ok || !body.token || !body.user) {
       return { success: false, error: body.error || '登录失败' };
     }
     writeToken(body.token);
     writeSupabaseToken(body.supabaseAccessToken);
-    writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email });
+    writeSession({ id: body.user.id, username: body.user.account || body.user.email || account, email: body.user.email, isAdmin: body.user.isAdmin });
     return { success: true, user: getCurrentUser() ?? undefined };
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : '登录失败' };
