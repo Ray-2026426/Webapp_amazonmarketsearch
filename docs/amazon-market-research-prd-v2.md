@@ -1315,13 +1315,16 @@ devApiPlugin 生成的 `.[action].ts.<pid>.<uuid>.tmpdir/*.tmp`，Windows 上抛
 | ④ 看机会「全局先后建议」 | ✅ 已推 | 独立区块：确定性排序（评分 → 覆盖度 → 前置资源缺口）+ 排序理由 + 已拍板标记，明写"先做哪个由你拍板" |
 | ⑤ 决策草稿全程常驻（⏳1） | ✅ 已推 | 线框图 Screen 2 标为"核心 IA 变化"：抽出 `DecisionDraftRail`，由 `ProjectWorkspace` 在 `xl:sticky` 右栏常驻（六个 Tab 都在）；向导内重复列删除，保存后 `bumpDraft()` 刷新右栏 |
 | ⑥ 线上白屏 `React #310` | ✅ 已推 | 根因：`UserLookView` 的 `useState` 落在 `if (!data) return <加载中/>` **之后**（条件 hook）。已移回 hook 区并加注释；新增 `tests/hookOrder.test.ts`（AST 级）守死"hook 不得出现在任何 early return 之后" |
-| ⑦ 导出报告 §1-§7 固定叙事（⏳2） | 🔧 进行中 | HTML/MD 双通道改为「首页只放结论 → §1 研究目标 → §2 用户需求 → §3 市场细分 → §4 竞品缺口 → §5 自身适配 → §6 机会结论 → §7 证据索引」，缺数据一律渲染"未提供" |
-| ⑧ 二级页 ①②③④⑪⑫⑬⑭ 独立页（⏳3） | 🔧 进行中 | 做成真正独立的全屏页（带「← 返回」+ 线框图里的"解决什么问题/从哪进入/返回去哪/依赖哪些数据"契约条）；**强制要求内联与全屏页共用同一份实现**，不允许复制第二份 |
+| ⑦ 导出报告 §1-§7 固定叙事（⏳2） | ✅ 已推 | HTML/MD 改为「首页只放结论 → §1 研究目标 → §2 用户需求 → §3 市场细分 → §4 竞品缺口 → §5 自身适配 → §6 机会结论 → §7 证据索引」；两份导出共用同一份 block 文档模型（标题/顺序不可能漂移）；缺数据一律"未提供"、listing 缺字段"未抓取"；取数口径与看竞对界面完全一致（同一对比池与确定性算法），无竞对列时**不判赢面** |
+| ⑧ 二级页 ①②③④⑪⑫⑬⑭ 独立页（⏳3） | ✅ 已推 | `l3Pages.ts`（8 页契约表，四句抄自线框图 note）+ 唯一页壳 `L3Sheet`（全屏、返回/Esc、dialog 语义、滚动锁、契约条常驻）；**内联与二级页共用同一份实现**（`variant='inline'` / `'sheet'`，状态留在拥有数据的视图里，经 `onRegisterL3Bodies` 注册正文，避免复制 markup 与业务逻辑）；残留三处已如实记入核对表（① 层筛选/拖动、⑬ 点标题不跳转、⑭ 控制点阈值不可在页面改） |
+| ⑨ 管理员身份恒为 false（本轮额外发现） | ✅ 已推 | 真实故障：`AiSettingsPanel` 写 `isAdminSession(undefined)` → `Boolean(user) && …` 恒 false，**两个管理员 Tab 对所有人都不显示**。已改为 `getCurrentUser()`；并把管理员身份收回**服务端权威**（`ADMIN_EMAILS` 白名单，随 login/register/新增的 `/api/auth/me` 下发 `isAdmin`），前端启动时 `refreshAdminFlag()` 重新确认；`tests/adminGate.test.ts` 7 条断言守死。开通步骤见 `docs/M6-launch-checklist.md` §3.0 |
 
 **本轮新增的确定性护栏**（都不依赖 AI 判断）：
 1. `tests/hookOrder.test.ts` —— AST 扫描所有 `.tsx`，禁止 hook 出现在 early return 之后（防 #310 复发）；
 2. `tests/competitorDrilldown.test.ts` —— 下钻入口共享表 + 源码级守卫（按钮文案只能来自一处）；
-3. `vite.config.ts` 的 `server.watch.ignored` —— 修掉编辑 `api/**` 时 dev server 的 `EBUSY` 崩溃（`[action].ts.<pid>.<uuid>.tmpdir` 被 watch 到）。
+3. `tests/adminGate.test.ts` —— 全仓库禁止再出现"恒 false 的管理员判定"（`isAdminSession(undefined)`，注释豁免），并锁死"服务端权威 + 接口层 403"两条口径；
+4. `tests/l3Pages.test.ts` —— 8 个二级页的注册表/入口/页壳语义，以及"内联与二级页必须共用同一份实现"；
+5. `vite.config.ts` 的 `server.watch.ignored` —— 修掉编辑 `api/**` 时 dev server 的 `EBUSY` 崩溃（`[action].ts.<pid>.<uuid>.tmpdir` 被 watch 到）。
 
 **诚实边界**：本轮全部是"实现对齐线框图"，**没有**替代用户侧验证；W3–W4 前的 3 份真实品类决策包、10 分钟计时可用性测试、4 视口视觉回归基线仍待用户侧完成（见 `docs/M6-launch-checklist.md` §6/§8）。
 
