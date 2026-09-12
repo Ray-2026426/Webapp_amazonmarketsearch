@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Crosshair, Loader2, Swords, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CloudDownload, Crosshair, Loader2, Swords, Users } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { loadSnapshot } from '../utils/projectSnapshot';
+import { fetchListingDetails } from '../utils/listingFetchExecutor';
+import { getAuthToken } from '../utils/auth';
 import { loadUserLook, type UnmetNeedCandidate } from '../utils/userLook';
 import { loadMarketLook } from '../utils/marketLook';
 import { synthesizeSegmentSchemes } from '../utils/segmentSynthesis';
@@ -10,6 +13,7 @@ import { loadCompetitorLook, saveCompetitorLook, type CompetitorLookData } from 
 import { loadSelfAssessment } from '../utils/selfAssessment';
 import { buildOurCapability } from '../utils/ourCapability';
 import {
+  LISTING_FIELDS,
   buildComparisonTable,
   describeCoverage,
   GROUP_LABELS,
@@ -210,6 +214,55 @@ export function CompetitorDeepDive({
     void reload();
   }, [reload]);
 
+  /**
+   * M5：一键走**服务端数据池**抓全字段（前端不接触密钥），抓完写回看竞对数据并刷新覆盖率。
+   * 已有值的字段不再重复花钱（把"已抓到的字段"传给计划器跳过）。
+   */
+  const [fetching, setFetching] = useState(false);
+  const [fetchNote, setFetchNote] = useState('');
+  const runFullFetch = async () => {
+    if (!loaded || loaded.columns.length === 0) return;
+    setFetching(true);
+    setFetchNote('正在按计划抓取（先 Listing/详情，再流量与历史）…');
+    try {
+      const alreadyHave: Record<string, string[]> = {};
+      for (const asin of loaded.columns) {
+        const missing = new Set(loaded.coverage.missingFields.filter((m) => m.asins.includes(asin)).map((m) => m.key));
+        alreadyHave[asin] = LISTING_FIELDS.map((f) => f.key).filter((k) => !missing.has(k));
+      }
+      const result = await fetchListingDetails({
+        asins: loaded.columns,
+        marketplace: project.marketplace || 'US',
+        depth: 'deep',
+        alreadyHave,
+        token: getAuthToken(),
+        projectId: project.id,
+        onProgress: (done, total, step) => setFetchNote(`抓取中 ${done}/${total}：${step.label}`),
+      });
+      if (!result.usedGateway) {
+        setFetchNote(result.note);
+        toast.warning(result.note);
+        return;
+      }
+      await saveCompetitorLook(userId, project.id, {
+        ...(data ?? ({} as CompetitorLookData)),
+        listingDetails: { ...(data?.listingDetails ?? {}), ...result.listing },
+        trafficDetails: { ...(data?.trafficDetails ?? {}), ...result.traffic },
+      });
+      setFetchNote(
+        `${result.note}；字段抓取率 ${(result.evaluation.coverage * 100).toFixed(0)}%（计划 ${result.evaluation.planned} 项 / 命中 ${result.evaluation.filled} 项）` +
+          (result.evaluation.failures > 0 ? `；${result.evaluation.failures} 步失败可重试` : '')
+      );
+      toast.success(`抓取完成：字段抓取率 ${(result.evaluation.coverage * 100).toFixed(0)}%`);
+      await reload();
+    } catch (e) {
+      setFetchNote(`抓取失败：${e instanceof Error ? e.message : String(e)}`);
+      toast.error('抓取失败');
+    } finally {
+      setFetching(false);
+    }
+  };
+
   /** M3① 换人：把某一列换成候选池里的另一个 ASIN（按该角色规则列候选，用户拍板） */
   const swapCompetitor = useCallback(
     async (fromAsin: string, toAsin: string) => {
@@ -308,6 +361,17 @@ export function CompetitorDeepDive({
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 bg-white text-xs font-semibold text-indigo-700 hover:border-indigo-400"
               >
                 送进竞品明细（主图逐张 / A+ / 流量词）
+              </button>
+            )}
+            {loaded.columns.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void runFullFetch()}
+                disabled={fetching}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {fetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudDownload className="w-3.5 h-3.5" />}
+                抓取全字段（走服务端数据池）
               </button>
             )}
           </div>
