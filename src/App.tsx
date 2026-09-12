@@ -22,6 +22,7 @@ import { MarketHistoryModal } from './components/MarketHistoryModal';
 import { saveMarketSnapshot, suggestMarketSnapshotTitle, type MarketHistorySnapshot } from './utils/marketHistory';
 import type { CompetitorWorkspaceState } from './utils/competitorHistory';
 import { normalizeComparisonAsins } from './utils/competitorPicker';
+import { drilldownLabel } from './utils/competitorDrilldown';
 import {
   normalizeUserInsightsWorkspace,
   type UserInsightsWorkspaceState,
@@ -345,6 +346,9 @@ export default function App() {
   /** 竞品工作区（由 CompetitorHub 同步上来，供保存数据） */
   const [competitorWorkspace, setCompetitorWorkspace] = useState<CompetitorWorkspaceState | null>(null);
   const [competitorRestoreKey, setCompetitorRestoreKey] = useState(0);
+  /** 线框图 ⏳4：⑦⑧⑨ 下钻要求竞品明细直接落到哪个视图；nonce 递增即再应用一次 */
+  const [competitorResultTab, setCompetitorResultTab] = useState<'listing' | 'traffic' | 'matrix'>('listing');
+  const [competitorResultTabNonce, setCompetitorResultTabNonce] = useState(0);
   const [competitorRestorePayload, setCompetitorRestorePayload] = useState<CompetitorWorkspaceState | null>(null);
   /** 用户洞察工作区：深度洞察报告 / 5W1H 旅程表，随 IndexedDB 与保存数据恢复 */
   const [userInsightsWorkspace, setUserInsightsWorkspace] = useState<UserInsightsWorkspaceState | null>(null);
@@ -369,7 +373,7 @@ export default function App() {
    * 走的是大盘选品表同一条通路（selectedCompareAsins → CompetitorHub 的 preselectedAsins），
    * 并记住来源项目与看，保证返回按钮回到「看竞对」而不是丢失上下文。
    */
-  const sendAsinsToComparison = useCallback((asins: string[]) => {
+  const sendAsinsToComparison = useCallback((asins: string[], tab?: 'listing' | 'traffic' | 'matrix') => {
     const clean = normalizeComparisonAsins(asins);
     if (clean.length === 0) {
       toast.error('还没有可带入的竞对 ASIN');
@@ -377,8 +381,12 @@ export default function App() {
     }
     setSelectedCompareAsins(clean);
     setActiveView('competitors');
+    // ⏳4：⑦⑧⑨ 各看各的视图（Listing 详情页 / 流量 / 语义矩阵），不再一律落 Listing
+    setCompetitorResultTab(tab ?? 'listing');
+    setCompetitorResultTabNonce((n) => n + 1);
     if (activeProject) setToolReturn({ projectId: activeProject.id, look: 'competitor' });
-    toast.success(`已把 ${clean.length} 个竞对 ASIN 带入竞品明细对比池`);
+    const tabLabel = drilldownLabel(tab ?? 'listing');
+    toast.success(`已把 ${clean.length} 个竞对 ASIN 带入竞品明细（${tabLabel}）`);
   }, [activeProject]);
 
   const isRegisteredUser = Boolean(currentUser && currentUser.id !== 'guest');
@@ -1932,6 +1940,8 @@ export default function App() {
                     marketplaceCode={marketplace.code}
                     domain={marketplace.domain}
                     preselectedAsins={selectedCompareAsins}
+                    preselectedResultTab={competitorResultTab}
+                    resultTabRequestKey={competitorResultTabNonce}
                     demoSnapshot={isDemoData ? competitorDemo : null}
                     userId={currentUser?.id || 'guest'}
                     workspaceFromParent={competitorWorkspace}

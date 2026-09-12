@@ -78,6 +78,7 @@ export function LookWizardPanel({
   onLoadDemo,
   onOpenTool,
   onOpenSettings,
+  onDraftChanged,
 }: {
   userId: string;
   project: ResearchProject;
@@ -88,6 +89,8 @@ export function LookWizardPanel({
   onOpenTool?: (view: 'market' | 'keywords' | 'insights' | 'competitors') => void;
   /** 打开「设置 → API 与模型」补配置（缺 Key 时的下一步动作） */
   onOpenSettings?: () => void;
+  /** 线框图 Screen 2：草稿已移到项目壳常驻右栏；向导跑完后通知它刷新 */
+  onDraftChanged?: () => void;
 }) {
   const [steps, setSteps] = useState<WizardStep[]>(initialSteps);
   const [running, setRunning] = useState(false);
@@ -153,6 +156,7 @@ export function LookWizardPanel({
     try {
       const raw = await captureAndSaveSnapshot(userId, project.id);
       setSnap({ raw, summary: snapshotSummary(raw), text: describeSnapshot(raw) });
+      onDraftChanged?.();
       if (hasSnapshotContent(raw)) {
         toast.success('已捕获本项目数据快照');
       } else {
@@ -281,6 +285,7 @@ export function LookWizardPanel({
     }
     setRunning(false);
     await refreshDraft();
+    onDraftChanged?.();
     await refreshSnapshot();
     const block: LookAiFailKind | null =
       keyCount > 0 ? 'no-key' : doneCount === 0 && skippedCount > 0 ? 'no-data' : null;
@@ -301,7 +306,7 @@ export function LookWizardPanel({
   const finished = steps.some((s) => s.status !== 'pending');
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
+    <div className="grid grid-cols-1 gap-4">
       {/* 向导主体 */}
       <div className="rounded-2xl border border-indigo-100 bg-white overflow-hidden">
         <div className="px-5 py-4 border-b border-black/5 flex items-start justify-between gap-4 flex-wrap">
@@ -432,99 +437,12 @@ export function LookWizardPanel({
         )}
       </div>
 
-      {/* 决策草稿 */}
-      <div className="rounded-2xl border border-black/8 bg-[#f8f9fb] p-4 space-y-3 self-start">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-indigo-500" />
-          <p className="text-sm font-bold text-[#1d1d1f]">决策草稿</p>
-          <span className="text-[10px] text-[#86868b]">随证据变化</span>
-        </div>
-
-        {/* 项目数据快照（M1 · 修跨项目污染） */}
-        <div className="rounded-xl border border-black/8 bg-white p-3">
-          <div className="flex items-center justify-between gap-2 mb-1.5">
-            <p className="text-[11px] font-semibold text-[#424245]">项目数据快照</p>
-            <button
-              type="button"
-              onClick={() => void captureNow()}
-              disabled={snapBusy}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-            >
-              {snapBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-              {snap ? '更新快照' : '捕获快照'}
-            </button>
-          </div>
-          {snap ? (
-            <p className="text-[10px] text-[#86868b] leading-relaxed">
-              {snap.text}
-              <br />
-              捕获于 {new Date(snap.summary.capturedAt).toLocaleString()}
-            </p>
-          ) : (
-            <p className="text-[10px] text-amber-700 leading-relaxed">
-              尚未捕获：AI 会回退读取全局工作区数据（可能混入其他项目）。建议先点「捕获快照」，再跑一键分析。
-            </p>
-          )}
-        </div>
-        {draft ? (
-          <>
-            <div>
-              <p className="text-[11px] font-semibold text-[#424245] mb-1.5">
-                未满足需求候选：{draft.unmetCount} 条
-              </p>
-              {draft.unmetTop.length > 0 ? (
-                <ul className="space-y-1">
-                  {draft.unmetTop.map((t, i) => (
-                    <li key={i} className="text-[11px] text-[#424245] leading-relaxed">· {t}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-[11px] text-[#86868b]">还没有需求候选 —— 先跑「看用户」。</p>
-              )}
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-[#424245] mb-1.5">还缺什么</p>
-              {draft.missing.length > 0 ? (
-                <ul className="space-y-1">
-                  {draft.missing.map((m, i) => (
-                    <li key={i} className="text-[11px] text-amber-700 leading-relaxed">· {m}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-[11px] text-emerald-700">五看证据已齐，可以进入「看机会」做结论。</p>
-              )}
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-[#424245] mb-1.5">
-                项目证据：{draft.evidenceTotal} 条
-              </p>
-              {draft.evidenceTotal > 0 ? (
-                <>
-                  <p className="text-[10px] text-[#86868b] mb-1">
-                    {(['user', 'market', 'competitor', 'self'] as const)
-                      .map((k) => `${EVIDENCE_LOOK_LABELS[k]} ${draft.evidenceByLook[k] ?? 0}`)
-                      .join(' · ')}
-                  </p>
-                  <ul className="space-y-1">
-                    {draft.evidenceTop.map((t, i) => (
-                      <li key={i} className="text-[10px] text-[#424245] leading-relaxed">· {t}</li>
-                    ))}
-                  </ul>
-                  {draft.evidenceTotal > draft.evidenceTop.length && (
-                    <p className="text-[10px] text-[#aeaeb2] mt-1">还有 {draft.evidenceTotal - draft.evidenceTop.length} 条…</p>
-                  )}
-                </>
-              ) : (
-                <p className="text-[10px] text-[#86868b]">还没有证据 —— 在各看页面点「捕获为项目证据」即可入库。</p>
-              )}
-            </div>
-            <p className="text-[10px] text-[#86868b] leading-relaxed pt-1 border-t border-black/5">
-              这里只显示当前证据状态，不编造机会；机会结论（含先做/后做/前置资源/控制点）在「看机会」生成。
-            </p>
-          </>
-        ) : (
-          <p className="text-[11px] text-[#86868b]">正在读取项目证据…</p>
-        )}
+      {/* 决策草稿已移到项目壳右侧常驻栏（线框图 Screen 2：全程跟随），此处不再重复呈现 */}
+      <div className="rounded-2xl border border-dashed border-black/10 bg-white/60 px-4 py-3">
+        <p className="text-[11px] text-[#86868b] leading-relaxed">
+          决策草稿已移到本页**右侧常驻栏**：进度与下一步、未满足需求候选、还缺什么、项目证据、数据快照都在那里，
+          切到任意一看都不会消失。
+        </p>
       </div>
     </div>
   );

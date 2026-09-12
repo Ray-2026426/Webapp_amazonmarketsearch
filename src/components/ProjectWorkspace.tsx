@@ -19,6 +19,7 @@ import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { ProjectOverviewContent } from './ProjectOverview';
 import { LookWizardPanel } from './LookWizardPanel';
+import { DecisionDraftRail } from './DecisionDraftRail';
 import { SelfAssessmentView } from './SelfAssessmentView';
 import { MarketLookView } from './MarketLookView';
 import { UserLookView } from './UserLookView';
@@ -110,8 +111,8 @@ export function ProjectWorkspace({
   onLoadDemo?: () => void;
   /** 缺 AI Key 时的一键动作：打开设置面板 */
   onOpenSettings?: () => void;
-  /** M3⑥ 断链 #4：把竞对 ASIN 送入「竞品明细」对比池 */
-  onSendToComparison?: (asins: string[]) => void;
+  /** M3⑥ 断链 #4：把竞对 ASIN 送入「竞品明细」对比池（⏳4：可指定落在哪个视图） */
+  onSendToComparison?: (asins: string[], tab?: 'listing' | 'traffic' | 'matrix') => void;
   /** 线框图 ⑩：打开「评论 VOC / 用户洞察」（看竞对的评论与画像证据页） */
   onOpenUserInsights?: () => void;
   /** 线框图 ⑤：从看市场点「查看完整大盘」时把细分带进市场大盘 */
@@ -122,6 +123,9 @@ export function ProjectWorkspace({
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [editOpen, setEditOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  /** 决策草稿的重算信号：向导跑完/数据变化时递增，让常驻草稿立即刷新 */
+  const [draftNonce, setDraftNonce] = useState(0);
+  const bumpDraft = () => setDraftNonce((n) => n + 1);
   const initialSyncKey = useRef(`${project.id}:${project.version}:${project.updatedAt}`);
   const lastQueuedSyncKey = useRef(initialSyncKey.current);
 
@@ -278,7 +282,9 @@ export function ProjectWorkspace({
         <TabButton active={tab === 'reports'} onClick={() => setTab('reports')} label="报告" icon={<FileText className="w-3.5 h-3.5" />} />
       </div>
 
-      {/* 内容区 */}
+      {/* 内容区 + 常驻决策草稿（线框图 Screen 2：草稿全程跟随，不只在概览页） */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
+        <div className="min-w-0">
       {tab === 'overview' ? (
         <div className="space-y-5">
           <LookWizardPanel
@@ -288,6 +294,7 @@ export function ProjectWorkspace({
             onLoadDemo={onLoadDemo}
             onOpenTool={(view) => onOpenTool(view, toolOriginLook)}
             onOpenSettings={onOpenSettings}
+            onDraftChanged={bumpDraft}
           />
           <ProjectOverviewContent project={p} username={username} userId={userId} onNavigateLook={(look) => void switchToLook(look)} />
         </div>
@@ -304,6 +311,16 @@ export function ProjectWorkspace({
       ) : (
         <ReportsView userId={userId} project={p} onContentChange={queueCloudSync} />
       )}
+        </div>
+        <div className="xl:sticky xl:top-4">
+          <DecisionDraftRail
+            userId={userId}
+            project={p}
+            onGoto={(look) => void switchToLook(look)}
+            refreshKey={draftNonce}
+          />
+        </div>
+      </div>
       {editOpen && (
         <EditProjectModal
           userId={userId}

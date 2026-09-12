@@ -47,7 +47,7 @@ export function CompetitorLookView({
   onProjectChange: (updated: ResearchProject) => void;
   onOpenCompetitorTool?: () => void;
   /** M3⑥ 断链 #4：把竞对 ASIN 送入「竞品明细」对比池 */
-  onSendToComparison?: (asins: string[]) => void;
+  onSendToComparison?: (asins: string[], tab?: 'listing' | 'traffic' | 'matrix') => void;
   /** 线框图 ⑩：打开「评论 VOC / 用户洞察」（看竞对的评论与画像证据页） */
   onOpenUserInsights?: () => void;
 }) {

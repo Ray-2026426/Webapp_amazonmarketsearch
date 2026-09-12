@@ -40,6 +40,7 @@ import {
 } from '../utils/competitorHistory';
 import { FeishuPushButton } from './FeishuPushButton';
 import { competitorReportToMarkdown } from '../utils/reportToMarkdown';
+import { shouldApplyDrilldownTab } from '../utils/competitorDrilldown';
 
 type WizardStep = 1 | 2 | 3;
 type ResultTab = 'listing' | 'traffic' | 'matrix';
@@ -49,6 +50,13 @@ interface CompetitorHubProps {
   marketplaceCode?: string;
   domain?: string;
   preselectedAsins?: string[];
+  /**
+   * 线框图 ⏳4：从「看竞对」的下钻入口 ⑦⑧⑨ 进来时指定落在哪个视图
+   * （⑦单竞对深度页/⑧主图逐张 → listing；⑨流量结构 → traffic），而不是一律落 Listing。
+   */
+  preselectedResultTab?: ResultTab;
+  /** 递增即强制再应用一次 preselectedResultTab（已在竞品明细里再点 ⑧/⑨ 也能切换） */
+  resultTabRequestKey?: number;
   /** 示例模式：直接展示真实竞品明细结果（无需再点「开始对比」） */
   demoSnapshot?: CompetitorDemoSnapshot | null;
   /** 登录用户 id；游客用 guest，用于本机历史隔离 */
@@ -256,6 +264,8 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   products,
   marketplaceCode = 'US',
   preselectedAsins = [],
+  preselectedResultTab,
+  resultTabRequestKey = 0,
   demoSnapshot = null,
   userId = 'guest',
   workspaceFromParent = null,
@@ -322,6 +332,26 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     Boolean(seed?.hasResult || demoSnapshot?.details?.length)
   );
   const [resultTab, setResultTab] = useState<ResultTab>('listing');
+
+  /**
+   * 线框图 ⏳4：⑦⑧⑨ 下钻自带「要看哪个视图」的意图。
+   * 带到 ASIN 的同时落到对应 Tab（Listing 详情页 / 流量 / 语义矩阵），
+   * 并保证同一次请求只应用一次——之后用户手动切 Tab 不会被抢回去。
+   * 必须在 hook 区（任何 early return 之前），否则触发 React #310。
+   */
+  const appliedDrilldownNonce = useRef(resultTabRequestKey);
+  useEffect(() => {
+    const shouldApply = shouldApplyDrilldownTab({
+      requested: preselectedResultTab,
+      hasResult,
+      nonce: resultTabRequestKey,
+      appliedNonce: appliedDrilldownNonce.current,
+    });
+    if (!shouldApply) return;
+    appliedDrilldownNonce.current = resultTabRequestKey;
+    setStep(3);
+    setResultTab(preselectedResultTab as ResultTab);
+  }, [preselectedResultTab, resultTabRequestKey, hasResult]);
 
   const [details, setDetails] = useState<AsinDetailSnapshot[]>(
     () => seed?.details ?? demoSnapshot?.details ?? []
