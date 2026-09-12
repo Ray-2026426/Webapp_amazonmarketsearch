@@ -78,10 +78,13 @@ export function CompetitorDeepDive({
   userId,
   project,
   onOpenCompetitorTool,
+  onSendToComparison,
 }: {
   userId: string;
   project: ResearchProject;
   onOpenCompetitorTool?: () => void;
+  /** M3⑥ 断链 #4：把这几个竞对送进「竞品明细」对比池（主图逐张/A+/流量词） */
+  onSendToComparison?: (asins: string[]) => void;
 }) {
   const [data, setData] = useState<CompetitorLookData | null>(null);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -271,6 +274,15 @@ export function CompetitorDeepDive({
             >
               {showMissing ? '只看已抓到' : '显示未抓取字段'}
             </button>
+            {onSendToComparison && loaded.columns.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onSendToComparison(loaded.columns)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 bg-white text-xs font-semibold text-indigo-700 hover:border-indigo-400"
+              >
+                送进竞品明细（主图逐张 / A+ / 流量词）
+              </button>
+            )}
           </div>
 
           <div

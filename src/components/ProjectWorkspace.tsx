@@ -89,6 +89,7 @@ export function ProjectWorkspace({
   focusNonce,
   onLoadDemo,
   onOpenSettings,
+  onSendToComparison,
 }: {
   userId: string;
   project: ResearchProject;
@@ -107,6 +108,8 @@ export function ProjectWorkspace({
   onLoadDemo?: () => void;
   /** 缺 AI Key 时的一键动作：打开设置面板 */
   onOpenSettings?: () => void;
+  /** M3⑥ 断链 #4：把竞对 ASIN 送入「竞品明细」对比池 */
+  onSendToComparison?: (asins: string[]) => void;
 }) {
   const [p, setP] = useState<ResearchProject>(project);
   const [tab, setTab] = useState<Tab>(project.activeLook);
@@ -289,7 +292,7 @@ export function ProjectWorkspace({
       ) : tab === 'user' ? (
         <UserLookView userId={userId} project={p} userContext={userContext} onProjectChange={applyProjectUpdate} />
       ) : tab === 'competitor' ? (
-        <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} onOpenCompetitorTool={() => onOpenTool('competitors', 'competitor')} />
+        <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} onOpenCompetitorTool={() => onOpenTool('competitors', 'competitor')} onSendToComparison={onSendToComparison} />
       ) : tab === 'opportunity' ? (
         <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} onNavigateLook={(look) => void switchToLook(look)} />
       ) : (

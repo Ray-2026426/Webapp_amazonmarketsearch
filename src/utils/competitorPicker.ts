@@ -198,6 +198,26 @@ export function pickCompetitors(products: Product[], opts: { sameBandTolerance?:
   return pickCompetitorsDetailed(products).picked;
 }
 
+/** 竞品明细工具的对比池上限（与 CompetitorHub 的 MAX_ASINS 保持一致：≤5） */
+export const MAX_COMPARISON_ASINS = 5;
+
+/**
+ * M3⑥ 断链 #4：把看竞对挑出的 ASIN 归一化成可入对比池的列表。
+ * 规则：去空、转大写、去重（保序）、截断到 ≤5。**不做猜测**：没有合法 ASIN 就返回空数组，
+ * 由调用方决定提示什么（绝不用"随便挑几个"填充）。
+ */
+export function normalizeComparisonAsins(asins: string[], max = MAX_COMPARISON_ASINS): string[] {
+  const out: string[] = [];
+  for (const raw of Array.isArray(asins) ? asins : []) {
+    const a = String(raw ?? '').trim().toUpperCase();
+    if (!a) continue;
+    if (out.includes(a)) continue;
+    out.push(a);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 export interface ReplacementCandidate {
   asin: string;
   brand: string;

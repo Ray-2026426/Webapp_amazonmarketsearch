@@ -38,12 +38,15 @@ export function CompetitorLookView({
   competitorContext,
   onProjectChange,
   onOpenCompetitorTool,
+  onSendToComparison,
 }: {
   userId: string;
   project: ResearchProject;
   competitorContext: CompetitorContext;
   onProjectChange: (updated: ResearchProject) => void;
   onOpenCompetitorTool?: () => void;
+  /** M3⑥ 断链 #4：把竞对 ASIN 送入「竞品明细」对比池 */
+  onSendToComparison?: (asins: string[]) => void;
 }) {
   const [data, setData] = useState<CompetitorLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -212,6 +215,7 @@ export function CompetitorLookView({
         userId={userId}
         projectId={project.id}
         onOpenCompetitorTool={onOpenCompetitorTool ?? (() => {})}
+        onSendToComparison={onSendToComparison}
         onPicked={(asins, seg) => {
           // 填充竞品样本池（带角色标注）与标杆 ASIN
           const pool = data.samplePool.slice();
@@ -231,6 +235,7 @@ export function CompetitorLookView({
         userId={userId}
         project={project}
         onOpenCompetitorTool={onOpenCompetitorTool}
+        onSendToComparison={onSendToComparison}
       />
 
       {/* 竞品样本池 / 标杆 ASIN */}

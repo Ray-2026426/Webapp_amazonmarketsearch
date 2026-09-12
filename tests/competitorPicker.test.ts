@@ -6,6 +6,8 @@ import {
   pickCompetitorsDetailed,
   newcomerPerformanceScore,
   listReplacementCandidates,
+  normalizeComparisonAsins,
+  MAX_COMPARISON_ASINS,
   NEWCOMER_MAX_DAYS,
   NEWCOMER_FALLBACK_DAYS,
 } from '../src/utils/competitorPicker';
@@ -164,6 +166,18 @@ test('空输入不抛错', () => {
   const r = pickCompetitorsDetailed([]);
   assert.deepEqual(r.picked, []);
   assert.deepEqual(listReplacementCandidates([], 'newcomer', []), []);
+});
+
+test('断链 #4：入对比池的 ASIN 归一化（去空/大写/去重保序/截断 ≤5）', () => {
+  assert.deepEqual(normalizeComparisonAsins(['b0aaa', ' B0BBB ', '', 'b0aaa']), ['B0AAA', 'B0BBB']);
+  assert.deepEqual(
+    normalizeComparisonAsins(['a1', 'a2', 'a3', 'a4', 'a5', 'a6']),
+    ['A1', 'A2', 'A3', 'A4', 'A5'],
+    '工具对比池上限 5'
+  );
+  assert.equal(normalizeComparisonAsins([]).length, 0);
+  assert.equal(normalizeComparisonAsins(['', '   ']).length, 0, '没有合法 ASIN 时返回空，不猜');
+  assert.equal(MAX_COMPARISON_ASINS, 5);
 });
 
 console.log(`\nresult: ${passed} passed, ${failed} failed`);

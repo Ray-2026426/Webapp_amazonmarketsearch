@@ -27,12 +27,15 @@ export function CompetitorPickerPanel({
   onPicked,
   userId,
   projectId,
+  onSendToComparison,
 }: {
   onOpenCompetitorTool: () => void;
   onPicked: (asins: string[], segment: string) => void;
   /** M2④：项目作用域，用于读取看市场的目标细分与项目快照 */
   userId?: string;
   projectId?: string;
+  /** M3⑥ 断链 #4：把挑出的竞对直接送进「竞品明细」对比池（深度三列/主图/A+/流量） */
+  onSendToComparison?: (asins: string[]) => void;
 }) {
   const [state, setState] = useState<'loading' | 'nopick' | 'ready'>('loading');
   const [picked, setPicked] = useState<PickedCompetitor[]>([]);
@@ -216,16 +219,32 @@ export function CompetitorPickerPanel({
                 );
               })}
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                onPicked(picked.map((p) => p.asin), segment);
-                setApplied(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]"
-            >
-              <Crosshair className="w-3.5 h-3.5" /> 填充到竞品样本池
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onPicked(picked.map((p) => p.asin), segment);
+                  setApplied(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]"
+              >
+                <Crosshair className="w-3.5 h-3.5" /> 填充到竞品样本池
+              </button>
+              {onSendToComparison && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    // 断链 #4：挑完就进对比池，不要再让用户自己去工具里重选一遍
+                    onPicked(picked.map((p) => p.asin), segment);
+                    setApplied(true);
+                    onSendToComparison(picked.map((p) => p.asin));
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-indigo-200 bg-white text-xs font-semibold text-indigo-700 hover:border-indigo-400 transition-all active:scale-[0.98]"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" /> 送进竞品明细做深度对比
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

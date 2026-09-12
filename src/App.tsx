@@ -21,6 +21,7 @@ import { MarketAnalysisReport } from './components/MarketAnalysisReport';
 import { MarketHistoryModal } from './components/MarketHistoryModal';
 import { saveMarketSnapshot, suggestMarketSnapshotTitle, type MarketHistorySnapshot } from './utils/marketHistory';
 import type { CompetitorWorkspaceState } from './utils/competitorHistory';
+import { normalizeComparisonAsins } from './utils/competitorPicker';
 import {
   normalizeUserInsightsWorkspace,
   type UserInsightsWorkspaceState,
@@ -354,6 +355,23 @@ export default function App() {
       archiveProjectReport('competitor', state.selected.join(','), '看竞对报告', competitorReportToMarkdown(state.aiReportHtml, '看竞对报告'), `comp:${state.selected.length}`);
     }
   }, [archiveProjectReport]);
+
+  /**
+   * M3⑥ 断链 #4：把看竞对里挑出的竞对 ASIN **自动送进竞品明细的对比池**并切到该工具。
+   * 走的是大盘选品表同一条通路（selectedCompareAsins → CompetitorHub 的 preselectedAsins），
+   * 并记住来源项目与看，保证返回按钮回到「看竞对」而不是丢失上下文。
+   */
+  const sendAsinsToComparison = useCallback((asins: string[]) => {
+    const clean = normalizeComparisonAsins(asins);
+    if (clean.length === 0) {
+      toast.error('还没有可带入的竞对 ASIN');
+      return;
+    }
+    setSelectedCompareAsins(clean);
+    setActiveView('competitors');
+    if (activeProject) setToolReturn({ projectId: activeProject.id, look: 'competitor' });
+    toast.success(`已把 ${clean.length} 个竞对 ASIN 带入竞品明细对比池`);
+  }, [activeProject]);
 
   const isRegisteredUser = Boolean(currentUser && currentUser.id !== 'guest');
 
@@ -1647,6 +1665,7 @@ export default function App() {
               focusNonce={focusLook?.nonce ?? 0}
               onLoadDemo={() => applyDemoWorkspace({ toastMsg: true })}
               onOpenSettings={() => setIsAvatarSettingsOpen(true)}
+              onSendToComparison={sendAsinsToComparison}
               onProjectChange={(updated) => setActiveProject(updated)}
             />
           ) : (
