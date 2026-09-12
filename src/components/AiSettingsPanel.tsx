@@ -39,9 +39,11 @@ import { testMcpProvider } from '../utils/sellerspriteApi';
 import { toast } from 'sonner';
 import { AiPromptManager } from './AiPromptManager';
 import { SystemDiagnosticsPanel } from './SystemDiagnosticsPanel';
+import { AdminConsolePanel } from './AdminConsolePanel';
+import { isAdminSession } from '../utils/auth';
 import { Select } from './ui/Select';
 
-type SettingsTab = 'api' | 'profile' | 'mcp' | 'features' | 'prompts' | 'diagnostics';
+type SettingsTab = 'api' | 'profile' | 'mcp' | 'features' | 'prompts' | 'diagnostics' | 'admin';
 
 interface AiSettingsPanelProps {
   settings: AiSettings | null;
@@ -270,6 +272,8 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     { id: 'features', label: '功能开关', icon: <ToggleLeft className="w-4 h-4" /> },
     { id: 'prompts', label: 'Prompt', icon: <FileText className="w-4 h-4" /> },
     { id: 'diagnostics', label: '诊断', icon: <ShieldCheck className="w-4 h-4" /> },
+    // M5：管理员后台（仅管理员显示；非管理员即使手动切到该 tab 也只会看到一句说明）
+    ...(isAdminSession(undefined) ? [{ id: 'admin' as SettingsTab, label: '管理员后台', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
   ];
 
   return (
@@ -785,6 +789,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
 
           {tab === 'prompts' && <AiPromptManager embedded />}
           {tab === 'diagnostics' && <SystemDiagnosticsPanel />}
+          {tab === 'admin' && <AdminConsolePanel />}
         </div>
 
         <div className="p-5 sm:p-6 border-t border-black/5 flex justify-end gap-3 shrink-0 bg-white relative z-10">

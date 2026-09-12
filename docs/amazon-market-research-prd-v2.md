@@ -946,6 +946,10 @@ Evidence {
 > ⑤ Go/No-Go 汇总 + HTML 审核报告 ✅、⑥ 零机会两结论 ✅、⑦ 决策看板 UI ✅、
 > ⑧ phase-0 六个能力文件合并（决策 A）✅ —— 全部落地，详见 §15.10。
 | **M5 数据池+管理员后台+加固+内测** | 第 17-20 周 | 平台统一数据池（网关/缓存/配额/记账）；**管理员后台（§11.4：用户/用量/配置/审计/环境自检）**；安全加固（密钥不出服务端）；性能（项目中心 ≤2s）；**用户逐轮自测** + 内部试用 | 数据池月度成本可度量；管理员可看到每个用户的用量与状态；完成 ≥30 个项目回放；NPS/完成率基线 |
+
+> M5 进度（详见 §15.11）：① 数据池网关 ✅、② 用量记账表 + 记账/配额/成本 ✅、③ 管理员后台接口 ✅、
+> ④ 管理员后台面板 ✅、⑤ 安全加固（密钥不再离开服务端 + 源码级守卫）✅、⑥ 导出补 MD ✅；
+> ⑦ 性能（项目中心 ≤2s）与 ≥30 项目回放 / NPS 基线属用户侧实测，待用户执行。
 | **M6 商用收口** | 第 21-24 周 | 团队空间与权限收口；定价/订阅实验设计（Phase B 蓝本）；上线检查清单；操作手册 | 交付 3 份真实品类决策包（HTML/MD）给管理层评审；10 分钟计时可用性测试达标 |
 
 每里程碑均有：功能验收 + 确定性测试 + 4 视口 UI 回归 + 真实品类回放（M2 起每阶段 ≥3 例）+ **用户本人实测通过后才进入下一里程碑**。
@@ -1198,6 +1202,37 @@ Evidence {
 **环境事实（写下来避免下次踩）**：本机没有 `npm`（只有 harness 自带的 `node`），所以 `npm test` / `npm run build` 无法直接执行；所有验证都用等价命令：`node node_modules/typescript/bin/tsc --noEmit`、`node node_modules/tsx/dist/cli.mjs tests/<f>.test.ts`、`node node_modules/vite/bin/vite.js build`。
 
 **批量改中文的教训（M3 事故的延伸）**：合并 phase-0 文件时必须用 Node 显式 UTF-8 读写（`fs.readFileSync(p,'utf8')` / `writeFileSync(p, text, 'utf8')`），禁止 PowerShell `Get-Content`/`Set-Content`——中文环境下会按 GBK 误读并写坏文件。`tests/terminology.test.ts` 里的"新引入 BOM / 替换字符"守卫就是为这件事加的。
+
+---
+
+### 15.11 M5 数据池与管理员后台 —— 进度记录（2026-09，进行中）
+
+推送区间：`phase-0` 分支 `13f7e96 →`（**main 保持 `63abd4c` 未动**）。每步通过 `tsc --noEmit` + 全部 28 个测试套件（265 条断言）+ `vite build`。
+
+| M5 目标项 | 状态 | 落点 |
+| --- | --- | --- |
+| ① 数据池网关 | ✅ | `api/data/[action].ts`：一次调用固定四步（服务端解析密钥 → 查缓存 → 校验配额 → 调 MCP + 写缓存 + 记用量）；action = mcp / status / usage |
+| ② 缓存与配额 | ✅ | `src/utils/poolCache.ts`（键归一化、TTL 分档、命中决策、淘汰、命中率）+ `usageAccounting.checkQuota`（只计实际计费事件，缓存命中不占额度） |
+| ③ 用量记账 | ✅ | `src/utils/usageAccounting.ts`（成本表、按工具/用户/项目/供应商汇总、按天趋势、失败率、缓存省下的钱）+ 迁移 `008_usage_events.sql`（含 `audit_events`，RLS 全拒、只允许 service_role） |
+| ④ 管理员后台接口 | ✅ | `api/admin/[action].ts`：health / config / usage / users / audit / projects；管理员校验 + 全部写操作落审计；无 service_role 时优雅降级 |
+| ⑤ 管理员后台面板 | ✅ | `src/components/AdminConsolePanel.tsx`（挂在「设置 → 管理员后台」，仅管理员可见）：环境自检、用量统计、用户管理、配置中心、审计日志、项目与报告 |
+| ⑥ 安全加固 | ✅ | 见下方"发现并修掉的安全缺陷"；另加 `tests/securityKeys.test.ts` 把口径变成会失败的测试 |
+| ⑦ 导出补 MD | ✅ | `buildOpportunityMarkdownReport` + 决策看板「导出 MD」按钮（HTML 已有；**不做 PPT**，用户已确认） |
+| ⑧ 性能（项目中心 ≤2s） | ⏳ 待实测 | 需要用户在有真实项目数据的环境里量；我这边无浏览器无法度量 |
+| ⑨ ≥30 项目回放 / NPS 基线 | ⏳ 用户侧 | 属"用户逐轮自测 + 内部试用"阶段 |
+
+**发现并修掉一个真实安全缺陷（这正是 §11.2 要根治的事）**：旧 `/api/settings?action=get` 把 deepseek/sellersprite 等密钥**明文返回给浏览器**，前端 `serverKeys.ts` 还写进 localStorage，MCP 直接在浏览器里带密钥调用——任何能打开浏览器的人都能取走密钥，一次 XSS 即全量泄露。改造：
+1. `api/settings` 只回「是否已配置 + 指纹」（`describeKeys`）；源码级守卫禁止 `keys: { …: env(...) }` 这类回显；
+2. 新增 `src/utils/keyMasking.ts` 作为**唯一**掩码实现（api 层禁止自己再写一份），并附 `redactSecrets` 供日志兜底；
+3. `serverKeys.ts` 重写：不再保存明文，只缓存状态；`getDefaultServerKey()` 恒返回空串；新增 `migrateLegacyKeys()` 把浏览器里残留的明文一次性推到服务端并**删除本地副本**（推送失败则保留并如实告知，不悄悄丢密钥）；
+4. App 登录后流程改为"先迁移旧明文 → 再读服务端状态"。
+
+**环境事实（本地实测要点）**：`server/devApiPlugin.ts` 会把 `api/**`（含 `[action].ts`）映射成本地中间件，并把 `.env.local` 里的变量**只注入 dev server 进程**（不暴露给浏览器）——所以 `/api/data/status`、`/api/admin/health` 在 `npm run dev` 下可直接访问与实测。本机没有 `npm`（只有 harness 自带 node），验证统一用等价命令。
+
+**尚未做（诚实列出）**：
+- 持久化缓存（Supabase 表）：目前是进程内缓存（serverless 实例回收会丢），接口不变，后续替换实现即可；
+- 客户端 MCP 调用路径尚未全部切到 `/api/data/*`：本轮先把"密钥不再下发"做死，浏览器侧仍有走 `/api-proxy/*` 的旧路径，下一轮统一走网关；
+- 性能基线与 30 次回放属用户侧实测。
 
 ---
 

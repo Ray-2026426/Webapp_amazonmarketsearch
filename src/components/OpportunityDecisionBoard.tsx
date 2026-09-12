@@ -22,7 +22,7 @@ import {
   createOpportunityFromUnmetNeed,
 } from '../utils/opportunityStore';
 import { generateOpportunityCandidates, reviewOpportunityCard, mergeGeneratedCards } from '../utils/opportunityAi';
-import { buildOpportunityHtmlReport, downloadHtmlReport } from '../utils/opportunityHtmlReport';
+import { buildOpportunityHtmlReport, buildOpportunityMarkdownReportForProject, downloadHtmlReport, downloadMarkdownReport } from '../utils/opportunityHtmlReport';
 import { loadProjectDecisionSummary, PROJECT_DECISION_LABELS, type ProjectDecisionSummary } from '../utils/projectDecision';
 import { rankOpportunities } from '../utils/opportunityPlan';
 import { loadEvidence, describeEvidence } from '../utils/evidence';
@@ -247,6 +247,17 @@ export function OpportunityDecisionBoard({
     }
   };
 
+  /** M5：Markdown 审核件（与 HTML 同源同口径；不做 PPT） */
+  const onExportMd = async () => {
+    try {
+      const md = await buildOpportunityMarkdownReportForProject(userId, project);
+      downloadMarkdownReport(md, `${project.name}-选品决策审核报告`);
+      toast.success('Markdown 审核报告已导出');
+    } catch (e) {
+      toast.error(`导出失败：${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   const ranked = rankOpportunities(
     cards.map((c) => ({
       id: c.id,
@@ -305,6 +316,13 @@ export function OpportunityDecisionBoard({
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-black/10 bg-white text-xs font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700"
               >
                 <Download className="w-3.5 h-3.5" /> 导出 HTML 审核报告
+              </button>
+              <button
+                type="button"
+                onClick={() => void onExportMd()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-black/10 bg-white text-xs font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700"
+              >
+                <Download className="w-3.5 h-3.5" /> 导出 MD
               </button>
             </div>
           </div>

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 
 import { summarizeProjectDecision, PROJECT_DECISION_LABELS } from '../src/utils/projectDecision';
-import { buildOpportunityReportHtml, escapeHtml } from '../src/utils/opportunityHtmlReport';
+import { buildOpportunityReportHtml, buildOpportunityMarkdownReport, escapeHtml } from '../src/utils/opportunityHtmlReport';
 import { mergeGeneratedCards } from '../src/utils/opportunityAi';
 import type { OpportunityCard, ResearchProject } from '../src/types/researchProject';
 import type { OpportunityConclusion } from '../src/types/opportunity';
@@ -249,6 +249,48 @@ test('合并：已确认/已决策的卡一张都不动；同需求重复卡只�
   assert.equal(kept.title, '人工确认过的卡', '人工确认的卡不被 AI 覆盖');
   const soft = r.next.find((c) => c.id === 'soft')!;
   assert.equal(soft.evidenceRefs?.length, 2, '未确认的重复卡补齐证据引用');
+});
+
+test('Markdown 报告：与 HTML 同源同口径（决策包/控制点/评分拆解/证据都在；不做 PPT）', () => {
+  const md = buildOpportunityMarkdownReport({
+    project,
+    cards: [
+      card({
+        title: '侧睡颈椎支撑枕',
+        enterMode: 'validate_first',
+        confidence: 'medium',
+        evidenceRefs: [{ evidenceId: 'e1', look: 'user', sourceRef: 'review:B0ABC #12', summary: '买家抱怨高度不可调' }],
+        scoreBreakdown: {
+          demandStrength: 85,
+          marketOpportunity: 80,
+          competitorGap: 70,
+          selfFit: 60,
+          evidenceConfidence: 50,
+          weights: { demandStrength: 25, marketOpportunity: 25, competitorGap: 25, selfFit: 15, evidenceConfidence: 10 },
+          total: 72,
+        },
+        counterEvidence: ['侧睡人群占比可能被高估'],
+        decisionPackage: {
+          roadmap: [{ id: 'r1', phase: 'now', action: '送检 3 家工厂打样', cost: 1500 }],
+          resources: [{ id: 'rs1', label: '首批备货资金', category: 'funding', knownGap: true }],
+          controlPoints: [{ id: 'c1', kind: 'stop', label: '止损：ACOS', metric: 'ACOS', threshold: '>35%', confirmed: false }],
+        },
+      }),
+    ],
+    conclusion: null,
+    decision: summarizeProjectDecision({ cards: [card({ decision: 'validate_first' })] }),
+    fourLook: { user: '3 条未满足需求', market: '82 分细分', competitor: '3 个竞对', self: '适配度 60', hardConstraint: '未触发' },
+  });
+  assert.ok(md.startsWith('# '), '必须是 Markdown 标题开头');
+  assert.ok(md.includes('## Go / No-Go 汇总'));
+  assert.ok(md.includes('## 四看摘要') && md.includes('| 看用户 |'));
+  assert.ok(md.includes('**评分拆解（确定性公式，AI 不参与）**') && md.includes('| **综合分** |'), 'MD 必须与 HTML 同口径呈现评分拆解');
+  assert.ok(md.includes('review:B0ABC #12'));
+  assert.ok(md.includes('**执行路线图**') && md.includes('送检 3 家工厂打样'));
+  assert.ok(md.includes('**[缺口]**'));
+  assert.ok(md.includes('[ ] 止损：ACOS'), '未确认的控制点用未勾选方框');
+  assert.ok(md.includes('硬约束未通过'));
+  assert.ok(!md.includes('<!DOCTYPE'), 'Markdown 版不应含 HTML 外壳');
 });
 
 console.log(`\nresult: ${passed} passed, ${failed} failed`);

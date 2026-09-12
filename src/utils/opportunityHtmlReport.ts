@@ -317,16 +317,190 @@ export async function buildOpportunityHtmlReport(userId: string, project: Resear
   return buildOpportunityReportHtml({ project, cards, conclusion, decision, fourLook });
 }
 
+/** IO 版：读数据 → 生成 Markdown（与 HTML 同源同口径） */
+export async function buildOpportunityMarkdownReportForProject(userId: string, project: ResearchProject): Promise<string> {
+  const [cards, conclusion, decision, fourLook] = await Promise.all([
+    loadOpportunities(userId, project.id),
+    loadOpportunityConclusion(userId, project.id),
+    loadProjectDecisionSummary(userId, project),
+    buildFourLookSummary(userId, project),
+  ]);
+  return buildOpportunityMarkdownReport({ project, cards, conclusion, decision, fourLook });
+}
+
 /** 触发浏览器下载（HTML 审核件） */
 export function downloadHtmlReport(html: string, fileName: string): void {
+  downloadTextFile(html, fileName, 'text/html;charset=utf-8', '.html');
+}
+
+/**
+ * M5 · Markdown 审核件（PRD §11.2：导出补 MD；**不做 PPT**）。
+ * 与 HTML 版同源同口径：评分拆解、证据、决策包、控制点、Go/No-Go 一个都不少。
+ */
+export function buildOpportunityMarkdownReport(input: OpportunityReportInput): string {
+  const { project, cards, conclusion, decision, fourLook } = input;
+  const lines: string[] = [];
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+  lines.push(`# ${project.name} · 选品决策审核报告`);
+  lines.push('');
+  lines.push(`> 站点 ${project.marketplace} ｜ 生成时间 ${now} ｜ 机会卡 ${cards.length} 张 ｜ 已拍板 ${decision.decidedCount} 张`);
+  lines.push('>');
+  lines.push('> 评分、控制点阈值、资源缺口均由确定性公式与可追溯证据生成，AI 不改写；缺数据的字段一律写"未提供"。');
+  lines.push('');
+
+  lines.push('## Go / No-Go 汇总');
+  lines.push('');
+  lines.push(`**${decision.headline}**（${PROJECT_DECISION_LABELS[decision.status]}）`);
+  lines.push('');
+  for (const r of decision.reasons) lines.push(`- ${r}`);
+  if (decision.nextAction) {
+    lines.push('');
+    lines.push(`**下一步：**${decision.nextAction}`);
+  }
+  if (conclusion) {
+    lines.push('');
+    lines.push(
+      `**零机会结论：**${NO_OPPORTUNITY_LABELS[conclusion.kind]} — ${conclusion.reason}（${conclusion.confirmed ? '已人工确认' : '待人工确认'}）`
+    );
+    for (const m of conclusion.missingData ?? []) lines.push(`- 缺：${m}`);
+  }
+  lines.push('');
+
+  lines.push('## 四看摘要');
+  lines.push('');
+  lines.push('| 看 | 摘要 |');
+  lines.push('| --- | --- |');
+  lines.push(`| 看用户 | ${fourLook.user || '未提供'} |`);
+  lines.push(`| 看市场 | ${fourLook.market || '未提供'} |`);
+  lines.push(`| 看竞对 | ${fourLook.competitor || '未提供'} |`);
+  lines.push(`| 看自己 | ${fourLook.self || '未提供'} |`);
+  lines.push(`| 硬约束 | ${fourLook.hardConstraint || '未触发'} |`);
+  lines.push('');
+
+  lines.push('## 机会卡（含决策包）');
+  lines.push('');
+  if (cards.length === 0) lines.push('_没有机会卡（零机会结论见上方 Go / No-Go 汇总）_');
+  cards.forEach((card, index) => {
+    lines.push(`### #O${index + 1} ${card.title}`);
+    lines.push('');
+    lines.push(
+      `- 类型：${OPPORTUNITY_KIND_LABELS[card.kind ?? 'new_product']}｜可信度：${CONFIDENCE_LABELS[card.confidence ?? 'low']}｜状态：${
+        card.status === 'confirmed' ? '已确认' : 'AI 候选（待确认）'
+      }｜决策：${card.decision === 'undecided' ? '未拍板' : card.decision}`
+    );
+    if (card.enterMode === 'validate_first') {
+      lines.push('- ⚠ **硬约束未通过**：最高只能"验证后进入"，不得推荐"直接进入"');
+    }
+    lines.push(`- 需求：${card.needStatement || '未提供'}`);
+    lines.push(`- 目标人群：${card.targetUser || '未提供'}｜场景：${card.scenario || '未提供'}`);
+    lines.push(`- JTBD：${card.jobToBeDone || '未提供'}`);
+    lines.push(`- 产品假设：${card.solutionHypothesis || '未提供'}`);
+    lines.push(
+      `- 利润假设：${
+        card.profitAssumption
+          ? `售价 $${card.profitAssumption.price} / 采购 $${card.profitAssumption.cost} / CPC $${card.profitAssumption.cpc}`
+          : '未提供（建议用侧栏利润计算器精算）'
+      }`
+    );
+    lines.push('');
+    lines.push('**评分拆解（确定性公式，AI 不参与）**');
+    lines.push('');
+    if (card.scoreBreakdown) {
+      lines.push('| 维度 | 权重 | 得分 |');
+      lines.push('| --- | --- | --- |');
+      (Object.keys(SCORE_WEIGHTS) as ScoreDimension[]).forEach((d) => {
+        lines.push(`| ${SCORE_DIMENSION_LABELS[d]} | ${SCORE_WEIGHTS[d]} | ${card.scoreBreakdown![d]} |`);
+      });
+      lines.push(`| **综合分** | 100 | **${card.scoreBreakdown.total}** |`);
+      lines.push('');
+      lines.push(`数据覆盖度：${(card.coverage * 100).toFixed(0)}%（独立展示，不进 100 分）`);
+    } else {
+      lines.push(`未提供评分拆解（综合分 ${card.score}／覆盖度 ${(card.coverage * 100).toFixed(0)}%）`);
+    }
+    lines.push('');
+
+    if ((card.evidenceRefs ?? []).length > 0) {
+      lines.push('**证据（可追溯）**');
+      lines.push('');
+      for (const e of card.evidenceRefs ?? []) lines.push(`- \`${e.sourceRef || e.evidenceId}\` — ${e.summary}`);
+      lines.push('');
+    }
+    if ((card.reasoningSteps ?? []).length > 0) {
+      lines.push('**推理**');
+      lines.push('');
+      (card.reasoningSteps ?? []).forEach((s, i) => lines.push(`${i + 1}. **${s.step}**：${s.detail}`));
+      lines.push('');
+    }
+    if ((card.counterEvidence ?? []).length > 0) {
+      lines.push('**反证（可能推翻本机会）**');
+      lines.push('');
+      for (const c of card.counterEvidence ?? []) lines.push(`- ${c}`);
+      lines.push('');
+    }
+    if ((card.missingEvidence ?? []).length > 0) {
+      lines.push('**还缺的证据**');
+      lines.push('');
+      for (const c of card.missingEvidence ?? []) lines.push(`- ${c}`);
+      lines.push('');
+    }
+
+    const pkg = card.decisionPackage;
+    if (pkg) {
+      lines.push('**执行路线图**');
+      lines.push('');
+      for (const phase of ['now', 'next'] as const) {
+        const items = pkg.roadmap.filter((a) => a.phase === phase);
+        if (items.length === 0) continue;
+        lines.push(`_${ROADMAP_PHASE_LABELS[phase]}_`);
+        lines.push('');
+        for (const a of items) {
+          lines.push(`- ${a.action}${typeof a.cost === 'number' ? `（成本约 $${a.cost.toLocaleString()}）` : ''}`);
+        }
+        lines.push('');
+      }
+      lines.push('**前置资源**');
+      lines.push('');
+      for (const r of pkg.resources) {
+        lines.push(`- ${r.knownGap ? '**[缺口]** ' : ''}${RESOURCE_CATEGORY_LABELS[r.category]}｜${r.label}${r.note ? ` — ${r.note}` : ''}`);
+      }
+      lines.push('');
+      lines.push('**控制点**');
+      lines.push('');
+      for (const kind of ['entry', 'process', 'stop'] as const) {
+        const items = pkg.controlPoints.filter((c) => c.kind === kind);
+        if (items.length === 0) continue;
+        lines.push(`_${CONTROL_POINT_LABELS[kind]}_`);
+        lines.push('');
+        for (const c of items) {
+          lines.push(`- ${c.confirmed ? '[x]' : '[ ]'} ${c.label}：${c.metric} ${c.threshold}${c.confirmed ? '' : '（待确认）'}`);
+        }
+        lines.push('');
+      }
+    }
+    lines.push('---');
+    lines.push('');
+  });
+
+  lines.push('_Kairo · 亚马逊市场调研与选品决策 · 口径见 PRD §6.5 / §8.1_');
+  return lines.join('\n');
+}
+
+/** 触发浏览器下载（通用文本文件） */
+export function downloadTextFile(text: string, fileName: string, mime: string, ext: string): void {
   const safe = fileName.replace(/[\\/:*?"<>|]/g, '_').slice(0, 120) || 'report';
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = safe.endsWith('.html') ? safe : `${safe}.html`;
+  a.download = safe.endsWith(ext) ? safe : `${safe}${ext}`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** 触发浏览器下载（MD 审核件） */
+export function downloadMarkdownReport(markdown: string, fileName: string): void {
+  downloadTextFile(markdown, fileName, 'text/markdown;charset=utf-8', '.md');
 }
