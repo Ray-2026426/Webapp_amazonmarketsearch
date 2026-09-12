@@ -60,6 +60,13 @@ export function UserLookView({
   const [saveState, setSaveState] = useState<SaveState>('idle');
   /** M2⑤：看市场提出的待验证问题（断链 #7 的下游消费者） */
   const [marketQuestions, setMarketQuestions] = useState<string[]>([]);
+  /**
+   * 线框图 Screen 3 ④：细分标准的展开态。
+   * **必须放在这里**：本组件在 `if (!data) return <加载中>` 之前才有 hook 区，
+   * 放到那之后会让"加载中 → 已加载"两次渲染的 hook 数量不同，直接触发 React #310
+   * （2026-09 线上预览就是这样崩的）。
+   */
+  const [standardOpen, setStandardOpen] = useState(false);
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -127,7 +134,6 @@ export function UserLookView({
 
   /** 线框图 Screen 3 ④：细分标准（勾选的需求域，第一个为主标准） */
   const standard: SegmentStandard = data.segmentStandard ?? { categories: [] };
-  const [standardOpen, setStandardOpen] = useState(false);
   const categoryOptions = (() => {
     const map = new Map<string, { name: string; needs: number; evidence: number }>();
     for (const c of data.unmetNeedCandidates) {
