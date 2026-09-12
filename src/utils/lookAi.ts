@@ -6,11 +6,17 @@ import { get } from 'idb-keyval';
 import { generateText, loadAiSettings, type AiSettings } from './aiConfig';
 import { loadUserBackground, buildUserBackgroundSystemPrompt } from './userBackground';
 import { loadSnapshot, describeSnapshot, hasSnapshotContent, type ProjectSnapshot } from './projectSnapshot';
+import { type LookAiFailKind } from './lookAiFailure';
 import type { Product, Review, Keyword } from './parser';
 
 export interface LookAiResult {
   ok: boolean;
   error?: string;
+  /**
+   * 失败原因分类（见 `lookAiFailure.ts`）：用户看到的"四步都被跳过"必须能分清是
+   * **没配模型 Key** 还是**没数据**——两者的下一步动作完全不同。
+   */
+  reason?: LookAiFailKind;
   /** 各看回填的结论（结构由各看约定） */
   data?: Record<string, unknown>;
   /** 本次分析用的是「项目快照」还是「全局工作区回退」（PRD §7.2 跨项目污染修复） */
@@ -287,7 +293,7 @@ export async function runLookAnalysis(
 ): Promise<LookAiResult> {
   const settings = loadAiSettings();
   if (!settings.apiKey) {
-    return { ok: false, error: '尚未配置 AI 模型 Key，请先到「设置 → API 与模型」填写。' };
+    return { ok: false, reason: 'no-key', error: '尚未配置 AI 模型 Key，请先到「设置 → API 与模型」填写。' };
   }
 
   const scoped = await resolveScopedData(extra);
@@ -298,7 +304,7 @@ export async function runLookAnalysis(
   let system: string = buildSystemPromptFor(look);
 
   if (look === 'market') {
-    if (!data.loaded) return { ok: false, error: '尚未加载任何市场数据，请先到「市场大盘」上传 Excel 或加载示例数据。' };
+    if (!data.loaded) return { ok: false, reason: 'no-data', error: '尚未加载任何市场数据，请先到「市场大盘」上传 Excel 或加载示例数据。' };
     prompt = `请基于以下市场数据，完成「看市场」分析，输出 JSON：
 {
   "attractiveness": "市场吸引力综合判断（规模/趋势/竞争结构/价格带/进入窗口，200字内）",
@@ -310,7 +316,7 @@ export async function runLookAnalysis(
 ${summary}`;
   } else if (look === 'user') {
     if (data.reviews.length === 0 && data.keywords.length === 0) {
-      return { ok: false, error: '尚未加载评论或关键词数据，请先到「关键词分析」或「评论/VOC」加载。' };
+      return { ok: false, reason: 'no-data', error: '尚未加载评论或关键词数据，请先到「关键词分析」或「评论/VOC」加载。' };
     }
     prompt = `请基于以下关键词、评论，以及「市场细分」的已有人群/场景/需求描述，完成「看用户」分析（关键词 + VOC 合并，并吸收市场细分的用户洞察），输出 JSON：
 {
@@ -319,7 +325,21 @@ ${summary}`;
   "jobToBeDone": "用户要完成的 JTBD（任务）",
   "satisfiedNeeds": ["已满足的需求（2-4条）"],
   "unmetNeedCandidates": [
-    {"targetUser":"","scenario":"","jobToBeDone":"","needStatement":"未满足需求（含证据）","currentAlternative":"用户目前替代方案及代价","evidenceStrength":"high|medium|low"}
+    {
+      "category": "需求域（优先从：功能需求/体感需求/维护需求/价格需求/场景需求/信任需求 中选）",
+      "subCategory": "子需求（可空，用于更细的切分）",
+      "targetUser": "",
+      "scenario": "",
+      "jobToBeDone": "",
+      "needStatement": "未满足需求",
+      "currentAlternative": "用户目前替代方案及代价",
+      "evidenceStrength": "high|medium|low（主观档位；系统会另按确定性规则算证据分）",
+      "evidence": {
+        "keywords": [{"word": "词表里真实存在的词", "volume": 900}],
+        "reviewQuotes": [{"quote": "评论原文片段（必须逐字来自提供的评论）", "asin": "B0XXXXXXX"}],
+        "asins": ["这条需求被哪些 ASIN 的评论/标题覆盖"]
+      }
+    }
   ],
   "searchPath": {
     "summary": "用户是怎么一步步搜到这里的（一句话）",
@@ -341,13 +361,18 @@ ${summary}`;
 要点：
 1) 把「市场细分」里的人群(people)/场景(scenarios)/需求(needs) 与评论/关键词交叉，形成更具体的用户分类，并在输出中体现这些细分视角。
 2) 未满足需求候选 1-4 条，必须来自重复出现的问题/差评/关键词，并说明替代方案。
+   每条候选都要给出 category / subCategory 与 evidence：
+   - keywords 只能用词表里**真实存在**的词（可带 volume）；
+   - reviewQuotes 必须**逐字**取自提供的评论（禁止编造、禁止改写、禁止拼凑），并标注该评论所属 asin；
+   - asins 填这条需求覆盖到的 ASIN（来自标题/评论）。
+   证据不足时宁可少给候选，也不要编造证据。
 3) searchPath 必须严格按 awareness → consideration → decision → scenario 四层输出（每层都要有），每层 3-8 个词；有搜索量就给 volume，并给出该层内占比 share（同一层内合计约为 1）。**只使用数据中真实出现的词，不要编造词或搜索量**。
 4) searchPreference 必须基于词表的真实统计（占比、长尾结构、词性倾向），没有依据的字段就留空并在 note 里写"缺乏数据支撑"。
 数据：
 ${summary}`;
   } else if (look === 'competitor') {
     if (data.competitorAsins.length === 0) {
-      return { ok: false, error: '尚未选择竞品 ASIN，请先到「竞品对比」添加竞品。' };
+      return { ok: false, reason: 'no-data', error: '尚未选择竞品 ASIN，请先到「竞品对比」添加竞品。' };
     }
     prompt = `请基于以下竞品数据，完成「看竞品」分析（产品层 + 主体层），输出 JSON：
 {
@@ -368,7 +393,7 @@ ${summary}`;
       .map(([k, v]) => `- ${k}：${v}`)
       .join('\n');
     if (!answerLines.trim()) {
-      return { ok: false, error: '请先回答几个引导问题（目标/预算/供应链/毛利要求等），AI 才能判断自身适配度。' };
+      return { ok: false, reason: 'no-data', error: '请先回答几个引导问题（目标/预算/供应链/毛利要求等），AI 才能判断自身适配度。' };
     }
     prompt = `请结合以下「用户背景」与「团队简要回答」，完成「看自己」分析，判断团队解决某个未满足需求的适配度，输出 JSON：
 {
@@ -386,10 +411,10 @@ ${answerLines}`;
   try {
     const raw = await generateText(prompt, settings, { jsonMode: true, systemPrompt: system });
     const parsed = tryParseJson<Record<string, unknown>>(raw);
-    if (!parsed) return { ok: false, error: 'AI 返回格式无法解析，请重试。' };
+    if (!parsed) return { ok: false, reason: 'parse', error: 'AI 返回格式无法解析，请重试。' };
     return { ok: true, data: parsed, dataScope: scoped.dataScope, scopeNote: scoped.scopeNote };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'AI 分析失败' };
+    return { ok: false, reason: 'other', error: e instanceof Error ? e.message : 'AI 分析失败' };
   }
 }
 

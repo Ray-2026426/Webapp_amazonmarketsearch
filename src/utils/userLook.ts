@@ -25,14 +25,74 @@ export const EVIDENCE_STRENGTH_LABELS: Record<EvidenceStrength, string> = {
   low: '低',
 };
 
+/** 需求的结构化证据（M2）：关键词 + 评论原文 + 覆盖 ASIN */
+export interface NeedEvidence {
+  keywords?: { word: string; volume?: number }[];
+  /** 评论原文引用（必须来自真实评论样本，不允许 AI 编造） */
+  reviewQuotes?: { quote: string; asin?: string }[];
+  /** 该需求被多少 ASIN 的评论/标题覆盖 */
+  asins?: string[];
+}
+
 export interface UnmetNeedCandidate {
   id: string;
+  /** M2：需求域（用于市场细分：需求域 → 需求 → 子需求） */
+  category?: string;
+  /** M2：子需求（更细的切法，可空） */
+  subCategory?: string;
   targetUser: string;
   scenario: string;
   jobToBeDone: string;
   needStatement: string;
   currentAlternative: string;
   evidenceStrength: EvidenceStrength;
+  /** M2：结构化证据 */
+  evidence?: NeedEvidence;
+}
+
+/** 需求域的常用取值（AI 出题/分类时优先从中选择，避免同义词满天飞） */
+export const NEED_CATEGORY_SUGGESTIONS = [
+  '功能需求',
+  '体感需求',
+  '维护需求',
+  '价格需求',
+  '场景需求',
+  '信任需求',
+] as const;
+
+export interface NeedEvidenceScore {
+  /** 0-100，确定性折算（不由 AI 主观给分） */
+  score: number;
+  level: EvidenceStrength;
+  reasons: string[];
+}
+
+/**
+ * 确定性折算「证据强度」（M2 · PRD 原则 4：AI 只解释，不改分）。
+ * 规则：关键词证据 每条 +12（上限 36）；评论原文 每条 +18（上限 54）；覆盖 ASIN 每个 +5（上限 20）；
+ * 另加「跨来源一致性」奖励：同时有 关键词 + 评论 + ASIN 三类 → +10。
+ * 结果 >= 70 为高、>= 40 为中、其余为低。
+ */
+export function computeNeedEvidenceStrength(ev: NeedEvidence | undefined | null): NeedEvidenceScore {
+  const keywords = Array.isArray(ev?.keywords) ? ev!.keywords.filter((k) => k && String(k.word || '').trim()) : [];
+  const quotes = Array.isArray(ev?.reviewQuotes) ? ev!.reviewQuotes.filter((q) => q && String(q.quote || '').trim()) : [];
+  const asins = Array.isArray(ev?.asins) ? ev!.asins.map((a) => String(a || '').trim()).filter(Boolean) : [];
+
+  const kwScore = Math.min(36, keywords.length * 12);
+  const quoteScore = Math.min(54, quotes.length * 18);
+  const asinScore = Math.min(20, asins.length * 5);
+  const crossSource = keywords.length > 0 && quotes.length > 0 && asins.length > 0 ? 10 : 0;
+
+  const score = Math.min(100, kwScore + quoteScore + asinScore + crossSource);
+  const level: EvidenceStrength = score >= 70 ? 'high' : score >= 40 ? 'medium' : 'low';
+  const reasons: string[] = [
+    `关键词证据 ${keywords.length} 条（+${kwScore}）`,
+    `评论原文 ${quotes.length} 条（+${quoteScore}）`,
+    `覆盖 ASIN ${asins.length} 个（+${asinScore}）`,
+  ];
+  if (crossSource > 0) reasons.push(`跨来源一致（+${crossSource}）`);
+
+  return { score, level, reasons };
 }
 
 /** 搜索路径的四层（M2 · 看用户 V2）：认知 → 考虑 → 决策 → 场景 */

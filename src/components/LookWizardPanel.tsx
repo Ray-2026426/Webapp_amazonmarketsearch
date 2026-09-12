@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, CircleDashed, Loader2, Play, RefreshCw, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { runLookAnalysis } from '../utils/lookAi';
+import { classifyLookFailure, describeBlockReason, isSkipKind, type LookAiFailKind } from '../utils/lookAiFailure';
 import {
   mergeUserLookAi,
   mergeMarketLookAi,
@@ -76,6 +77,7 @@ export function LookWizardPanel({
   onProjectChange,
   onLoadDemo,
   onOpenTool,
+  onOpenSettings,
 }: {
   userId: string;
   project: ResearchProject;
@@ -84,6 +86,8 @@ export function LookWizardPanel({
   onLoadDemo?: () => void;
   /** 打开对应工具去补数据 */
   onOpenTool?: (view: 'market' | 'keywords' | 'insights' | 'competitors') => void;
+  /** 打开「设置 → API 与模型」补配置（缺 Key 时的下一步动作） */
+  onOpenSettings?: () => void;
 }) {
   const [steps, setSteps] = useState<WizardStep[]>(initialSteps);
   const [running, setRunning] = useState(false);
@@ -99,6 +103,8 @@ export function LookWizardPanel({
   const [snapBusy, setSnapBusy] = useState(false);
   const snapHasContent = snap ? hasSnapshotContent(snap.raw) : false;
   const [showDataHelp, setShowDataHelp] = useState(false);
+  /** 跑完后"为什么四步都没结果"的单一结论：缺配置 / 缺数据 / 无（跑通了） */
+  const [blockReason, setBlockReason] = useState<LookAiFailKind | null>(null);
 
   /** 决策草稿：只反映"当前证据状态"，不编造机会（机会结论由看机会负责） */
   const refreshDraft = useCallback(async () => {
@@ -238,6 +244,8 @@ export function LookWizardPanel({
     }
     let doneCount = 0;
     let failCount = 0;
+    let skippedCount = 0;
+    let keyCount = 0;
     for (const look of ORDER) {
       patchStep(look, { status: 'running', message: '' });
       try {
@@ -249,11 +257,18 @@ export function LookWizardPanel({
         const res = await runLookAnalysis(look, { ...(extra ?? {}), scope: { userId, projectId: project.id } });
         if (!res.ok || !res.data) {
           const msg = res.error || 'AI 分析失败';
-          // 数据缺失属于"跳过"而非"失败"，便于用户区分
-          const isSkipped = /尚未|请先/.test(msg);
-          patchStep(look, { status: isSkipped ? 'skipped' : 'failed', message: msg });
-          if (isSkipped) doneCount += 0;
+          // 三种原因必须分开：缺 Key 是"没配置"，缺数据是"没取数"，都不是"跳过"
+          // （旧逻辑用 /尚未|请先/ 正则一刀切，把"未配置模型 Key"也算成跳过，用户会以为流程正常）
+          const kind = classifyLookFailure(res);
+          const needsKey = kind === 'no-key';
+          const isSkipped = isSkipKind(kind);
+          if (needsKey) keyCount += 1;
+          else if (isSkipped) skippedCount += 1;
           else failCount += 1;
+          patchStep(look, {
+            status: isSkipped ? 'skipped' : 'failed',
+            message: needsKey ? `${msg}（这不是"跳过"，是没配置模型）` : msg,
+          });
           continue;
         }
         const summary = await applyLook(look, res.data);
@@ -267,13 +282,19 @@ export function LookWizardPanel({
     setRunning(false);
     await refreshDraft();
     await refreshSnapshot();
-    if (doneCount === 0) setShowDataHelp(true);
-    if (doneCount === 0 && failCount === 0) {
-      toast.info('四步都被跳过：请先到「市场大盘 / 关键词 / 评论 VOC / 竞品」加载数据后重试。');
+    const block: LookAiFailKind | null =
+      keyCount > 0 ? 'no-key' : doneCount === 0 && skippedCount > 0 ? 'no-data' : null;
+    setBlockReason(block);
+    if (doneCount === 0 && keyCount === 0) setShowDataHelp(true);
+    const blockMsg = describeBlockReason(block);
+    if (doneCount === 0 && blockMsg) {
+      if (block === 'no-key') toast.error(blockMsg);
+      else toast.info(blockMsg);
     } else if (failCount > 0) {
       toast.warning(`一键分析结束：成功 ${doneCount} 步，失败 ${failCount} 步，请查看每步原因。`);
     } else {
-      toast.success(`一键分析完成（${doneCount} 步），请逐个 Tab 核对结论。`);
+      const skipNote = skippedCount > 0 ? `，${skippedCount} 步因缺数据跳过` : '';
+      toast.success(`一键分析完成（${doneCount} 步${skipNote}），请逐个 Tab 核对结论。`);
     }
   };
 
@@ -334,7 +355,37 @@ export function LookWizardPanel({
           })}
         </div>
 
-        {(showDataHelp || !snapHasContent) && (
+        {blockReason === 'no-key' && (
+          <div className="px-5 py-4 bg-rose-50 border-t border-rose-100">
+            <p className="text-xs font-bold text-[#1d1d1f] mb-1">还差一步：没有配置 AI 模型 Key</p>
+            <p className="text-[11px] text-[#424245] leading-relaxed mb-2.5">
+              四步都不是「跳过」——它们根本没开始跑，因为系统里没有可用的模型 Key。
+              配好之后回到本页再点一次「开始分析」即可（数据已经准备好了）。
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-[11px] font-semibold hover:bg-indigo-700"
+                >
+                  去「设置 → API 与模型」填写 Key
+                </button>
+              )}
+              {onLoadDemo && (
+                <button
+                  type="button"
+                  onClick={onLoadDemo}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white text-[11px] font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700"
+                >
+                  先加载示例数据看看流程
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {blockReason !== 'no-key' && (showDataHelp || !snapHasContent) && (
           <div className="px-5 py-4 bg-amber-50 border-t border-amber-100">
             <p className="text-xs font-bold text-[#1d1d1f] mb-1">需要先准备数据（任选其一，30 秒可完成）</p>
             <p className="text-[11px] text-[#424245] leading-relaxed mb-2.5">

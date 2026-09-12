@@ -88,6 +88,7 @@ export function ProjectWorkspace({
   focusLook,
   focusNonce,
   onLoadDemo,
+  onOpenSettings,
 }: {
   userId: string;
   project: ResearchProject;
@@ -104,6 +105,8 @@ export function ProjectWorkspace({
   focusNonce?: number;
   /** 缺失数据时的一键兜底：加载示例数据 */
   onLoadDemo?: () => void;
+  /** 缺 AI Key 时的一键动作：打开设置面板 */
+  onOpenSettings?: () => void;
 }) {
   const [p, setP] = useState<ResearchProject>(project);
   const [tab, setTab] = useState<Tab>(project.activeLook);
@@ -275,6 +278,7 @@ export function ProjectWorkspace({
             onProjectChange={applyProjectUpdate}
             onLoadDemo={onLoadDemo}
             onOpenTool={(view) => onOpenTool(view, toolOriginLook)}
+            onOpenSettings={onOpenSettings}
           />
           <ProjectOverviewContent project={p} username={username} userId={userId} onNavigateLook={(look) => void switchToLook(look)} />
         </div>

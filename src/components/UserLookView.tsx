@@ -22,6 +22,7 @@ import {
   SEARCH_PATH_LAYER_LABELS,
   SEARCH_PATH_LAYER_HINTS,
   PRICE_SENSITIVITY_LABELS,
+  computeNeedEvidenceStrength,
   type UserContext,
   type UserEvidence,
   type UserLookData,
@@ -317,13 +318,40 @@ export function UserLookView({
             <p className="text-sm text-[#aeaeb2]">尚未添加未满足需求候选</p>
           </Card>
         ) : (
-          data.unmetNeedCandidates.map((c, i) => (
-            <UnmetNeedCard key={c.id} index={i} candidate={c} onChange={(patch) => updateCandidate(c.id, patch)} onRemove={() => removeCandidate(c.id)} />
+          groupCandidatesByCategory(data.unmetNeedCandidates).map(([cat, list]) => (
+            <div key={cat} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-[#1d1d1f]">{cat}</span>
+                <span className="text-[10px] text-[#86868b]">{list.length} 条需求</span>
+              </div>
+              {list.map((c) => {
+                const idx = data.unmetNeedCandidates.findIndex((x) => x.id === c.id);
+                return (
+                  <UnmetNeedCard
+                    key={c.id}
+                    index={idx}
+                    candidate={c}
+                    onChange={(patch) => updateCandidate(c.id, patch)}
+                    onRemove={() => removeCandidate(c.id)}
+                  />
+                );
+              })}
+            </div>
           ))
         )}
       </div>
     </div>
   );
+}
+
+function groupCandidatesByCategory(list: UnmetNeedCandidate[]): [string, UnmetNeedCandidate[]][] {
+  const map = new Map<string, UnmetNeedCandidate[]>();
+  for (const c of list) {
+    const key = (c.category ?? '').trim() || '未分类需求';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(c);
+  }
+  return Array.from(map.entries());
 }
 
 function UnmetNeedCard({
@@ -381,6 +409,85 @@ function UnmetNeedCard({
             ))}
           </div>
         </div>
+
+        {/* M2：需求分类 + 证据链 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <Field label="需求域（用于市场细分）">
+            <input
+              value={candidate.category ?? ''}
+              onChange={(e) => onChange({ category: e.target.value })}
+              placeholder="如：功能需求 / 体感需求 / 维护需求"
+              className={inputCls}
+            />
+          </Field>
+          <Field label="子需求（可空）">
+            <input
+              value={candidate.subCategory ?? ''}
+              onChange={(e) => onChange({ subCategory: e.target.value })}
+              placeholder="更细的切分，如：高度可调"
+              className={inputCls}
+            />
+          </Field>
+        </div>
+
+        {candidate.evidence ? (
+          <div className="mt-3 rounded-xl border border-black/5 bg-[#f8f9fb] p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-[#424245]">证据链</p>
+              {(() => {
+                const sc = computeNeedEvidenceStrength(candidate.evidence);
+                const cls = sc.level === 'high' ? 'text-emerald-700' : sc.level === 'medium' ? 'text-amber-700' : 'text-rose-700';
+                return (
+                  <span className={`text-[10px] font-semibold ${cls}`} title={sc.reasons.join('；')}>
+                    确定性证据分 {sc.score}/100（{EVIDENCE_STRENGTH_LABELS[sc.level]}）
+                  </span>
+                );
+              })()}
+            </div>
+            {candidate.evidence.keywords && candidate.evidence.keywords.length > 0 && (
+              <div>
+                <p className="text-[10px] text-[#86868b] mb-1">关键词证据</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {candidate.evidence.keywords.map((k) => (
+                    <span key={k.word} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white border border-black/8 text-[11px] text-[#424245]">
+                      {k.word}
+                      {k.volume !== undefined && <span className="text-[#aeaeb2]">{k.volume.toLocaleString()}</span>}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {candidate.evidence.reviewQuotes && candidate.evidence.reviewQuotes.length > 0 && (
+              <div>
+                <p className="text-[10px] text-[#86868b] mb-1">评论原文</p>
+                <ul className="space-y-1">
+                  {candidate.evidence.reviewQuotes.map((q, qi) => (
+                    <li key={qi} className="text-[11px] text-[#424245] leading-relaxed">
+                      “{q.quote}”
+                      {q.asin && <span className="text-[#aeaeb2]"> — {q.asin}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {candidate.evidence.asins && candidate.evidence.asins.length > 0 && (
+              <div>
+                <p className="text-[10px] text-[#86868b] mb-1">覆盖 ASIN（{candidate.evidence.asins.length}）</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {candidate.evidence.asins.map((a) => (
+                    <span key={a} className="px-2 py-0.5 rounded-lg bg-white border border-black/8 text-[11px] text-[#424245] font-mono">
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-[11px] text-[#aeaeb2] mt-3">
+            暂无结构化证据 —— 点上方「AI 生成 / 重跑这一步」，或手动把关键词/评论原文补进来（补了之后系统会按确定性公式算证据分）。
+          </p>
+        )}
       </div>
     </Card>
   );

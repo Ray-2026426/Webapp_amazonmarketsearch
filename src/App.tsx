@@ -1646,6 +1646,7 @@ export default function App() {
               focusLook={focusLook?.look ?? null}
               focusNonce={focusLook?.nonce ?? 0}
               onLoadDemo={() => applyDemoWorkspace({ toastMsg: true })}
+              onOpenSettings={() => setIsAvatarSettingsOpen(true)}
               onProjectChange={(updated) => setActiveProject(updated)}
             />
           ) : (
