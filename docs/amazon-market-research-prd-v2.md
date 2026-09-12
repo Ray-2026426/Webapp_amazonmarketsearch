@@ -1229,6 +1229,11 @@ Evidence {
 3. `serverKeys.ts` 重写：不再保存明文，只缓存状态；`getDefaultServerKey()` 恒返回空串；新增 `migrateLegacyKeys()` 把浏览器里残留的明文一次性推到服务端并**删除本地副本**（推送失败则保留并如实告知，不悄悄丢密钥）；
 4. App 登录后流程改为"先迁移旧明文 → 再读服务端状态"。
 
+**环境坑（已修，2026-09）**：本地开着 `npm run dev` 时编辑 `api/**` 路由，Vite 的 watcher 会去 watch
+devApiPlugin 生成的 `.[action].ts.<pid>.<uuid>.tmpdir/*.tmp`，Windows 上抛 `EBUSY: resource busy or locked`
+并**直接让 dev server 退出**（实测 exit code 1）。修法：`vite.config.ts` 的 `server.watch.ignored` 排除
+`**/*.tmpdir/**`、`**/*.tmp`、node_modules、dist、.git。
+
 **环境事实（本地实测要点）**：`server/devApiPlugin.ts` 会把 `api/**`（含 `[action].ts`）映射成本地中间件，并把 `.env.local` 里的变量**只注入 dev server 进程**（不暴露给浏览器）——所以 `/api/data/status`、`/api/admin/health` 在 `npm run dev` 下可直接访问与实测。本机没有 `npm`（只有 harness 自带 node），验证统一用等价命令。
 
 
@@ -1240,7 +1245,7 @@ Evidence {
 设置页「MCP 数据」不再提供密钥输入框，改为提示"密钥由平台在服务端管理"，并给一个清除本机残留旧密钥的按钮。
 `tests/securityKeys.test.ts` 增至 9 条源码级守卫（含"不得再出现密钥请求头构造""设置页不得再有密钥输入框"）。
 **尚未做（诚实列出）**：
-- 持久化缓存（Supabase 表）：目前是进程内缓存（serverless 实例回收会丢），接口不变，后续替换实现即可；
+- ~~持久化缓存（Supabase 表）~~ → **已完成**：`009_pool_cache.sql` + `poolCacheStore.ts`，网关改为双后端（有 service_role 走表、没有退回进程内），`/api/data/status` 回报 backend/新鲜/过期/命中/命中率，并支持 `prune=true` 清理；
 - 客户端 MCP 调用路径尚未全部切到 `/api/data/*`：本轮先把"密钥不再下发"做死，浏览器侧仍有走 `/api-proxy/*` 的旧路径，下一轮统一走网关；
 - 性能基线与 30 次回放属用户侧实测。
 
