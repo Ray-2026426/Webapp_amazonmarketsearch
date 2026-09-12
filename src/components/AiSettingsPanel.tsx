@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText, Plus, Globe, CloudDownload, ToggleLeft, UserRound, ShieldCheck } from 'lucide-react';
+import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText, Plus, Globe, CloudDownload, ToggleLeft, UserRound, ShieldCheck, Users } from 'lucide-react';
 import {
   AI_PROVIDERS,
   AiProvider,
@@ -40,10 +40,11 @@ import { toast } from 'sonner';
 import { AiPromptManager } from './AiPromptManager';
 import { SystemDiagnosticsPanel } from './SystemDiagnosticsPanel';
 import { AdminConsolePanel } from './AdminConsolePanel';
-import { isAdminSession } from '../utils/auth';
+import { TeamSettingsPanel } from './TeamSettingsPanel';
+import { getCurrentUser, isAdminSession } from '../utils/auth';
 import { Select } from './ui/Select';
 
-type SettingsTab = 'api' | 'profile' | 'mcp' | 'features' | 'prompts' | 'diagnostics' | 'admin';
+type SettingsTab = 'api' | 'profile' | 'mcp' | 'features' | 'prompts' | 'diagnostics' | 'admin' | 'team';
 
 interface AiSettingsPanelProps {
   settings: AiSettings | null;
@@ -274,6 +275,8 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     { id: 'diagnostics', label: '诊断', icon: <ShieldCheck className="w-4 h-4" /> },
     // M5：管理员后台（仅管理员显示；非管理员即使手动切到该 tab 也只会看到一句说明）
     ...(isAdminSession(undefined) ? [{ id: 'admin' as SettingsTab, label: '管理员后台', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
+    // M6：团队空间（仅管理员可管理团队与成员）
+    ...(isAdminSession(undefined) ? [{ id: 'team' as SettingsTab, label: '团队空间', icon: <Users className="w-4 h-4" /> }] : []),
   ];
 
   return (
@@ -793,6 +796,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
           {tab === 'prompts' && <AiPromptManager embedded />}
           {tab === 'diagnostics' && <SystemDiagnosticsPanel />}
           {tab === 'admin' && <AdminConsolePanel />}
+          {tab === 'team' && <TeamSettingsPanel currentUser={getCurrentUser()} />}
         </div>
 
         <div className="p-5 sm:p-6 border-t border-black/5 flex justify-end gap-3 shrink-0 bg-white relative z-10">
