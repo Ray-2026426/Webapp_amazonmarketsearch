@@ -99,5 +99,37 @@ test('数据池网关不把密钥写进日志/返回（只允许出现在请求�
   assert.ok(src.includes('密钥只在服务端'), '必须写明该口径');
 });
 
+test('用户决策 A：源码里不再有任何"浏览器带密钥调 MCP"的实现', () => {
+  const offenders: string[] = [];
+  for (const f of walk('src')) {
+    const text = read(f);
+    // 只在同一行内匹配"请求头构造"，避免跨行匹配到 UI 标签文案（如三元表达式里的 'X-Mcp-Key'）
+    if (/'secret-key'[ \t]*:[ \t]*[A-Za-z_$]/.test(text)) offenders.push(`${f}: 仍在往请求头塞 secret-key`);
+    if (/'X-Mcp-Key'[ \t]*:[ \t]*[A-Za-z_$]/.test(text)) offenders.push(`${f}: 仍在往请求头塞 X-Mcp-Key`);
+    if (/function\s+mcpHttp\s*\(/.test(text)) offenders.push(`${f}: 仍有浏览器直连 mcpHttp`);
+    if (/function\s+resolveSellerSpriteAuth\s*\(/.test(text)) offenders.push(`${f}: 仍会解析浏览器侧密钥`);
+  }
+  assert.deepEqual(offenders, [], `仍存在浏览器侧密钥路径：\n${offenders.join('\n')}`);
+});
+
+test('用户决策 A：设置页不再提供密钥输入框', () => {
+  const panel = read('src/components/AiSettingsPanel.tsx');
+  assert.ok(panel.includes('密钥由平台在服务端管理'), '必须明确告知密钥由服务端管理');
+  assert.ok(
+    !/type="password"[\s\S]{0,200}updateProvider\([^)]*secretKey/.test(panel),
+    '不得再渲染"输入密钥并写回设置"的输入框（那等于保留本地 Key 模式）'
+  );
+});
+
+test('用户决策 A：游客（未登录）被明确拦下，且理由指向示例数据与登录', async () => {
+  const routing = read('src/utils/dataPoolRouting.ts');
+  assert.ok(routing.includes("route: 'blocked'"), '未登录必须返回 blocked');
+  assert.ok(routing.includes('只对登录用户开放'), '必须写明这条口径');
+  assert.ok(routing.includes('示例数据'), '要告诉游客还能怎么体验');
+  const seller = read('src/utils/sellerspriteApi.ts');
+  assert.ok(seller.includes('只走服务端数据池'), '取数入口必须写明只走服务端');
+  assert.ok(!seller.includes("'secret-key'"), '取数入口不得再出现密钥请求头');
+});
+
 console.log(`\nresult: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

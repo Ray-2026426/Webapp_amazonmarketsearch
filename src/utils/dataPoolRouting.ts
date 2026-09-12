@@ -1,49 +1,49 @@
-// M5 · 出网路由决策（PRD §11.2：密钥只在服务端）。
+// M5 · 出网路由决策（PRD §11.2：密钥只在服务端）— **用户决策 A 后的最终形态**。
 //
-// 抽成纯函数的原因：**这是安全相关的判断**——"这次调用走服务端网关还是浏览器直连"决定了
-// 浏览器里是否需要密钥。写成可测函数，才能把规则锁住（而不是散落在调用点里各写一遍）。
+// 用户拍板 A（2026-09）：**平台数据池只对登录用户开放，游客只能用示例数据**。
+// 因此这里不再有"浏览器直连"这条退路：
+//   - 登录 → 走服务端数据池（服务端用管理员密钥，浏览器永远拿不到密钥）；
+//   - 未登录 → 明确拒绝，并告诉用户"用示例数据或先登录"，而不是偷偷回退到本地密钥模式。
 //
-// 规则（当前阶段，游客策略待用户拍板）：
-// 1. 用户显式填了**自定义** MCP 地址（非 /api-proxy 的内置路径）→ 走他自己的地址（他的密钥他的责任）；
-// 2. 有登录 token → 走服务端数据池（前端无密钥可用，也不需要）；
-// 3. 没登录（游客/演示）→ 只能走旧路径，且旧路径在设置页必须标注为"临时/不安全"。
+// 为什么要把"自定义 MCP 地址"也去掉：它要求用户在浏览器里填自己的密钥，
+// 那正是 §11.2 要消除的"本地 Key 模式"；保留它就等于留了一条绕过安全口径的后门。
 
 import type { PoolDataType } from './poolCache';
 import type { UsageTool } from './usageAccounting';
 
-export type OutboundRoute = 'custom-endpoint' | 'gateway' | 'browser-legacy';
+export type OutboundRoute = 'gateway' | 'blocked';
 
 export interface RouteInput {
-  /** 用户在设置里填的 MCP 地址（可能为空） */
-  mcpUrl?: string;
   /** 是否有登录 token */
   hasToken: boolean;
 }
 
-/** 是否属于"内置代理路径"（这类路径由本应用转发，不算用户自定义地址） */
-export function isBuiltinProxyPath(url: string | undefined): boolean {
-  const u = String(url ?? '').trim();
-  return u.length === 0 || u.startsWith('/api-proxy/');
+export interface RouteDecision {
+  route: OutboundRoute;
+  reason: string;
 }
 
 /**
- * 决定这次出网走哪条路。**顺序即优先级**：自定义地址 > 服务端网关 > 浏览器直连。
+ * 决定这次外部取数能不能执行、走哪条路。
+ * 只有两条结论：gateway（登录，走服务端数据池）或 blocked（未登录，只给示例数据）。
  */
-export function decideOutboundRoute(input: RouteInput): { route: OutboundRoute; reason: string } {
-  const url = String(input.mcpUrl ?? '').trim();
-  if (!isBuiltinProxyPath(url)) {
+export function decideOutboundRoute(input: RouteInput): RouteDecision {
+  if (input.hasToken) {
     return {
-      route: 'custom-endpoint',
-      reason: `你填了自定义 MCP 地址（${url.slice(0, 60)}${url.length > 60 ? '…' : ''}）：这次调用直接连它，密钥来自你的本地设置`,
+      route: 'gateway',
+      reason: '已登录：走服务端数据池（管理员密钥由服务端使用，浏览器不接触密钥）',
     };
   }
-  if (input.hasToken) {
-    return { route: 'gateway', reason: '已登录：走服务端数据池（管理员密钥由服务端使用，浏览器不接触密钥）' };
-  }
   return {
-    route: 'browser-legacy',
-    reason: '未登录（游客/演示）：只能走浏览器直连，需要在设置里自行填写密钥——这是临时路径，登录后请改用数据池',
+    route: 'blocked',
+    reason:
+      '数据池只对登录用户开放（用户决策 A）：游客请使用示例数据体验全流程，或先登录/注册后再在线取数',
   };
+}
+
+/** 兼容旧调用：是否允许出网取数 */
+export function canFetchFromPool(hasToken: boolean): boolean {
+  return decideOutboundRoute({ hasToken }).route === 'gateway';
 }
 
 /**

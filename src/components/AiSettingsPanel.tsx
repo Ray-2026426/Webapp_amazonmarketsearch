@@ -611,34 +611,37 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                           : p.kind === 'sorftime' ? 'Sorftime Key'
                           : '密钥 / Secret Key'}
                       </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="password"
-                          value={p.secretKey}
-                          onChange={(e) => updateProvider(p.id, { secretKey: e.target.value })}
-                          placeholder={
-                            p.kind === 'xydc' ? '粘贴西柚 Token…'
-                            : p.kind === 'sorftime' ? '粘贴 Sorftime Key…'
-                            : '粘贴密钥…'
-                          }
-                          className="flex-1 px-3 py-2 bg-white border border-black/5 rounded-xl text-sm font-mono"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleTestMcpProvider(p)}
-                          disabled={isTesting}
-                          className="px-3 py-2 bg-white border border-black/10 rounded-xl text-sm font-medium hover:bg-[#f5f5f7] disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
-                        >
-                          {isTesting ? (
-                            <span className="animate-spin">⟳</span>
-                          ) : testState === 'ok' ? (
-                            <Check className="w-4 h-4 text-emerald-500" />
-                          ) : testState === 'fail' ? (
-                            <AlertCircle className="w-4 h-4 text-rose-500" />
-                          ) : null}
-                          {isTesting ? '验证中…' : '验证'}
-                        </button>
+                      {/* 用户决策 A：密钥只在服务端保存与使用，浏览器不再接收密钥输入 */}
+                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2">
+                        <p className="text-[11px] text-indigo-800">
+                          密钥由平台在服务端管理：请让管理员到「设置 → 管理员后台 → 配置中心」配置；
+                          浏览器不再保存任何密钥，取数一律通过服务端数据池。
+                        </p>
+                        {p.secretKey ? (
+                          <button
+                            type="button"
+                            onClick={() => updateProvider(p.id, { secretKey: '' })}
+                            className="mt-1.5 rounded-lg border border-rose-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:border-rose-400"
+                          >
+                            清除本机残留的旧密钥（{p.secretKey.length} 位）
+                          </button>
+                        ) : null}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => handleTestMcpProvider(p)}
+                        disabled={isTesting}
+                        className="px-3 py-2 bg-white border border-black/10 rounded-xl text-sm font-medium hover:bg-[#f5f5f7] disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
+                      >
+                        {isTesting ? (
+                          <span className="animate-spin">⟳</span>
+                        ) : testState === 'ok' ? (
+                          <Check className="w-4 h-4 text-emerald-500" />
+                        ) : testState === 'fail' ? (
+                          <AlertCircle className="w-4 h-4 text-rose-500" />
+                        ) : null}
+                        {isTesting ? '检查中…' : '检查服务端数据池状态'}
+                      </button>
                     </div>
 
                     <div className="space-y-1.5">

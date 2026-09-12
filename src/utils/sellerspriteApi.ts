@@ -1,5 +1,5 @@
 import type { Keyword, Review } from './parser';
-import { callDataPool, canUseDataPool } from './dataPoolClient';
+import { callDataPool, canUseDataPool, fetchDataPoolStatus } from './dataPoolClient';
 import { decideOutboundRoute, poolTypeForTool, usageToolForTool } from './dataPoolRouting';
 import {
   getActiveSellerSpriteProvider,
@@ -94,32 +94,6 @@ type JsonRpc = {
   error?: { message?: string };
 };
 
-function parseMcpHttpBody(text: string): JsonRpc | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith('{')) {
-    try {
-      return JSON.parse(trimmed) as JsonRpc;
-    } catch {
-      /* fall through */
-    }
-  }
-  const dataLines = trimmed
-    .split(/\r?\n/)
-    .filter((l) => l.startsWith('data:'))
-    .map((l) => l.slice(5).trim())
-    .filter((l) => l && l !== '[DONE]');
-  for (let i = dataLines.length - 1; i >= 0; i--) {
-    try {
-      const obj = JSON.parse(dataLines[i]) as JsonRpc;
-      if (obj && (obj.result !== undefined || obj.error !== undefined)) return obj;
-    } catch {
-      /* continue */
-    }
-  }
-  return null;
-}
-
 function extractToolPayload(result: unknown): unknown {
   if (result == null) return null;
   if (typeof result === 'string') {
@@ -147,267 +121,49 @@ function extractToolPayload(result: unknown): unknown {
   return result;
 }
 
-async function mcpHttp(
-  endpoint: string,
-  secretKey: string,
-  init: { method?: string; body?: string; headers?: Record<string, string> }
-): Promise<{ ok: boolean; status: number; text: string; sessionId?: string }> {
-  let res: Response;
-  try {
-    res = await fetch(endpoint, {
-      method: init.method ?? 'POST',
-      headers: {
-        Accept: 'application/json, text/event-stream',
-        'Content-Type': 'application/json',
-        'secret-key': secretKey,
-        ...(init.headers ?? {}),
-      },
-      body: init.body,
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(
-      /Failed to fetch|NetworkError|Load failed/i.test(msg)
-        ? '网络请求失败（Failed to fetch）。请确认：① 已用 npm run dev 启动本应用；② MCP 地址栏留空（不要填官方网址，官方地址请走应用内代理）；③ Secret Key 正确。'
-        : msg
-    );
-  }
-  return {
-    ok: res.ok,
-    status: res.status,
-    text: await res.text(),
-    sessionId: res.headers.get('mcp-session-id') || undefined,
-  };
-}
-
-function resolveSellerSpriteAuth(settings?: McpSettings | null): { secretKey: string; endpoint: string } {  const cfg = settings ?? loadMcpSettings();
-  const ss = getActiveSellerSpriteProvider(cfg);
-  const secretKey = (ss?.secretKey || cfg.secretKey || '').trim();
-  if (!secretKey) {
-    throw new Error('请先在「设置 → MCP 数据」中配置卖家精灵密钥');
-  }
-  const endpoint = getSellerSpriteEndpoint(ss?.mcpUrl ?? cfg.mcpUrl);
-  return { secretKey, endpoint };
-}
-
-function resolveLingXingAuth(settings?: McpSettings | null): { apiKey: string; endpoint: string } {
-  const cfg = settings ?? loadMcpSettings();
-  const lx = getActiveLingXingProvider(cfg);
-  const apiKey = (lx?.secretKey || '').trim();
-  if (!apiKey) {
-    throw new Error('请先在「设置 → MCP 数据」中配置领星密钥（X-Mcp-Key）');
-  }
-  const endpoint = getLingXingEndpoint(lx?.mcpUrl ?? '');
-  return { apiKey, endpoint };
-}
-
-/** 领星 MCP：X-Mcp-Key 认证 */
-async function callLingXingToolBrowser(
-  toolName: string,
-  args: Record<string, unknown>,
-  settings?: McpSettings | null
-): Promise<unknown> {
-  const { apiKey, endpoint } = resolveLingXingAuth(settings);
-  const rpcBody = {
-    jsonrpc: '2.0' as const,
-    id: Date.now(),
-    method: 'tools/call',
-    params: { name: toolName, arguments: args },
-  };
-
-  // 领星：X-Mcp-Key 认证头
-  const lingHttp = async (
-    url: string,
-    body: string,
-    extraHeaders?: Record<string, string>
-  ) => {
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json, text/event-stream',
-          'Content-Type': 'application/json',
-          'X-Mcp-Key': apiKey,
-          ...(extraHeaders ?? {}),
-        },
-        body,
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      throw new Error(
-        /Failed to fetch|NetworkError|Load failed/i.test(msg)
-          ? '网络请求失败。请确认 npm run dev 已启动且领星密钥正确'
-          : msg
-      );
-    }
-    return { ok: res.ok, status: res.status, text: await res.text(), sessionId: res.headers.get('mcp-session-id') || undefined };
-  };
-
-  const direct = await lingHttp(endpoint, JSON.stringify(rpcBody), {
-    'MCP-Protocol-Version': '2025-03-26',
-    'Mcp-Method': 'tools/call',
-    'Mcp-Name': toolName,
-  });
-
-  let parsed = parseMcpHttpBody(direct.text);
-  if (direct.ok && parsed?.result !== undefined && !parsed.error) {
-    return extractToolPayload(parsed.result);
-  }
-
-  const initRes = await lingHttp(endpoint, JSON.stringify({
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'initialize',
-    params: {
-      protocolVersion: '2025-03-26',
-      capabilities: {},
-      clientInfo: { name: 'amz-market-research-app', version: '1.0.0' },
-    },
-  }), { 'MCP-Protocol-Version': '2025-03-26' });
-
-  const sessionId = initRes.sessionId;
-  if (!initRes.ok && !sessionId) {
-    const errMsg =
-      parsed?.error?.message ||
-      (direct.text || initRes.text || '').slice(0, 300) ||
-      `领星 MCP 初始化失败 (${initRes.status})`;
-    throw new Error(errMsg);
-  }
-
-  if (sessionId) {
-    await lingHttp(endpoint, JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'notifications/initialized',
-    }), {
-      'MCP-Protocol-Version': '2025-03-26',
-      'Mcp-Session-Id': sessionId,
-    });
-  }
-
-  const callRes = await lingHttp(endpoint, JSON.stringify(rpcBody), {
-    'MCP-Protocol-Version': '2025-03-26',
-    'Mcp-Method': 'tools/call',
-    'Mcp-Name': toolName,
-    ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
-  });
-
-  parsed = parseMcpHttpBody(callRes.text);
-  if (!callRes.ok || parsed?.error) {
-    throw new Error(
-      parsed?.error?.message ||
-        callRes.text.slice(0, 300) ||
-        `领星 MCP 调用失败 (${callRes.status})`
-    );
-  }
-  if (parsed?.result === undefined) {
-    throw new Error('领星 MCP 返回为空，请检查密钥或参数是否正确');
-  }
-  return extractToolPayload(parsed.result);
-}
-
-/** 浏览器端直接调用卖家精灵 MCP（经同源反代或用户自定义 URL） */
+/**
+ * 调用卖家精灵 MCP 工具。
+ * 用户决策 A（数据池只对登录用户开放）：**只走服务端数据池**，浏览器里没有也不应该有密钥。
+ * 未登录时明确拒绝（让用户去用示例数据或登录），绝不回退到"本地填密钥"的旧模式。
+ */
 async function callSellerSpriteToolBrowser(
   toolName: string,
   args: Record<string, unknown>,
-  settings?: McpSettings | null
+  _settings?: McpSettings | null
 ): Promise<unknown> {
-  // M5：出网路由交给纯函数决定（规则见 dataPoolRouting.decideOutboundRoute）。
-  // 顺序：自定义地址 > 服务端网关 > 浏览器直连（游客兜底）。
-  const cfgForGateway = settings ?? loadMcpSettings();
-  const route = decideOutboundRoute({ mcpUrl: cfgForGateway.mcpUrl, hasToken: canUseDataPool() });
-  if (route.route === 'gateway') {
-    const gateway = await callDataPool({
-      provider: 'sellersprite',
-      tool: toolName,
-      args,
-      type: poolTypeForTool(toolName),
-      usageTool: usageToolForTool(toolName),
-    });
-    if (gateway.ok && gateway.data !== undefined) {
-      return extractToolPayload(gateway.data);
-    }
-    // 网关失败时**不回退到浏览器直连**（那需要密钥，而前端已经不应该有密钥）：
-    // 把服务端的失败原因如实抛出去，让用户看到真实原因（配额/未配置/外部错误）。
+  const route = decideOutboundRoute({ hasToken: canUseDataPool() });
+  if (route.route === 'blocked') {
+    throw new Error(route.reason);
+  }
+  const gateway = await callDataPool({
+    provider: 'sellersprite',
+    tool: toolName,
+    args,
+    type: poolTypeForTool(toolName),
+    usageTool: usageToolForTool(toolName),
+  });
+  if (!gateway.ok) {
+    // 服务端失败就如实抛出（配额/未配置/外部错误），不回退、不编造数据
     throw new Error(gateway.error || '数据池调用失败');
   }
-  // route === 'browser-legacy'（未登录游客）或 'custom-endpoint'（用户自定义地址）才走旧路径。
+  return extractToolPayload(gateway.data);
+}
 
-  const { secretKey, endpoint } = resolveSellerSpriteAuth(settings);
-  const rpcBody = {
-    jsonrpc: '2.0' as const,
-    id: Date.now(),
-    method: 'tools/call',
-    params: { name: toolName, arguments: args },
-  };
 
-  const direct = await mcpHttp(endpoint, secretKey, {
-    headers: {
-      'MCP-Protocol-Version': '2025-03-26',
-      'Mcp-Method': 'tools/call',
-      'Mcp-Name': toolName,
-    },
-    body: JSON.stringify(rpcBody),
-  });
-  let parsed = parseMcpHttpBody(direct.text);
-  if (direct.ok && parsed?.result !== undefined && !parsed.error) {
-    return extractToolPayload(parsed.result);
+/**
+ * 数据池可用性自检（决策 A：密钥只在服务端，浏览器不再自检密钥）。
+ * 它检查的是"服务端是否已配置 + 当前是否登录"，而不是在浏览器里拿密钥去握手。
+ */
+async function checkDataPoolReady(providerLabel: string): Promise<void> {
+  const route = decideOutboundRoute({ hasToken: canUseDataPool() });
+  if (route.route === 'blocked') throw new Error(route.reason);
+  const status = await fetchDataPoolStatus();
+  if (!status.ok) throw new Error(status.error || '无法读取数据池状态');
+  const seller = status.providers?.sellersprite;
+  if (!seller?.configured) {
+    throw new Error('服务端还没有配置卖家精灵密钥：请让管理员在「设置 → 管理员后台 → 配置中心」配置（浏览器不保存密钥）');
   }
-
-  const initRes = await mcpHttp(endpoint, secretKey, {
-    headers: { 'MCP-Protocol-Version': '2025-03-26' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2025-03-26',
-        capabilities: {},
-        clientInfo: { name: 'amz-market-research-app', version: '1.0.0' },
-      },
-    }),
-  });
-  const sessionId = initRes.sessionId;
-  if (!initRes.ok && !sessionId) {
-    const hint =
-      parsed?.error?.message ||
-      direct.text.slice(0, 200) ||
-      initRes.text.slice(0, 200);
-    if (/Failed to fetch|NetworkError|CORS/i.test(String(hint)) || direct.status === 0) {
-      throw new Error('无法连接 MCP。请确认已用 npm run dev 启动，或检查自定义 MCP 地址是否允许跨域。');
-    }
-    throw new Error(hint || `MCP 初始化失败 (${initRes.status || direct.status})`);
-  }
-
-  if (sessionId) {
-    await mcpHttp(endpoint, secretKey, {
-      headers: {
-        'MCP-Protocol-Version': '2025-03-26',
-        'Mcp-Session-Id': sessionId,
-      },
-      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
-    });
-  }
-
-  const callRes = await mcpHttp(endpoint, secretKey, {
-    headers: {
-      'MCP-Protocol-Version': '2025-03-26',
-      'Mcp-Method': 'tools/call',
-      'Mcp-Name': toolName,
-      ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
-    },
-    body: JSON.stringify(rpcBody),
-  });
-  parsed = parseMcpHttpBody(callRes.text);
-  if (!callRes.ok || parsed?.error) {
-    throw new Error(
-      parsed?.error?.message || callRes.text.slice(0, 300) || `MCP 调用失败 (${callRes.status})`
-    );
-  }
-  if (parsed?.result === undefined) {
-    throw new Error('MCP 返回为空，请检查密钥或 ASIN/站点是否正确');
-  }
-  return extractToolPayload(parsed.result);
+  void providerLabel;
 }
 
 export async function getSellerSpriteStatus(): Promise<{ configured: boolean; message: string }> {
@@ -849,110 +605,11 @@ export function parseAsinList(raw: string): string[] {
     out.push(asin);
   }
   return out;
-}
-
-/** 通用：测试任意 MCP 端点（initialize 握手） */
-export async function testMcpEndpoint(endpoint: string, secretKey: string): Promise<void> {
-  const res = await mcpHttp(endpoint, secretKey.trim(), {
-    headers: { 'MCP-Protocol-Version': '2025-03-26' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2025-03-26',
-        capabilities: {},
-        clientInfo: { name: 'amz-market-research-app-test', version: '1.0.0' },
-      },
-    }),
-  });
-  if (!res.ok && !res.sessionId) {
-    const parsed = parseMcpHttpBody(res.text);
-    throw new Error(parsed?.error?.message || res.text.slice(0, 200) || `验证失败 (${res.status})`);
-  }
-}
-
-/** 西柚等：用自定义认证头做 initialize 握手 */
-async function testMcpEndpointWithAuthHeaders(
-  endpoint: string,
-  authHeaders: Record<string, string>
-): Promise<void> {
-  let res: Response;
-  try {
-    res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json, text/event-stream',
-        'Content-Type': 'application/json',
-        'MCP-Protocol-Version': '2025-03-26',
-        ...authHeaders,
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2025-03-26',
-          capabilities: {},
-          clientInfo: { name: 'amz-market-research-app-test', version: '1.0.0' },
-        },
-      }),
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(
-      /Failed to fetch|NetworkError|Load failed/i.test(msg)
-        ? '网络请求失败。请确认 npm run dev 已启动，且 MCP 地址留空走应用内代理。'
-        : msg
-    );
-  }
-  const text = await res.text();
-  const sessionId = res.headers.get('mcp-session-id') || undefined;
-  if (!res.ok && !sessionId) {
-    const parsed = parseMcpHttpBody(text);
-    throw new Error(parsed?.error?.message || text.slice(0, 200) || `验证失败 (${res.status})`);
-  }
-}
-
-/** 测试某条 MCP 数据源 */
-export async function testMcpProvider(
-  provider: Pick<McpProviderEntry, 'kind' | 'secretKey' | 'mcpUrl'>
-): Promise<void> {
-  const secretKey = provider.secretKey.trim();
-  if (!secretKey) throw new Error('请先填写密钥');
-
-  if (provider.kind === 'xydc') {
-    const endpoint = getXydcEndpoint(provider.mcpUrl);
-    const token = secretKey.replace(/^Bearer\s+/i, '').trim();
-    await testMcpEndpointWithAuthHeaders(endpoint, { Authorization: `Bearer ${token}` });
-    return;
-  }
-
-  if (provider.kind === 'lingxing') {
-    const endpoint = getLingXingEndpoint(provider.mcpUrl);
-    await testMcpEndpointWithAuthHeaders(endpoint, { 'X-Mcp-Key': secretKey });
-    return;
-  }
-
-  if (provider.kind === 'sorftime') {
-    const endpoint = getSorftimeEndpoint(provider.mcpUrl, secretKey);
-    // Sorftime 的 key 已在 query，无需额外鉴权头
-    await testMcpEndpointWithAuthHeaders(endpoint, {});
-    return;
-  }
-
-  const endpoint =
-    provider.kind === 'sellersprite'
-      ? getSellerSpriteEndpoint(provider.mcpUrl)
-      : provider.mcpUrl.trim().replace(/\/+$/, '');
-  if (!endpoint) throw new Error(provider.kind === 'sellersprite' ? '卖家精灵地址异常' : '请填写 MCP 地址');
-  await testMcpEndpoint(endpoint, secretKey);
-}
-
-/** 用一条轻量请求验证卖家精灵密钥是否可用 */
-export async function testSellerSpriteMcp(settings?: McpSettings | null): Promise<void> {
-  const { secretKey, endpoint } = resolveSellerSpriteAuth(settings);
-  await testMcpEndpoint(endpoint, secretKey);
+}export async function testMcpProvider(provider: McpProviderEntry): Promise<void> {
+  const label = provider?.kind === 'sellersprite' ? '卖家精灵' : provider?.kind || 'MCP';
+  await checkDataPoolReady(label);
+}export async function testSellerSpriteMcp(_settings?: McpSettings | null): Promise<void> {
+  await checkDataPoolReady('卖家精灵');
 }
 
 function unwrapData(payload: unknown): Record<string, unknown> {

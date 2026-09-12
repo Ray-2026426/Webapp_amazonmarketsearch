@@ -1,8 +1,8 @@
-// M5 · 出网路由决策测试（安全相关：决定浏览器里是否需要密钥）。
+// M5 · 出网路由决策测试（用户决策 A：数据池只对登录用户开放）。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { decideOutboundRoute, isBuiltinProxyPath, poolTypeForTool, usageToolForTool } from '../src/utils/dataPoolRouting';
+import { decideOutboundRoute, canFetchFromPool, poolTypeForTool, usageToolForTool } from '../src/utils/dataPoolRouting';
 
 let passed = 0;
 let failed = 0;
@@ -19,36 +19,27 @@ function test(name: string, fn: () => void) {
   }
 }
 
-console.log('outbound routing');
+console.log('outbound routing (decision A)');
 
-test('已登录 + 内置路径 → 走服务端网关（前端不需要密钥）', () => {
-  const r = decideOutboundRoute({ mcpUrl: '', hasToken: true });
+test('已登录 → 走服务端数据池（浏览器不接触密钥）', () => {
+  const r = decideOutboundRoute({ hasToken: true });
   assert.equal(r.route, 'gateway');
   assert.ok(r.reason.includes('不接触密钥'));
-  assert.equal(decideOutboundRoute({ mcpUrl: '/api-proxy/sellersprite-mcp', hasToken: true }).route, 'gateway');
+  assert.equal(canFetchFromPool(true), true);
 });
 
-test('未登录（游客）→ 浏览器直连，并明确标注这是临时路径', () => {
-  const r = decideOutboundRoute({ mcpUrl: '', hasToken: false });
-  assert.equal(r.route, 'browser-legacy');
-  assert.ok(r.reason.includes('临时路径'), r.reason);
-  assert.ok(r.reason.includes('未登录'));
+test('未登录 → 明确拒绝，并指向示例数据/登录（不再有浏览器直连这条退路）', () => {
+  const r = decideOutboundRoute({ hasToken: false });
+  assert.equal(r.route, 'blocked');
+  assert.ok(r.reason.includes('只对登录用户开放'), r.reason);
+  assert.ok(r.reason.includes('示例数据'), '要告诉游客还能怎么体验');
+  assert.ok(r.reason.includes('登录'));
+  assert.equal(canFetchFromPool(false), false);
 });
 
-test('用户自定义地址优先于网关（他的地址他的密钥他的责任）', () => {
-  const r = decideOutboundRoute({ mcpUrl: 'https://my-mcp.example.com/mcp', hasToken: true });
-  assert.equal(r.route, 'custom-endpoint');
-  assert.ok(r.reason.includes('自定义 MCP 地址'));
-  // 自定义地址 + 未登录也是自定义优先（否则游客用不了自己的中转）
-  assert.equal(decideOutboundRoute({ mcpUrl: 'https://my-mcp.example.com/mcp', hasToken: false }).route, 'custom-endpoint');
-});
-
-test('内置路径判定：空、/api-proxy/* 都算内置；域名与相对路径不算', () => {
-  assert.equal(isBuiltinProxyPath(''), true);
-  assert.equal(isBuiltinProxyPath('   '), true);
-  assert.equal(isBuiltinProxyPath('/api-proxy/xydc-mcp'), true);
-  assert.equal(isBuiltinProxyPath('https://mcp.sellersprite.com/mcp'), false);
-  assert.equal(isBuiltinProxyPath('/custom/mcp'), false);
+test('路由只有两种结论（没有"自定义地址""浏览器兜底"这类旁路）', () => {
+  const routes = new Set([decideOutboundRoute({ hasToken: true }).route, decideOutboundRoute({ hasToken: false }).route]);
+  assert.deepEqual([...routes].sort(), ['blocked', 'gateway']);
 });
 
 test('工具 → 缓存类型/记账分类：口径与 poolCache、用量记账一致', () => {
@@ -66,15 +57,13 @@ test('工具 → 缓存类型/记账分类：口径与 poolCache、用量记账�
   assert.equal(usageToolForTool('未知工具'), 'market');
 });
 
-test('源码级：卖家精灵调用点必须用路由决策，且网关失败不回退到浏览器直连', () => {
+test('源码级：卖家精灵调用点只走网关，且未登录时抛错而不是回退', () => {
   const src = fs.readFileSync('src/utils/sellerspriteApi.ts', 'utf8');
-  assert.ok(src.includes('decideOutboundRoute('), '必须走统一路由决策');
-  assert.ok(src.includes("route.route === 'gateway'"), '必须有网关分支');
-  assert.ok(
-    src.includes('不回退到浏览器直连') || src.includes('不回退到浏览器直连（那需要密钥'),
-    '必须写明网关失败不回退（否则会偷偷回去用浏览器里的密钥）'
-  );
-  assert.ok(!/if \(!wantsCustomEndpoint/.test(src), '旧的临时判断应该已被路由函数取代');
+  assert.ok(src.includes('decideOutboundRoute({ hasToken: canUseDataPool() })'), '必须走统一路由决策');
+  assert.ok(src.includes("route.route === 'blocked'"), '未登录必须被拦下');
+  assert.ok(src.includes('只走服务端数据池'), '必须写明口径');
+  assert.ok(!src.includes('resolveSellerSpriteAuth('), '不得再解析浏览器侧的密钥');
+  assert.ok(!src.includes("'secret-key': secretKey"), '不得再往请求头里塞浏览器密钥');
 });
 
 console.log(`\nresult: ${passed} passed, ${failed} failed`);
