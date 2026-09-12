@@ -171,6 +171,26 @@ export interface OpportunityCard {
   /** 数据覆盖度，0-1，独立展示，不纳入 100 分 */
   coverage: number;
   decision: OpportunityDecision;
+  /** M4（§6.5）：状态机 —— AI 候选 → 已确认（重生成不覆盖已确认） */
+  status?: import('./opportunity').OpportunityStatus;
+  /** M4：进入方式（硬约束否决时只能 validate_first） */
+  enterMode?: import('./opportunity').OpportunityEnterMode;
+  /** M4：机会类型 */
+  kind?: import('./opportunity').OpportunityKind;
+  /** M4：可信度（由证据覆盖推导，不由 AI 随口给） */
+  confidence?: import('./opportunity').OpportunityConfidence;
+  /** M4：证据引用（可追溯到 Evidence.sourceRef） */
+  evidenceRefs?: import('./opportunity').OpportunityEvidenceRef[];
+  /** M4：评分拆解（§8.1 五维 25/25/25/15/10） */
+  scoreBreakdown?: import('./opportunity').OpportunityScoreBreakdown;
+  /** M4：推理步骤（二级页⑬「推理」栏，每步指回证据） */
+  reasoningSteps?: import('./opportunity').OpportunityReasoningStep[];
+  /** M4：反证（可能推翻本机会的证据） */
+  counterEvidence?: string[];
+  /** M4：还缺什么证据才能把这张卡做实 */
+  missingEvidence?: string[];
+  /** M4：决策包（先做/后做 · 前置资源 · 三类控制点） */
+  decisionPackage?: import('./opportunity').OpportunityDecisionPackage;
   createdAt: string;
   updatedAt: string;
 }
