@@ -1207,18 +1207,19 @@ Evidence {
 
 ### 15.11 M5 数据池与管理员后台 —— 进度记录（2026-09，进行中）
 
-推送区间：`phase-0` 分支 `13f7e96 →`（**main 保持 `63abd4c` 未动**）。每步通过 `tsc --noEmit` + 全部 28 个测试套件（265 条断言）+ `vite build`。
+推送区间：`phase-0` 分支 `13f7e96 → 84aa6c4`（**main 保持 `63abd4c` 未动**）。每步通过 `tsc --noEmit` + 全部 29 个测试套件（277 条断言）+ `vite build`。
 
 | M5 目标项 | 状态 | 落点 |
 | --- | --- | --- |
 | ① 数据池网关 | ✅ | `api/data/[action].ts`：一次调用固定四步（服务端解析密钥 → 查缓存 → 校验配额 → 调 MCP + 写缓存 + 记用量）；action = mcp / status / usage |
+| ①b Listing 全字段抓取编排 | ✅ | `listingFetchPlan.ts`（计划器：33 字段 → 有序步骤、§15.4 采样口径 3/10 次、跳过已有字段、覆盖率评估）+ `listingFetchExecutor.ts`（执行器：走 `/api/data/mcp`、并发限 3、失败隔离）+ 看竞对「抓取全字段」按钮（抓完写回 `listingDetails`/`trafficDetails`，三列对比的"未抓取"格子被真实数据填上） |
 | ② 缓存与配额 | ✅ | `src/utils/poolCache.ts`（键归一化、TTL 分档、命中决策、淘汰、命中率）+ `usageAccounting.checkQuota`（只计实际计费事件，缓存命中不占额度） |
 | ③ 用量记账 | ✅ | `src/utils/usageAccounting.ts`（成本表、按工具/用户/项目/供应商汇总、按天趋势、失败率、缓存省下的钱）+ 迁移 `008_usage_events.sql`（含 `audit_events`，RLS 全拒、只允许 service_role） |
 | ④ 管理员后台接口 | ✅ | `api/admin/[action].ts`：health / config / usage / users / audit / projects；管理员校验 + 全部写操作落审计；无 service_role 时优雅降级 |
 | ⑤ 管理员后台面板 | ✅ | `src/components/AdminConsolePanel.tsx`（挂在「设置 → 管理员后台」，仅管理员可见）：环境自检、用量统计、用户管理、配置中心、审计日志、项目与报告 |
 | ⑥ 安全加固 | ✅ | 见下方"发现并修掉的安全缺陷"；另加 `tests/securityKeys.test.ts` 把口径变成会失败的测试 |
 | ⑦ 导出补 MD | ✅ | `buildOpportunityMarkdownReport` + 决策看板「导出 MD」按钮（HTML 已有；**不做 PPT**，用户已确认） |
-| ⑧ 性能（项目中心 ≤2s） | ⏳ 待实测 | 需要用户在有真实项目数据的环境里量；我这边无浏览器无法度量 |
+| ⑧ 性能（项目中心 ≤2s） | ⏳ 待实测 | 需要用户在有真实项目数据的环境里量；我这边无浏览器无法度量（已把可测的确定性核心全部锁住，性能只能实测） |
 | ⑨ ≥30 项目回放 / NPS 基线 | ⏳ 用户侧 | 属"用户逐轮自测 + 内部试用"阶段 |
 
 **发现并修掉一个真实安全缺陷（这正是 §11.2 要根治的事）**：旧 `/api/settings?action=get` 把 deepseek/sellersprite 等密钥**明文返回给浏览器**，前端 `serverKeys.ts` 还写进 localStorage，MCP 直接在浏览器里带密钥调用——任何能打开浏览器的人都能取走密钥，一次 XSS 即全量泄露。改造：
