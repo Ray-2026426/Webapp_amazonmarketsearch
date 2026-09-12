@@ -18,6 +18,8 @@ import { LookAiBar } from './LookAiBar';
 import { mergeSelfAi, buildSelfAnswers } from '../utils/lookAiApply';
 import { addEvidence } from '../utils/evidence';
 import { SelfReadinessPanel } from './SelfReadinessPanel';
+import type { L3Id } from '../utils/l3Pages';
+import type { L3BodyRender } from './L3Sheet';
 
 const STATUS_ORDER: SelfStatus[] = ['have', 'partial', 'lack', 'unknown'];
 
@@ -34,10 +36,15 @@ export function SelfAssessmentView({
   userId,
   project,
   onProjectChange,
+  onOpenL3,
+  onRegisterL3Bodies,
 }: {
   userId: string;
   project: ResearchProject;
   onProjectChange: (updated: ResearchProject) => void;
+  /** 线框图 ⏳3：二级页⑪⑫ 的入口与正文注册（透传给 SelfReadinessPanel） */
+  onOpenL3?: (id: L3Id) => void;
+  onRegisterL3Bodies?: (render: L3BodyRender | null) => void;
 }) {
   const [assessment, setAssessment] = useState<SelfAssessment | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -138,8 +145,14 @@ export function SelfAssessmentView({
         </div>
       </div>
 
-      {/* M3⑤：账号背景库（六维度）+ 品类选择题 + 适配度（完成度与适配度分离） */}
-      <SelfReadinessPanel userId={userId} project={project} />
+      {/* M3⑤：账号背景库（六维度）+ 品类选择题 + 适配度（完成度与适配度分离）
+          ⏳3：⑪⑫ 的二级页入口与正文注册由面板自己处理 */}
+      <SelfReadinessPanel
+        userId={userId}
+        project={project}
+        onOpenL3={onOpenL3}
+        onRegisterL3Bodies={onRegisterL3Bodies}
+      />
 
       <LookAiBar
         look="self"

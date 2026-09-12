@@ -32,6 +32,9 @@ import {
   type SegmentStandard,
   type UnmetNeedCandidate,
   type EvidenceStrength,
+  type SearchPath,
+  type SearchPathFlow,
+  type SearchPreference,
 } from '../utils/userLook';
 import { updateLookProgress } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
@@ -40,6 +43,8 @@ import { mergeUserLookAi } from '../utils/lookAiApply';
 import { addEvidence } from '../utils/evidence';
 import { loadMarketLook } from '../utils/marketLook';
 import { OpenQuestionAnswersCard } from './OpenQuestionAnswersCard';
+import type { L3Id } from '../utils/l3Pages';
+import type { L3BlockVariant, L3BodyRender } from './L3Sheet';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -50,11 +55,17 @@ export function UserLookView({
   project,
   userContext,
   onProjectChange,
+  onOpenL3,
+  onRegisterL3Bodies,
 }: {
   userId: string;
   project: ResearchProject;
   userContext: UserContext;
   onProjectChange: (updated: ResearchProject) => void;
+  /** 线框图 ⏳3：打开二级页①搜索路径②搜索偏好③需求分类树④细分标准 */
+  onOpenL3?: (id: L3Id) => void;
+  /** 线框图 ⏳3：把 ①②③④ 的正文（与内联同一份实现）注册给全屏页壳 */
+  onRegisterL3Bodies?: (render: L3BodyRender | null) => void;
 }) {
   const [data, setData] = useState<UserLookData | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -122,6 +133,64 @@ export function UserLookView({
     [persist]
   );
 
+  /**
+   * 线框图 Screen 3 ④：细分标准（勾选的需求域，第一个为主标准）。
+   * 纯派生值，因此放在组件级早退**之前**算：二级页④（页壳）与内联区块必须共用同一份数据。
+   */
+  const standard: SegmentStandard = data?.segmentStandard ?? { categories: [] };
+  /** 需求域归并（未满足需求 → 需求域），④ 的勾选项用 */
+  const categoryOptions = buildCategoryOptions(data?.unmetNeedCandidates ?? []);
+  /** M2①：四层流向（确定性计算，AI 无法修改） */
+  const searchFlow = computeSearchPathFlow(data?.searchPath);
+
+  /**
+   * ⏳3（线框图 ①②③④）：二级页正文 = 与内联**同一个区块组件**，只把 variant 换成 'sheet'，
+   * 数据与写回路径（scheduleSave）完全共用，不存在第二份实现。
+   * 这里把"当前这份数据能渲染什么"放进 ref：注册给页壳的是一层稳定壳（读 ref），
+   * 否则父组件每次渲染都收到新的函数身份 —— 那是 React 里最典型的 setState 死循环。
+   */
+  const l3BodyRef = useRef<L3BodyRender | null>(null);
+  l3BodyRef.current = (id) => {
+    if (!data) return null;
+    const saveCandidates = (list: UnmetNeedCandidate[]) => scheduleSave({ ...data, unmetNeedCandidates: list });
+    if (id === '1') return <SearchPathDetailBlock searchPath={data.searchPath} flow={searchFlow} variant="sheet" />;
+    if (id === '2') return <SearchPreferenceDetailBlock preference={data.searchPreference} variant="sheet" />;
+    if (id === '3') {
+      return (
+        <NeedTreeDetailBlock
+          candidates={data.unmetNeedCandidates}
+          onChange={saveCandidates}
+          onAdd={() => saveCandidates([...data.unmetNeedCandidates, emptyUnmetNeedCandidate()])}
+          variant="sheet"
+        />
+      );
+    }
+    if (id === '4') {
+      return (
+        <SegmentStandardBlock
+          standard={standard}
+          categoryOptions={categoryOptions}
+          candidates={data.unmetNeedCandidates}
+          detailOpen
+          onChange={(next) => scheduleSave({ ...data, segmentStandard: next })}
+          variant="sheet"
+        />
+      );
+    }
+    return null;
+  };
+
+  /**
+   * ⏳3：把 ①②③④ 的正文注册给全屏页壳（`L3Sheet`，由 ProjectWorkspace 唯一渲染）。
+   * 依赖只放 `[onRegisterL3Bodies, data]`：data 一变就重新注册 → 父组件重渲染 → 页壳拿到新内容；
+   * 不能把 `scheduleSave` 之类每次渲染都换身份的回调放进依赖（会无限重注册）。
+   */
+  useEffect(() => {
+    if (!onRegisterL3Bodies || !data) return;
+    onRegisterL3Bodies((id, cardId) => l3BodyRef.current?.(id, cardId) ?? null);
+    return () => onRegisterL3Bodies(null);
+  }, [onRegisterL3Bodies, data]);
+
   if (!data) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-[#aeaeb2]">
@@ -132,38 +201,7 @@ export function UserLookView({
 
   const update = (patch: Partial<UserLookData>) => scheduleSave({ ...data, ...patch });
 
-  /** 线框图 Screen 3 ④：细分标准（勾选的需求域，第一个为主标准） */
-  const standard: SegmentStandard = data.segmentStandard ?? { categories: [] };
-  const categoryOptions = (() => {
-    const map = new Map<string, { name: string; needs: number; evidence: number }>();
-    for (const c of data.unmetNeedCandidates) {
-      const name = (c.category || '未分类需求').trim() || '未分类需求';
-      const cur = map.get(name) ?? { name, needs: 0, evidence: 0 };
-      cur.needs += 1;
-      if ((c.evidence?.reviewQuotes?.length ?? 0) > 0 || (c.evidence?.asins?.length ?? 0) > 0) cur.evidence += 1;
-      map.set(name, cur);
-    }
-    return [...map.values()];
-  })();
-  const toggleStandardCategory = (name: string) => {
-    const has = standard.categories.includes(name);
-    const categories = has ? standard.categories.filter((c) => c !== name) : [...standard.categories, name];
-    update({ segmentStandard: { ...standard, categories, updatedAt: new Date().toISOString() } });
-  };
-  const setPrimaryStandard = (name: string) => {
-    const categories = [name, ...standard.categories.filter((c) => c !== name)];
-    update({ segmentStandard: { ...standard, categories, updatedAt: new Date().toISOString() } });
-  };
-
-  /** M2①：四层流向（确定性计算，AI 无法修改） */
-  const searchFlow = computeSearchPathFlow(data.searchPath);
-
-  const updateCandidate = (id: string, patch: Partial<UnmetNeedCandidate>) => {
-    update({ unmetNeedCandidates: data.unmetNeedCandidates.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
-  };
-
   const addCandidate = () => update({ unmetNeedCandidates: [...data.unmetNeedCandidates, emptyUnmetNeedCandidate()] });
-  const removeCandidate = (id: string) => update({ unmetNeedCandidates: data.unmetNeedCandidates.filter((c) => c.id !== id) });
 
   const updateList = (key: 'satisfiedNeeds', index: number, value: string) => {
     const next = [...data[key]];
@@ -228,125 +266,20 @@ export function UserLookView({
         inputCls={inputCls}
       />
 
-      {/* M2：搜索路径图 + 搜索偏好卡（结论先行的第一屏） */}
+      {/* M2：搜索路径图 + 搜索偏好卡（结论先行的第一屏）
+          ⏳3：①② 两个区块已抽成独立组件，内联与二级页① ②共用同一份实现（只换 variant） */}
       {(data.searchPath || data.searchPreference) && (
         <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
-          <Card>
-            <div className="p-5">
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <p className="text-sm font-semibold text-[#1d1d1f]">搜索路径图</p>
-                <span className="text-[11px] text-[#86868b]">认知 → 考虑 → 决策 → 场景</span>
-              </div>
-              {data.searchPath?.summary && (
-                <p className="text-xs text-[#424245] mb-2 leading-relaxed">{data.searchPath.summary}</p>
-              )}
-              {/* M2① 流向（确定性）：每层相对上一层保留多少需求 */}
-              {searchFlow.length > 0 && (
-                <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2 mb-3">
-                  <p className="text-[11px] font-semibold text-indigo-800">
-                    流向：{describeSearchPathFlow(searchFlow)}
-                  </p>
-                  <p className="text-[10px] text-indigo-700/70 mt-0.5">
-                    由各层词搜索量（缺量时退化词数口径）确定性算出，AI 不改这个比例。
-                  </p>
-                </div>
-              )}
-              <div className="space-y-3">
-                {(data.searchPath?.layers ?? []).map((layer) => (
-                  <div key={layer.layer} className="rounded-xl border border-black/5 bg-[#f8f9fb] p-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-semibold text-[#1d1d1f]">{SEARCH_PATH_LAYER_LABELS[layer.layer]}</span>
-                      <span className="text-[10px] text-[#86868b]">{SEARCH_PATH_LAYER_HINTS[layer.layer]}</span>
-                      {(() => {
-                        const flow = searchFlow.find((f) => f.layer === layer.layer);
-                        if (!flow) return null;
-                        return (
-                          <span className="ml-auto inline-flex items-center gap-1.5 text-[10px] text-[#86868b]">
-                            {flow.volume > 0 && <span>本层量 {flow.volume.toLocaleString()}</span>}
-                            {flow.retention !== null && flow.layer !== 'awareness' && (
-                              <span className="rounded-full bg-white border border-black/8 px-1.5 py-0.5 font-semibold text-[#424245]">
-                                保留 {Math.round(flow.retention * 100)}%
-                              </span>
-                            )}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {layer.words.map((w) => (
-                        <span
-                          key={`${layer.layer}-${w.word}`}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white border border-black/8 text-[11px] text-[#424245]"
-                        >
-                          {w.word}
-                          {w.share !== undefined && <span className="text-[#aeaeb2]">{Math.round(w.share * 100)}%</span>}
-                          {w.volume !== undefined && <span className="text-[#aeaeb2]">{w.volume.toLocaleString()}</span>}
-                        </span>
-                      ))}
-                    </div>
-                    {layer.note && <p className="text-[10px] text-[#86868b] mt-1.5 leading-relaxed">{layer.note}</p>}
-                    {(() => {
-                      const flow = searchFlow.find((f) => f.layer === layer.layer);
-                      return flow?.note ? (
-                        <p className="text-[10px] text-amber-600 mt-1 leading-relaxed">{flow.note}</p>
-                      ) : null;
-                    })()}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
+          <SearchPathDetailBlock
+            searchPath={data.searchPath}
+            flow={searchFlow}
+            onOpenDetail={() => onOpenL3?.('1')}
+          />
 
-          <Card>
-            <div className="p-5 space-y-3">
-              <p className="text-sm font-semibold text-[#1d1d1f]">搜索偏好</p>
-              {data.searchPreference?.priceSensitivity && (
-                <div>
-                  <p className="text-[11px] text-[#86868b]">价格敏感度</p>
-                  <p className="text-sm font-semibold text-[#1d1d1f]">
-                    {PRICE_SENSITIVITY_LABELS[data.searchPreference.priceSensitivity]}
-                  </p>
-                  {data.searchPreference.priceSensitivityNote && (
-                    <p className="text-[10px] text-[#86868b] mt-0.5">{data.searchPreference.priceSensitivityNote}</p>
-                  )}
-                </div>
-              )}
-              {data.searchPreference?.attributeMix && (
-                <div>
-                  <p className="text-[11px] text-[#86868b]">词性倾向</p>
-                  <p className="text-xs text-[#424245] leading-relaxed">{data.searchPreference.attributeMix}</p>
-                </div>
-              )}
-              {data.searchPreference?.longTailShare !== undefined && (
-                <div>
-                  <p className="text-[11px] text-[#86868b]">长尾结构</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className="flex-1 h-1.5 rounded-full bg-[#e5e5ea] overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-indigo-500"
-                        style={{ width: `${Math.round(data.searchPreference.longTailShare * 100)}%` }}
-                      />
-                    </div>
-                    <span className="text-[11px] text-[#424245]">
-                      长尾占 {Math.round(data.searchPreference.longTailShare * 100)}%
-                    </span>
-                  </div>
-                </div>
-              )}
-              {data.searchPreference?.decisionFocus && data.searchPreference.decisionFocus.length > 0 && (
-                <div>
-                  <p className="text-[11px] text-[#86868b] mb-1">决策焦点（买家下单前对比什么）</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {data.searchPreference.decisionFocus.map((f) => (
-                      <span key={f} className="px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[11px] text-indigo-700">
-                        {f}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
+          <SearchPreferenceDetailBlock
+            preference={data.searchPreference}
+            onOpenDetail={() => onOpenL3?.('2')}
+          />
         </div>
       )}
       {/* 数据上下文 */}
@@ -393,225 +326,442 @@ export function UserLookView({
       {/* 已满足需求 */}
       <StringListCard title="已满足需求" hint="现有产品已经较好满足的需求，用于对照" value={data.satisfiedNeeds} onAdd={() => addList('satisfiedNeeds')} onChange={(i, v) => updateList('satisfiedNeeds', i, v)} onRemove={(i) => removeList('satisfiedNeeds', i)} />
 
-      {/* 线框图 Screen 3 ④：细分标准（把需求域标成"作为细分标准"，联动看市场） */}
+      {/* 线框图 Screen 3 ④：细分标准（把需求域标成"作为细分标准"，联动看市场）
+          ⏳3：④ 区块已抽成独立组件，内联与二级页④ 共用同一份实现（只换 variant）。 */}
+      <SegmentStandardBlock
+        standard={standard}
+        categoryOptions={categoryOptions}
+        candidates={data.unmetNeedCandidates}
+        detailOpen={standardOpen}
+        onToggleDetail={() => setStandardOpen((v) => !v)}
+        onChange={(next) => update({ segmentStandard: next })}
+        onOpenDetail={() => onOpenL3?.('4')}
+      />
 
-      <Card>
+      {/* 未满足需求候选（线框图 ③ 需求分类树）
+          ⏳3：③ 区块已抽成独立组件，内联与二级页③ 共用同一份实现（只换 variant）。 */}
+      <NeedTreeDetailBlock
+        candidates={data.unmetNeedCandidates}
+        onChange={(list) => update({ unmetNeedCandidates: list })}
+        onAdd={addCandidate}
+        onOpenDetail={() => onOpenL3?.('3')}
+      />
+    </div>
+  );
+}
 
-        <div className="p-5">
+/* ────────────────────────────────────────────────────────────────────────────
+ * ⏳3：看用户侧的 4 个二级页区块（①②③④）
+ * 每个区块只实现一次：`variant='inline'` 就是主屏上今天的样子，`variant='sheet'` 是二级页正文，
+ * 由 ProjectWorkspace 的全屏页壳 `L3Sheet` 渲染。数据与写回路径都由外层 UserLookView 提供，
+ * 区块自身不持有业务状态（局部只有展开/收起这类纯 UI 状态）。
+ * ──────────────────────────────────────────────────────────────────────────── */
 
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+/** 未满足需求 → 需求域归并（④ 的勾选项，内联与二级页共用） */
+export function buildCategoryOptions(
+  candidates: UnmetNeedCandidate[]
+): { name: string; needs: number; evidence: number }[] {
+  const map = new Map<string, { name: string; needs: number; evidence: number }>();
+  for (const c of candidates) {
+    const name = (c.category || '未分类需求').trim() || '未分类需求';
+    const cur = map.get(name) ?? { name, needs: 0, evidence: 0 };
+    cur.needs += 1;
+    if ((c.evidence?.reviewQuotes?.length ?? 0) > 0 || (c.evidence?.asins?.length ?? 0) > 0) cur.evidence += 1;
+    map.set(name, cur);
+  }
+  return [...map.values()];
+}
 
-            <div className="flex items-center gap-2">
-
-              <Layers className="w-4 h-4 text-indigo-600" />
-
-              <p className="text-sm font-semibold text-[#1d1d1f]">④ 细分标准</p>
-
-              <span className="text-[11px] text-[#aeaeb2]">勾选"作为细分标准"的需求域 → 看市场的方案 A 会优先按它切</span>
-
-            </div>
-
-            <button
-
-              type="button"
-
-              onClick={() => setStandardOpen((v) => !v)}
-
-              className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700"
-
-            >
-
-              {standardOpen ? '收起明细' : '细分标准设置（②级页④）'}
-
-            </button>
-
+/** 线框图 ①：搜索路径图（四层漏斗 + 每层流向），内联与二级页① 同一份实现 */
+export function SearchPathDetailBlock({
+  searchPath,
+  flow,
+  onOpenDetail,
+  variant = 'inline',
+}: {
+  searchPath?: SearchPath;
+  flow: SearchPathFlow[];
+  onOpenDetail?: () => void;
+  variant?: L3BlockVariant;
+}) {
+  const sheet = variant === 'sheet';
+  return (
+    <Card>
+      <div className="p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <p className="text-sm font-semibold text-[#1d1d1f]">{sheet ? '① 搜索路径图（二级页①）' : '搜索路径图'}</p>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-[#86868b]">认知 → 考虑 → 决策 → 场景</span>
+            {!sheet && (
+              <button
+                type="button"
+                onClick={onOpenDetail}
+                title="打开二级页①：搜索路径详情"
+                className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700"
+              >
+                查看详情
+              </button>
+            )}
           </div>
-
-          <p className="text-[11px] text-[#86868b] mb-3 leading-relaxed">
-
-            细分标准决定"后面所有对比按什么切"。这里勾的是**需求域**（来自上面的需求分类树），
-
-            第一个勾选的是主标准；不勾也可以，看市场会退回默认的三方案对比。
-
-          </p>
-
-          {categoryOptions.length === 0 ? (
-
-            <p className="text-[11px] text-amber-700">还没有需求域：先在上面加至少 1 条未满足需求（填「需求域」字段）。</p>
-
-          ) : (
-
-            <div className="space-y-1.5">
-
-              {categoryOptions.map((c) => {
-
-                const idx = standard.categories.indexOf(c.name);
-
-                const checked = idx >= 0;
-
-                return (
-
-                  <div key={c.name} className="flex flex-wrap items-center gap-2 rounded-xl border border-black/8 bg-[#f8f9fb] px-3 py-2">
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-
-                      <input
-
-                        type="checkbox"
-
-                        checked={checked}
-
-                        onChange={() => toggleStandardCategory(c.name)}
-
-                        className="w-3.5 h-3.5 accent-indigo-600"
-
-                      />
-
-                      <span className="text-[12px] font-semibold text-[#1d1d1f]">{c.name}</span>
-
-                    </label>
-
-                    <span className="text-[10px] text-[#86868b]">
-
-                      {c.needs} 条需求{c.evidence > 0 ? ` · ${c.evidence} 条带证据` : ' · 暂无证据'}
-
+        </div>
+        {searchPath?.summary && <p className="text-xs text-[#424245] mb-2 leading-relaxed">{searchPath.summary}</p>}
+        {/* M2① 流向（确定性）：每层相对上一层保留多少需求 */}
+        {flow.length > 0 && (
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2 mb-3">
+            <p className="text-[11px] font-semibold text-indigo-800">流向：{describeSearchPathFlow(flow)}</p>
+            <p className="text-[10px] text-indigo-700/70 mt-0.5">
+              由各层词搜索量（缺量时退化词数口径）确定性算出，AI 不改这个比例。
+            </p>
+          </div>
+        )}
+        <div className="space-y-3">
+          {(searchPath?.layers ?? []).map((layer) => (
+            <div key={layer.layer} className="rounded-xl border border-black/5 bg-[#f8f9fb] p-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-[#1d1d1f]">{SEARCH_PATH_LAYER_LABELS[layer.layer]}</span>
+                <span className="text-[10px] text-[#86868b]">{SEARCH_PATH_LAYER_HINTS[layer.layer]}</span>
+                {(() => {
+                  const f = flow.find((x) => x.layer === layer.layer);
+                  if (!f) return null;
+                  return (
+                    <span className="ml-auto inline-flex items-center gap-1.5 text-[10px] text-[#86868b]">
+                      {f.volume > 0 && <span>本层量 {f.volume.toLocaleString()}</span>}
+                      {f.retention !== null && f.layer !== 'awareness' && (
+                        <span className="rounded-full bg-white border border-black/8 px-1.5 py-0.5 font-semibold text-[#424245]">
+                          保留 {Math.round(f.retention * 100)}%
+                        </span>
+                      )}
                     </span>
-
-                    {checked && (
-
-                      <span className="ml-auto flex items-center gap-2">
-
-                        {idx === 0 ? (
-
-                          <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-semibold text-white">主标准</span>
-
-                        ) : (
-
-                          <button
-
-                            type="button"
-
-                            onClick={() => setPrimaryStandard(c.name)}
-
-                            className="rounded-lg border border-black/10 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#86868b] hover:border-indigo-300 hover:text-indigo-700"
-
-                          >
-
-                            设为主标准
-
-                          </button>
-
-                        )}
-
-                      </span>
-
-                    )}
-
-                  </div>
-
-                );
-
-              })}
-
-              <div className="pt-1">
-
-                <label className="text-[11px] text-[#86868b]">主标准的理由（一句话，给管理层看的）</label>
-
-                <input
-
-                  value={standard.basis ?? ''}
-
-                  onChange={(e) => update({ segmentStandard: { ...standard, categories: standard.categories, basis: e.target.value, updatedAt: new Date().toISOString() } })}
-
-                  placeholder="例如：睡姿决定高度需求，且#U3 需求在评论里被反复抱怨"
-
-                  className={inputCls}
-
-                />
-
+                  );
+                })()}
               </div>
-
-              {standardOpen && (
-
-                <div className="mt-2 rounded-xl border border-black/8 bg-white px-3 py-2">
-
-                  <p className="text-[11px] font-semibold text-[#1d1d1f] mb-1">细分标准下的需求明细（二级页④）</p>
-
-                  <ul className="space-y-0.5">
-
-                    {data.unmetNeedCandidates.map((c) => (
-
-                      <li key={c.id} className="text-[10px] text-[#424245] leading-relaxed">
-
-                        · <span className="text-[#86868b]">{(c.category || '未分类').trim()}</span> ｜ {(c.needStatement || '(未填写)').trim()}
-
-                        {c.evidence && (
-
-                          <span className="text-[#aeaeb2]">
-
-                            （关键词 {(c.evidence.keywords ?? []).length} · 评论原文 {(c.evidence.reviewQuotes ?? []).length} · 覆盖 ASIN {(c.evidence.asins ?? []).length}）
-
-                          </span>
-
-                        )}
-
-                      </li>
-
-                    ))}
-
-                  </ul>
-
-                </div>
-
-              )}
-
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {layer.words.map((w) => (
+                  <span
+                    key={`${layer.layer}-${w.word}`}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white border border-black/8 text-[11px] text-[#424245]"
+                  >
+                    {w.word}
+                    {w.share !== undefined && <span className="text-[#aeaeb2]">{Math.round(w.share * 100)}%</span>}
+                    {w.volume !== undefined && <span className="text-[#aeaeb2]">{w.volume.toLocaleString()}</span>}
+                  </span>
+                ))}
+              </div>
+              {layer.note && <p className="text-[10px] text-[#86868b] mt-1.5 leading-relaxed">{layer.note}</p>}
+              {(() => {
+                const f = flow.find((x) => x.layer === layer.layer);
+                return f?.note ? <p className="text-[10px] text-amber-600 mt-1 leading-relaxed">{f.note}</p> : null;
+              })()}
             </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
 
+/** 线框图 ②：搜索偏好画像，内联与二级页② 同一份实现 */
+export function SearchPreferenceDetailBlock({
+  preference,
+  onOpenDetail,
+  variant = 'inline',
+}: {
+  preference?: SearchPreference;
+  onOpenDetail?: () => void;
+  variant?: L3BlockVariant;
+}) {
+  const sheet = variant === 'sheet';
+  return (
+    <Card>
+      <div className="p-5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-[#1d1d1f]">{sheet ? '② 搜索偏好画像（二级页②）' : '搜索偏好'}</p>
+          {!sheet && (
+            <button
+              type="button"
+              onClick={onOpenDetail}
+              title="打开二级页②：搜索偏好详情"
+              className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700"
+            >
+              查看详情
+            </button>
           )}
+        </div>
+        {preference?.priceSensitivity && (
+          <div>
+            <p className="text-[11px] text-[#86868b]">价格敏感度</p>
+            <p className="text-sm font-semibold text-[#1d1d1f]">{PRICE_SENSITIVITY_LABELS[preference.priceSensitivity]}</p>
+            {preference.priceSensitivityNote && (
+              <p className="text-[10px] text-[#86868b] mt-0.5">{preference.priceSensitivityNote}</p>
+            )}
+          </div>
+        )}
+        {preference?.attributeMix && (
+          <div>
+            <p className="text-[11px] text-[#86868b]">词性倾向</p>
+            <p className="text-xs text-[#424245] leading-relaxed">{preference.attributeMix}</p>
+          </div>
+        )}
+        {preference?.longTailShare !== undefined && (
+          <div>
+            <p className="text-[11px] text-[#86868b]">长尾结构</p>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="flex-1 h-1.5 rounded-full bg-[#e5e5ea] overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-indigo-500"
+                  style={{ width: `${Math.round(preference.longTailShare * 100)}%` }}
+                />
+              </div>
+              <span className="text-[11px] text-[#424245]">长尾占 {Math.round(preference.longTailShare * 100)}%</span>
+            </div>
+          </div>
+        )}
+        {preference?.decisionFocus && preference.decisionFocus.length > 0 && (
+          <div>
+            <p className="text-[11px] text-[#86868b] mb-1">决策焦点（买家下单前对比什么）</p>
+            <div className="flex flex-wrap gap-1.5">
+              {preference.decisionFocus.map((f) => (
+                <span key={f} className="px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[11px] text-indigo-700">
+                  {f}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
 
+/** 线框图 ④：细分标准（勾选需求域 → 看市场方案 A 优先按它切），内联与二级页④ 同一份实现 */
+export function SegmentStandardBlock({
+  standard,
+  categoryOptions,
+  candidates,
+  detailOpen,
+  onToggleDetail,
+  onChange,
+  onOpenDetail,
+  variant = 'inline',
+}: {
+  standard: SegmentStandard;
+  categoryOptions: { name: string; needs: number; evidence: number }[];
+  candidates: UnmetNeedCandidate[];
+  /** 内联时的"展开明细"状态；二级页里恒为展开（这一页本身就是明细页） */
+  detailOpen: boolean;
+  onToggleDetail?: () => void;
+  onChange: (next: SegmentStandard) => void;
+  onOpenDetail?: () => void;
+  variant?: L3BlockVariant;
+}) {
+  const sheet = variant === 'sheet';
+  const showDetail = sheet || detailOpen;
+  const toggleCategory = (name: string) => {
+    const has = standard.categories.includes(name);
+    const categories = has ? standard.categories.filter((c) => c !== name) : [...standard.categories, name];
+    onChange({ ...standard, categories, updatedAt: new Date().toISOString() });
+  };
+  const setPrimary = (name: string) => {
+    onChange({
+      ...standard,
+      categories: [name, ...standard.categories.filter((c) => c !== name)],
+      updatedAt: new Date().toISOString(),
+    });
+  };
+  return (
+    <Card>
+      <div className="p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-indigo-600" />
+            <p className="text-sm font-semibold text-[#1d1d1f]">{sheet ? '④ 细分标准设置（二级页④）' : '④ 细分标准'}</p>
+            <span className="text-[11px] text-[#aeaeb2]">勾选"作为细分标准"的需求域 → 看市场的方案 A 会优先按它切</span>
+          </div>
+          <div className="flex items-center gap-3">
+            {!sheet && (
+              <button
+                type="button"
+                onClick={onOpenDetail}
+                title="打开二级页④：细分标准设置"
+                className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700"
+              >
+                查看详情
+              </button>
+            )}
+            {!sheet && onToggleDetail && (
+              <button
+                type="button"
+                onClick={onToggleDetail}
+                className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700"
+              >
+                {detailOpen ? '收起明细' : '细分标准设置（二级页④）'}
+              </button>
+            )}
+          </div>
         </div>
 
-      </Card>
+        <p className="text-[11px] text-[#86868b] mb-3 leading-relaxed">
+          细分标准决定"后面所有对比按什么切"。这里勾的是**需求域**（来自上面的需求分类树），
+          第一个勾选的是主标准；不勾也可以，看市场会退回默认的三方案对比。
+        </p>
 
+        {categoryOptions.length === 0 ? (
+          <p className="text-[11px] text-amber-700">还没有需求域：先在上面加至少 1 条未满足需求（填「需求域」字段）。</p>
+        ) : (
+          <div className="space-y-1.5">
+            {categoryOptions.map((c) => {
+              const idx = standard.categories.indexOf(c.name);
+              const checked = idx >= 0;
+              return (
+                <div key={c.name} className="flex flex-wrap items-center gap-2 rounded-xl border border-black/8 bg-[#f8f9fb] px-3 py-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCategory(c.name)}
+                      className="w-3.5 h-3.5 accent-indigo-600"
+                    />
+                    <span className="text-[12px] font-semibold text-[#1d1d1f]">{c.name}</span>
+                  </label>
+                  <span className="text-[10px] text-[#86868b]">
+                    {c.needs} 条需求{c.evidence > 0 ? ` · ${c.evidence} 条带证据` : ' · 暂无证据'}
+                  </span>
+                  {checked && (
+                    <span className="ml-auto flex items-center gap-2">
+                      {idx === 0 ? (
+                        <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-semibold text-white">主标准</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setPrimary(c.name)}
+                          className="rounded-lg border border-black/10 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#86868b] hover:border-indigo-300 hover:text-indigo-700"
+                        >
+                          设为主标准
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
 
-      {/* 未满足需求候选 */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-[#1d1d1f]">未满足需求候选</p>
-            <p className="text-xs text-[#aeaeb2] mt-0.5">每个候选都要能说明：目标用户 + 场景 + 任务 + 当前替代方案 + 证据强度</p>
+            <div className="pt-1">
+              <label className="text-[11px] text-[#86868b]">主标准的理由（一句话，给管理层看的）</label>
+              <input
+                value={standard.basis ?? ''}
+                onChange={(e) =>
+                  onChange({ ...standard, categories: standard.categories, basis: e.target.value, updatedAt: new Date().toISOString() })
+                }
+                placeholder="例如：睡姿决定高度需求，且#U3 需求在评论里被反复抱怨"
+                className={inputCls}
+              />
+            </div>
+
+            {showDetail && (
+              <div className="mt-2 rounded-xl border border-black/8 bg-white px-3 py-2">
+                <p className="text-[11px] font-semibold text-[#1d1d1f] mb-1">细分标准下的需求明细（二级页④）</p>
+                <ul className="space-y-0.5">
+                  {candidates.map((c) => (
+                    <li key={c.id} className="text-[10px] text-[#424245] leading-relaxed">
+                      · <span className="text-[#86868b]">{(c.category || '未分类').trim()}</span> ｜ {(c.needStatement || '(未填写)').trim()}
+                      {c.evidence && (
+                        <span className="text-[#aeaeb2]">
+                          （关键词 {(c.evidence.keywords ?? []).length} · 评论原文 {(c.evidence.reviewQuotes ?? []).length} · 覆盖 ASIN {(c.evidence.asins ?? []).length}）
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
-          <button type="button" onClick={addCandidate} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]">
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/** 线框图 ③：需求分类树（未满足需求按需求域分组 + 证据链），内联与二级页③ 同一份实现 */
+export function NeedTreeDetailBlock({
+  candidates,
+  onChange,
+  onAdd,
+  onOpenDetail,
+  variant = 'inline',
+}: {
+  candidates: UnmetNeedCandidate[];
+  /** 交给外层统一持久化（内联走 debounce 保存，二级页走同一条路径） */
+  onChange: (next: UnmetNeedCandidate[]) => void;
+  onAdd: () => void;
+  onOpenDetail?: () => void;
+  variant?: L3BlockVariant;
+}) {
+  const sheet = variant === 'sheet';
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold text-[#1d1d1f]">{sheet ? '③ 需求分类树详情' : '未满足需求候选'}</p>
+          <p className="text-xs text-[#aeaeb2] mt-0.5">
+            每个候选都要能说明：目标用户 + 场景 + 任务 + 当前替代方案 + 证据强度
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {!sheet && (
+            <button
+              type="button"
+              onClick={onOpenDetail}
+              title="打开二级页③：需求分类树详情"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-all active:scale-[0.98]"
+            >
+              查看详情
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onAdd}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all active:scale-[0.98]"
+          >
             <Plus className="w-3.5 h-3.5" /> 添加未满足需求
           </button>
         </div>
-        {data.unmetNeedCandidates.length === 0 ? (
-          <Card className="py-10 text-center">
-            <p className="text-sm text-[#aeaeb2]">尚未添加未满足需求候选</p>
-          </Card>
-        ) : (
-          groupCandidatesByCategory(data.unmetNeedCandidates).map(([cat, list]) => (
-            <div key={cat} className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-[#1d1d1f]">{cat}</span>
-                <span className="text-[10px] text-[#86868b]">{list.length} 条需求</span>
-              </div>
-              {list.map((c) => {
-                const idx = data.unmetNeedCandidates.findIndex((x) => x.id === c.id);
-                return (
-                  <UnmetNeedCard
-                    key={c.id}
-                    index={idx}
-                    candidate={c}
-                    onChange={(patch) => updateCandidate(c.id, patch)}
-                    onRemove={() => removeCandidate(c.id)}
-                  />
-                );
-              })}
-            </div>
-          ))
-        )}
       </div>
+      {candidates.length === 0 ? (
+        <Card className="py-10 text-center">
+          <p className="text-sm text-[#aeaeb2]">尚未添加未满足需求候选</p>
+        </Card>
+      ) : (
+        groupCandidatesByCategory(candidates).map(([cat, list]) => (
+          <div key={cat} className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-[#1d1d1f]">{cat}</span>
+              <span className="text-[10px] text-[#86868b]">{list.length} 条需求</span>
+              {!sheet && (
+                <button
+                  type="button"
+                  onClick={onOpenDetail}
+                  title="打开二级页③：需求分类树详情"
+                  className="ml-auto text-[10px] font-medium text-indigo-600 hover:text-indigo-700"
+                >
+                  查看详情
+                </button>
+              )}
+            </div>
+            {list.map((c) => {
+              const idx = candidates.findIndex((x) => x.id === c.id);
+              return (
+                <UnmetNeedCard
+                  key={c.id}
+                  index={idx}
+                  candidate={c}
+                  onChange={(patch) => onChange(candidates.map((x) => (x.id === c.id ? { ...x, ...patch } : x)))}
+                  onRemove={() => onChange(candidates.filter((x) => x.id !== c.id))}
+                />
+              );
+            })}
+          </div>
+        ))
+      )}
     </div>
   );
 }

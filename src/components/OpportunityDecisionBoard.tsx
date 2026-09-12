@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -45,6 +45,8 @@ import {
 } from '../types/opportunity';
 import { SCORE_DIMENSION_LABELS, SCORE_WEIGHTS, type ScoreDimension } from '../utils/opportunityScoreV2';
 import type { OpportunityCard, OpportunityDecision, ResearchProject } from '../types/researchProject';
+import type { L3Id } from '../utils/l3Pages';
+import type { L3BlockVariant, L3BodyRender } from './L3Sheet';
 
 /**
  * M4 · 看机会「决策看板」（PRD §6.5）。
@@ -62,10 +64,16 @@ export function OpportunityDecisionBoard({
   userId,
   project,
   onProjectChange,
+  onOpenL3,
+  onRegisterL3Bodies,
 }: {
   userId: string;
   project: ResearchProject;
   onProjectChange?: (updated: ResearchProject) => void;
+  /** 线框图 ⏳3：打开二级页⑬机会卡详情 / ⑭执行路线图与控制点详情（带上卡片 id） */
+  onOpenL3?: (id: L3Id, cardId?: string) => void;
+  /** 线框图 ⏳3：把 ⑬⑭ 的正文（与机会卡内联区块同一份实现）注册给全屏页壳 */
+  onRegisterL3Bodies?: (render: L3BodyRender | null) => void;
 }) {
   const [cards, setCards] = useState<OpportunityCard[]>([]);
   const [conclusion, setConclusion] = useState<OpportunityConclusion | null>(null);
@@ -202,6 +210,24 @@ export function OpportunityDecisionBoard({
     await persistCards(next);
   };
 
+  /**
+   * ⏳3（二级页⑬）：反证审查只有这一条路径 —— 机会卡上的内联按钮与二级页⑬ 共用。
+   * AI 只写反证与缺失证据，不改评分（评分始终来自确定性模块）。
+   */
+  const runCounterEvidenceReview = async (card: OpportunityCard) => {
+    const res = await reviewOpportunityCard(card, evidenceLines.slice(0, 10).join('\n'));
+    if (!res.ok) {
+      toast.error(res.error || '审查失败');
+      return;
+    }
+    const reviewed = cards.map((c) =>
+      c.id === card.id
+        ? { ...c, counterEvidence: res.counterEvidence, missingEvidence: res.missingEvidence, updatedAt: new Date().toISOString() }
+        : c
+    );
+    await persistCards(reviewed, '已完成反证审查（只写反证与缺失证据，不改评分）');
+  };
+
   const addCardFromNeed = async (needId: string) => {
     const userLook = await loadUserLook(userId, project.id);
     const need = (userLook.unmetNeedCandidates ?? []).find((n) => n.id === needId);
@@ -267,6 +293,52 @@ export function OpportunityDecisionBoard({
       knownResourceGaps: (c.decisionPackage?.resources ?? []).filter((r) => r.knownGap).length,
     }))
   );
+
+  /**
+   * ⏳3（线框图 ⑬⑭）：二级页正文 = 与机会卡内联区块**同一个组件**，只把 variant 换成 'sheet'；
+   * 数据与写回路径（persistCards / toggleControlPoint / runCounterEvidenceReview）完全共用。
+   * 页壳会把卡片 id 一起传进来（onOpenL3('13', card.id)），这里用 ref 提供"当前这份数据能渲染什么"，
+   * 注册出去的是一层稳定壳，避免父组件因函数身份每次渲染都变化而无限重注册。
+   */
+  const l3BodyRef = useRef<L3BodyRender | null>(null);
+  l3BodyRef.current = (id, cardId) => {
+    const card = cards.find((c) => c.id === cardId) ?? cards[0];
+    if (!card) {
+      return (
+        <Card>
+          <div className="p-5 text-xs text-[#aeaeb2]">
+            还没有机会卡：先在看机会主屏生成一张卡，这一页才有内容可看。
+          </div>
+        </Card>
+      );
+    }
+    if (id === '13') {
+      return (
+        <OpportunityEvidenceChain
+          card={card}
+          evidenceLines={evidenceLines}
+          onReview={() => void runCounterEvidenceReview(card)}
+          variant="sheet"
+        />
+      );
+    }
+    if (id === '14') {
+      return (
+        <OpportunityRoadmapBlock
+          card={card}
+          onToggleControlPoint={(cpId) => void toggleControlPoint(card, cpId)}
+          variant="sheet"
+        />
+      );
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    if (!onRegisterL3Bodies) return;
+    onRegisterL3Bodies((id, cardId) => l3BodyRef.current?.(id, cardId) ?? null);
+    return () => onRegisterL3Bodies(null);
+  }, [onRegisterL3Bodies, cards, evidenceLines]);
 
   if (busy && cards.length === 0 && !decision) {
     return (
@@ -513,7 +585,6 @@ export function OpportunityDecisionBoard({
             const card = cards.find((c) => c.id === r.cardId)!;
             const open = openCard === card.id;
             const b = card.scoreBreakdown;
-            const pkg = card.decisionPackage;
             return (
               <Card key={card.id}>
                 <div className="p-5 space-y-2.5">
@@ -592,74 +663,12 @@ export function OpportunityDecisionBoard({
                     )}
                   </div>
 
-                  {/* 决策包：路线图 */}
-                  {pkg && (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                      <div>
-                        <p className="text-[11px] font-semibold text-[#424245] mb-1">执行路线图</p>
-                        {(['now', 'next'] as const).map((phase) => {
-                          const items = pkg.roadmap.filter((a) => a.phase === phase);
-                          if (items.length === 0) return null;
-                          return (
-                            <div key={phase} className="mb-1.5">
-                              <p className="text-[10px] font-semibold text-indigo-700">{ROADMAP_PHASE_LABELS[phase]}</p>
-                              <ol className="ml-3.5 list-decimal">
-                                {items.map((a) => (
-                                  <li key={a.id} className="text-[10px] text-[#424245] leading-relaxed">
-                                    {a.action}
-                                    {typeof a.cost === 'number' && <span className="text-[#86868b]">（约 ${a.cost.toLocaleString()}）</span>}
-                                  </li>
-                                ))}
-                              </ol>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <div>
-                        <p className="text-[11px] font-semibold text-[#424245] mb-1">前置资源</p>
-                        <ul className="space-y-0.5">
-                          {pkg.resources.map((res) => (
-                            <li key={res.id} className="text-[10px] leading-relaxed">
-                              {res.knownGap && <span className="mr-1 font-bold text-rose-600">[缺口]</span>}
-                              <span className="text-[#86868b]">{RESOURCE_CATEGORY_LABELS[res.category]}｜</span>
-                              <span className="text-[#424245]">{res.label}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div>
-                        <p className="text-[11px] font-semibold text-[#424245] mb-1">控制点（点一下即确认）</p>
-                        {(['entry', 'process', 'stop'] as ControlPointKind[]).map((kind) => {
-                          const items = pkg.controlPoints.filter((c) => c.kind === kind);
-                          if (items.length === 0) return null;
-                          return (
-                            <div key={kind} className="mb-1.5">
-                              <p className="text-[10px] font-semibold text-[#86868b]">{CONTROL_POINT_LABELS[kind]}</p>
-                              <ul className="space-y-0.5">
-                                {items.map((c) => (
-                                  <li key={c.id}>
-                                    <button
-                                      type="button"
-                                      onClick={() => void toggleControlPoint(card, c.id)}
-                                      className={cn(
-                                        'text-left text-[10px] leading-relaxed rounded px-1 py-0.5 w-full',
-                                        c.confirmed ? 'text-emerald-700' : 'text-[#424245] hover:bg-[#f5f5f7]'
-                                      )}
-                                    >
-                                      {c.confirmed ? '☑' : '☐'} {c.label}：{c.metric} {c.threshold}
-                                      {!c.confirmed && <span className="text-amber-600">（待确认）</span>}
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                  {/* 决策包：路线图 / 前置资源 / 控制点（线框图二级页⑭：内联与二级页共用同一个组件） */}
+                  <OpportunityRoadmapBlock
+                    card={card}
+                    onToggleControlPoint={(cpId) => void toggleControlPoint(card, cpId)}
+                    onOpenDetail={() => onOpenL3?.('14', card.id)}
+                  />
 
                   {/* 决策按钮 */}
                   <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-black/5">
@@ -689,81 +698,27 @@ export function OpportunityDecisionBoard({
                     ))}
                     <button
                       type="button"
-                      onClick={() => setOpenCard(open ? null : card.id)}
+                      onClick={() => onOpenL3?.('13', card.id)}
+                      title="打开二级页⑬：机会卡详情（证据 / 推理 / 反证）"
                       className="ml-auto text-[10px] font-medium text-indigo-600 hover:text-indigo-700"
+                    >
+                      查看详情
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOpenCard(open ? null : card.id)}
+                      className="text-[10px] font-medium text-indigo-600 hover:text-indigo-700"
                     >
                       {open ? '收起证据/推理/反证' : '展开证据/推理/反证'}
                     </button>
                   </div>
 
                   {open && (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 pt-1">
-                      <div>
-                        <p className="text-[11px] font-semibold text-[#424245] mb-1">证据</p>
-                        {(card.evidenceRefs ?? []).length > 0 ? (
-                          <ul className="space-y-0.5">
-                            {card.evidenceRefs!.map((e, i) => (
-                              <li key={i} className="text-[10px] text-[#424245] leading-relaxed">
-                                <span className="font-mono text-[#86868b]">{e.sourceRef || e.evidenceId}</span> — {e.summary}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-[10px] text-[#aeaeb2]">没有证据引用（这张卡还不成立）</p>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold text-[#424245] mb-1">推理</p>
-                        {(card.reasoningSteps ?? []).length > 0 ? (
-                          <ol className="ml-3.5 list-decimal">
-                            {card.reasoningSteps!.map((s, i) => (
-                              <li key={i} className="text-[10px] text-[#424245] leading-relaxed">
-                                <b>{s.step}</b>：{s.detail}
-                              </li>
-                            ))}
-                          </ol>
-                        ) : (
-                          <p className="text-[10px] text-[#aeaeb2]">没有推理步骤</p>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold text-[#424245] mb-1">反证 / 还缺什么</p>
-                        <ul className="space-y-0.5">
-                          {(card.counterEvidence ?? []).map((c, i) => (
-                            <li key={`c${i}`} className="text-[10px] text-rose-700 leading-relaxed">
-                              · {c}
-                            </li>
-                          ))}
-                          {(card.missingEvidence ?? []).map((c, i) => (
-                            <li key={`m${i}`} className="text-[10px] text-amber-700 leading-relaxed">
-                              · 缺：{c}
-                            </li>
-                          ))}
-                          {(card.counterEvidence ?? []).length === 0 && (card.missingEvidence ?? []).length === 0 && (
-                            <li className="text-[10px] text-[#aeaeb2]">还没有反证审查（可重新生成机会卡）</li>
-                          )}
-                        </ul>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const res = await reviewOpportunityCard(card, evidenceLines.slice(0, 10).join('\n'));
-                            if (!res.ok) {
-                              toast.error(res.error || '审查失败');
-                              return;
-                            }
-                            const next = cards.map((c) =>
-                              c.id === card.id
-                                ? { ...c, counterEvidence: res.counterEvidence, missingEvidence: res.missingEvidence, updatedAt: new Date().toISOString() }
-                                : c
-                            );
-                            await persistCards(next, '已完成反证审查（只写反证与缺失证据，不改评分）');
-                          }}
-                          className="mt-1 rounded-lg border border-black/10 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#86868b] hover:border-indigo-300 hover:text-indigo-700"
-                        >
-                          <Play className="inline w-3 h-3 mr-0.5" /> 让 AI 找反证
-                        </button>
-                      </div>
-                    </div>
+                    <OpportunityEvidenceChain
+                      card={card}
+                      evidenceLines={evidenceLines}
+                      onReview={() => void runCounterEvidenceReview(card)}
+                    />
                   )}
 
                   <p className="text-[10px] text-[#86868b]">{r.reason}</p>
@@ -789,6 +744,211 @@ export function OpportunityDecisionBoard({
           </div>
         </Card>
       )}
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ⏳3：看机会侧的 2 个二级页区块（⑬⑭）
+ * 每个区块只实现一次：variant='inline' 就是机会卡上今天的样子，variant='sheet' 是二级页正文
+ * （由 ProjectWorkspace 的全屏页壳 L3Sheet 渲染）。数据与写回回调都由外层传入。
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** 线框图 ⑬：机会卡详情（证据 / 推理 / 反证），内联与二级页⑬ 同一份实现 */
+export function OpportunityEvidenceChain({
+  card,
+  evidenceLines,
+  onReview,
+  variant = 'inline',
+}: {
+  card: OpportunityCard;
+  evidenceLines: string[];
+  onReview: () => void;
+  variant?: L3BlockVariant;
+}) {
+  const sheet = variant === 'sheet';
+  const body = (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 pt-1">
+      <div>
+        <p className="text-[11px] font-semibold text-[#424245] mb-1">证据</p>
+        {(card.evidenceRefs ?? []).length > 0 ? (
+          <ul className="space-y-0.5">
+            {card.evidenceRefs!.map((e, i) => (
+              <li key={i} className="text-[10px] text-[#424245] leading-relaxed">
+                <span className="font-mono text-[#86868b]">{e.sourceRef || e.evidenceId}</span> — {e.summary}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[10px] text-[#aeaeb2]">没有证据引用（这张卡还不成立）</p>
+        )}
+      </div>
+      <div>
+        <p className="text-[11px] font-semibold text-[#424245] mb-1">推理</p>
+        {(card.reasoningSteps ?? []).length > 0 ? (
+          <ol className="ml-3.5 list-decimal">
+            {card.reasoningSteps!.map((s, i) => (
+              <li key={i} className="text-[10px] text-[#424245] leading-relaxed">
+                <b>{s.step}</b>：{s.detail}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="text-[10px] text-[#aeaeb2]">没有推理步骤</p>
+        )}
+      </div>
+      <div>
+        <p className="text-[11px] font-semibold text-[#424245] mb-1">反证 / 还缺什么</p>
+        <ul className="space-y-0.5">
+          {(card.counterEvidence ?? []).map((c, i) => (
+            <li key={`c${i}`} className="text-[10px] text-rose-700 leading-relaxed">
+              · {c}
+            </li>
+          ))}
+          {(card.missingEvidence ?? []).map((c, i) => (
+            <li key={`m${i}`} className="text-[10px] text-amber-700 leading-relaxed">
+              · 缺：{c}
+            </li>
+          ))}
+          {(card.counterEvidence ?? []).length === 0 && (card.missingEvidence ?? []).length === 0 && (
+            <li className="text-[10px] text-[#aeaeb2]">还没有反证审查（可重新生成机会卡）</li>
+          )}
+        </ul>
+        <button
+          type="button"
+          onClick={onReview}
+          className="mt-1 rounded-lg border border-black/10 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#86868b] hover:border-indigo-300 hover:text-indigo-700"
+        >
+          <Play className="inline w-3 h-3 mr-0.5" /> 让 AI 找反证
+        </button>
+      </div>
+    </div>
+  );
+  // 内联形态保持改动前的 DOM 原样（不多套一层）；二级页形态才加一句"这是哪一页"的说明
+  if (!sheet) return body;
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] text-[#86868b]">
+        这一页就是机会卡上「证据 / 推理 / 反证」的完整版：同一份数据、同一份实现，反证审查共用一个入口
+        （已加载 {evidenceLines.length} 条项目证据可供引用）。
+      </p>
+      {body}
+    </div>
+  );
+}
+
+/** 线框图 ⑭：执行路线图 / 前置资源 / 控制点，内联与二级页⑭ 同一份实现 */
+export function OpportunityRoadmapBlock({
+  card,
+  onToggleControlPoint,
+  onOpenDetail,
+  variant = 'inline',
+}: {
+  card: OpportunityCard;
+  onToggleControlPoint: (controlPointId: string) => void;
+  onOpenDetail?: () => void;
+  variant?: L3BlockVariant;
+}) {
+  const sheet = variant === 'sheet';
+  const pkg = card.decisionPackage;
+  if (!pkg) {
+    // 内联时今天什么都不渲染；二级页里必须解释为什么是空的，否则用户以为页面坏了
+    if (!sheet) return null;
+    return (
+      <Card>
+        <div className="p-5 text-xs text-[#aeaeb2]">
+          这张卡还没有决策包（路线图 / 前置资源 / 控制点）：跑一次「AI 生成机会卡」或重算即可补齐。
+        </div>
+      </Card>
+    );
+  }
+  const body = (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <p className="text-[11px] font-semibold text-[#424245]">执行路线图</p>
+          {!sheet && (
+            <button
+              type="button"
+              onClick={onOpenDetail}
+              title="打开二级页⑭：执行路线图与控制点详情"
+              className="text-[10px] font-medium text-indigo-600 hover:text-indigo-700"
+            >
+              查看详情
+            </button>
+          )}
+        </div>
+        {(['now', 'next'] as const).map((phase) => {
+          const items = pkg.roadmap.filter((a) => a.phase === phase);
+          if (items.length === 0) return null;
+          return (
+            <div key={phase} className="mb-1.5">
+              <p className="text-[10px] font-semibold text-indigo-700">{ROADMAP_PHASE_LABELS[phase]}</p>
+              <ol className="ml-3.5 list-decimal">
+                {items.map((a) => (
+                  <li key={a.id} className="text-[10px] text-[#424245] leading-relaxed">
+                    {a.action}
+                    {typeof a.cost === 'number' && <span className="text-[#86868b]">（约 ${a.cost.toLocaleString()}）</span>}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          );
+        })}
+      </div>
+
+      <div>
+        <p className="text-[11px] font-semibold text-[#424245] mb-1">前置资源</p>
+        <ul className="space-y-0.5">
+          {pkg.resources.map((res) => (
+            <li key={res.id} className="text-[10px] leading-relaxed">
+              {res.knownGap && <span className="mr-1 font-bold text-rose-600">[缺口]</span>}
+              <span className="text-[#86868b]">{RESOURCE_CATEGORY_LABELS[res.category]}｜</span>
+              <span className="text-[#424245]">{res.label}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div>
+        <p className="text-[11px] font-semibold text-[#424245] mb-1">控制点（点一下即确认）</p>
+        {(['entry', 'process', 'stop'] as ControlPointKind[]).map((kind) => {
+          const items = pkg.controlPoints.filter((c) => c.kind === kind);
+          if (items.length === 0) return null;
+          return (
+            <div key={kind} className="mb-1.5">
+              <p className="text-[10px] font-semibold text-[#86868b]">{CONTROL_POINT_LABELS[kind]}</p>
+              <ul className="space-y-0.5">
+                {items.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => onToggleControlPoint(c.id)}
+                      className={cn(
+                        'text-left text-[10px] leading-relaxed rounded px-1 py-0.5 w-full',
+                        c.confirmed ? 'text-emerald-700' : 'text-[#424245] hover:bg-[#f5f5f7]'
+                      )}
+                    >
+                      {c.confirmed ? '☑' : '☐'} {c.label}：{c.metric} {c.threshold}
+                      {!c.confirmed && <span className="text-amber-600">（待确认）</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+  if (!sheet) return body;
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] text-[#86868b]">
+        这一页就是这张卡上「先做 / 后做 / 前置资源 / 控制点」的完整版：同一份数据、同一份实现。
+        控制点阈值来自确定性规则（人工确认才算拍板），点一下即确认；改动作/阈值请回到看机会主屏这张卡。
+      </p>
+      {body}
     </div>
   );
 }

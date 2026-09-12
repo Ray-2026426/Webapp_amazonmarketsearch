@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -28,6 +28,8 @@ import { OpportunityLookView } from './OpportunityLookView';
 import { EditProjectModal } from './EditProjectModal';
 import { ProjectMembersModal } from './ProjectMembersModal';
 import { ReportsView } from './ReportsView';
+import { L3Sheet, type L3BodyRender } from './L3Sheet';
+import { l3Page, type L3Id } from '../utils/l3Pages';
 import { setActiveLook } from '../utils/projectStore';
 import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
 import type { MarketContext } from '../utils/marketLook';
@@ -128,6 +130,39 @@ export function ProjectWorkspace({
   const bumpDraft = () => setDraftNonce((n) => n + 1);
   const initialSyncKey = useRef(`${project.id}:${project.version}:${project.updatedAt}`);
   const lastQueuedSyncKey = useRef(initialSyncKey.current);
+
+  /* ── ⏳3（线框图 ①②③④⑪⑫⑬⑭）：二级页 = 真正的全屏 L3 页 ────────────────────────
+   * 全项目**只有一个** `L3Sheet`，就渲染在项目壳里（看某一看时右侧决策草稿仍然挂在下面，只是被盖住）。
+   * 页壳本身不认识业务数据：正文由"拥有这份数据的那一个视图"注册进来
+   * （`onRegisterL3Bodies`），而且注册的就是**同一个内联区块组件**（只换 variant='sheet'），
+   * 所以不存在第二份实现。关闭时把注册函数置空，回到主屏即可。 */
+  const [l3, setL3] = useState<L3Id | null>(null);
+  /** ⑬⑭ 是"某一张机会卡"的详情页，打开时需要把卡片 id 一起带上 */
+  const [l3CardId, setL3CardId] = useState<string | null>(null);
+  const [l3Body, setL3Body] = useState<L3BodyRender | null>(null);
+
+  const openL3 = useCallback((id: L3Id, cardId?: string) => {
+    setL3CardId(cardId ?? null);
+    setL3(id);
+  }, []);
+
+  const closeL3 = useCallback(() => {
+    setL3(null);
+    setL3CardId(null);
+    setL3Body(null);
+  }, []);
+
+  /** 视图注册"这一页的正文怎么渲染"；函数身份只在视图数据变化时改变（视图侧用 ref 稳定住） */
+  const registerL3Bodies = useCallback((render: L3BodyRender | null) => {
+    setL3Body(() => render);
+  }, []);
+
+  // 换一个看就关掉二级页（二级页的正文属于上一个看，留着会指向不存在的数据）
+  useEffect(() => {
+    setL3(null);
+    setL3CardId(null);
+    setL3Body(null);
+  }, [tab]);
 
   const queueCloudSync = () => {
     lastQueuedSyncKey.current = '';
@@ -299,15 +334,35 @@ export function ProjectWorkspace({
           <ProjectOverviewContent project={p} username={username} userId={userId} onNavigateLook={(look) => void switchToLook(look)} />
         </div>
       ) : tab === 'self' ? (
-        <SelfAssessmentView userId={userId} project={p} onProjectChange={applyProjectUpdate} />
+        <SelfAssessmentView
+          userId={userId}
+          project={p}
+          onProjectChange={applyProjectUpdate}
+          onOpenL3={openL3}
+          onRegisterL3Bodies={registerL3Bodies}
+        />
       ) : tab === 'market' ? (
         <MarketLookView userId={userId} project={p} marketContext={marketContext} onProjectChange={applyProjectUpdate} onOpenMarketTool={(segment) => (onOpenMarketSegment ? onOpenMarketSegment(segment) : onOpenTool('market', 'market'))} />
       ) : tab === 'user' ? (
-        <UserLookView userId={userId} project={p} userContext={userContext} onProjectChange={applyProjectUpdate} />
+        <UserLookView
+          userId={userId}
+          project={p}
+          userContext={userContext}
+          onProjectChange={applyProjectUpdate}
+          onOpenL3={openL3}
+          onRegisterL3Bodies={registerL3Bodies}
+        />
       ) : tab === 'competitor' ? (
         <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} onOpenCompetitorTool={() => onOpenTool('competitors', 'competitor')} onSendToComparison={onSendToComparison} onOpenUserInsights={onOpenUserInsights} />
       ) : tab === 'opportunity' ? (
-        <OpportunityLookView userId={userId} project={p} onProjectChange={applyProjectUpdate} onNavigateLook={(look) => void switchToLook(look)} />
+        <OpportunityLookView
+          userId={userId}
+          project={p}
+          onProjectChange={applyProjectUpdate}
+          onNavigateLook={(look) => void switchToLook(look)}
+          onOpenL3={openL3}
+          onRegisterL3Bodies={registerL3Bodies}
+        />
       ) : (
         <ReportsView userId={userId} project={p} onContentChange={queueCloudSync} />
       )}
@@ -339,7 +394,33 @@ export function ProjectWorkspace({
           onClose={() => setMembersOpen(false)}
         />
       )}
+
+      {/* ⏳3：二级页全屏页壳（线框图 ①②③④⑪⑫⑬⑭）。
+          全项目只渲染这一个 L3Sheet：正文由当前这一看的视图注册，且与内联区块是同一个组件。 */}
+      {l3 && (
+        <L3Sheet
+          page={l3Page(l3)}
+          onClose={closeL3}
+          busy={!l3Body}
+          footer={
+            <span className="text-[11px] text-[#86868b] hidden sm:inline">
+              {p.name} · {p.marketplace}
+            </span>
+          }
+        >
+          {l3Body ? l3Body(l3, l3CardId ?? undefined) ?? <L3EmptyBody /> : <L3EmptyBody />}
+        </L3Sheet>
+      )}
     </div>
+  );
+}
+
+/** 二级页正文还没注册上来时的一帧占位（正常情况下只有一帧） */
+function L3EmptyBody() {
+  return (
+    <Card className="py-10 text-center">
+      <p className="text-sm text-[#aeaeb2]">正在准备这一页的内容…</p>
+    </Card>
   );
 }
 

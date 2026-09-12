@@ -24,6 +24,8 @@ import { loadUserLook, type UserLookData, type UnmetNeedCandidate } from '../uti
 import { OpportunityDecisionBoard } from './OpportunityDecisionBoard';
 import { loadSelfAssessment, type SelfAssessment } from '../utils/selfAssessment';
 import { updateLookProgress, setProjectStatus } from '../utils/projectStore';
+import type { L3Id } from '../utils/l3Pages';
+import type { L3BodyRender } from './L3Sheet';
 import {
   FIVE_LOOK_LABELS,
   LOOK_STATUS_LABELS,
@@ -50,11 +52,16 @@ export function OpportunityLookView({
   project,
   onProjectChange,
   onNavigateLook,
+  onOpenL3,
+  onRegisterL3Bodies,
 }: {
   userId: string;
   project: ResearchProject;
   onProjectChange: (updated: ResearchProject) => void;
   onNavigateLook: (look: FiveLookId) => void;
+  /** 线框图 ⏳3：二级页⑬⑭ 的入口与正文注册（透传给决策看板） */
+  onOpenL3?: (id: L3Id, cardId?: string) => void;
+  onRegisterL3Bodies?: (render: L3BodyRender | null) => void;
 }) {
   const [cards, setCards] = useState<OpportunityCard[] | null>(null);
   const [userLook, setUserLook] = useState<UserLookData | null>(null);
@@ -194,8 +201,15 @@ export function OpportunityLookView({
         <SubmitReview userId={userId} project={project} cards={cards} onProjectChange={onProjectChange} />
       </div>
 
-      {/* M4：决策看板（Go/No-Go 汇总 + 零机会结论 + 机会卡决策包 + 硬约束红条 + HTML 导出） */}
-      <OpportunityDecisionBoard userId={userId} project={project} onProjectChange={onProjectChange} />
+      {/* M4：决策看板（Go/No-Go 汇总 + 零机会结论 + 机会卡决策包 + 硬约束红条 + HTML 导出）
+          ⏳3：⑬⑭ 的二级页入口与正文注册由看板自己处理 */}
+      <OpportunityDecisionBoard
+        userId={userId}
+        project={project}
+        onProjectChange={onProjectChange}
+        onOpenL3={onOpenL3}
+        onRegisterL3Bodies={onRegisterL3Bodies}
+      />
 
       {/* 从未满足需求生成 */}
       <Card>
