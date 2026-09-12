@@ -1,8 +1,8 @@
-# Kairo（亚马逊市场调研 App）· 商用化改革 PRD（V2.8）
+# Kairo（亚马逊市场调研 App）· 商用化改革 PRD（V2.9）
 
 | 项 | 内容 |
 | --- | --- |
-| 文档版本 | V2.8（终审 + 云底座选型确认：沿用 Vercel+Supabase、国内迁移后置 §17） |
+| 文档版本 | V2.9（终审 + 云底座选型确认：沿用 Vercel+Supabase、国内迁移后置 §17；新增 §15.13 UI 与线框图一致性修复轮） |
 | 产品名 | **Kairo**（用户确认，替换原 "AmzDev Tool"） |
 | 起草 | 产品负责人（AI PM） |
 | 评审对象 | `main` 分支（8-27 封版）、`phase-0` 分支（8-30 封版）、本地工作区（9-5/9-6，phase-0 延续） |
@@ -1300,6 +1300,33 @@ devApiPlugin 生成的 `.[action].ts.<pid>.<uuid>.tmpdir/*.tmp`，Windows 上抛
 
 ---
 
+### 15.13 UI 与线框图一致性修复轮 —— 记录（2026-09）
+
+**触发**：用户对照 `docs/ui-wireframes.html` 发现实现与流程图有多处不一致（"很多不一样的地方"），并要求逐项修复；期间线上 phase-0 预览出现 `React #310` 白屏。
+**核对口径**：抽出线框图区块文本 + 代码 grep 双证，逐屏列表存于 `docs/ui-conformance-audit.md`（8 屏主流程 + 23 屏二级页/明细层，标 ✅ 一致 / 🔧 已修 / ⏳ 待修）。
+
+推送区间：`phase-0` 分支 `9281c3f → b7f2c3f`（**main 保持 `63abd4c` 未动**）。
+
+| 项 | 状态 | 落点 |
+| --- | --- | --- |
+| ① 看用户 ④ 细分标准 | ✅ 已推 | `SegmentStandard`（勾选需求域的有序标准 + 主标准理由），看市场"方案 A 按需求域切"优先采用 |
+| ② 看市场「查看完整大盘 →」 | ✅ 已推 | 每个细分卡与方案卡各一个入口；大盘顶部显示"当前：X（来自看市场）"+「切到全市场」 |
+| ③ 看竞对 L3 下钻 ⑦⑧⑨⑩ | 🔧 两轮 | 第一轮已带入 ASIN；第二轮（⏳4）精确落到视图：`competitorDrilldown.ts` 单一来源 + `CompetitorHub.preselectedResultTab`/`resultTabRequestKey`，**同一次请求只应用一次**，⑨ 直达流量视图 |
+| ④ 看机会「全局先后建议」 | ✅ 已推 | 独立区块：确定性排序（评分 → 覆盖度 → 前置资源缺口）+ 排序理由 + 已拍板标记，明写"先做哪个由你拍板" |
+| ⑤ 决策草稿全程常驻（⏳1） | ✅ 已推 | 线框图 Screen 2 标为"核心 IA 变化"：抽出 `DecisionDraftRail`，由 `ProjectWorkspace` 在 `xl:sticky` 右栏常驻（六个 Tab 都在）；向导内重复列删除，保存后 `bumpDraft()` 刷新右栏 |
+| ⑥ 线上白屏 `React #310` | ✅ 已推 | 根因：`UserLookView` 的 `useState` 落在 `if (!data) return <加载中/>` **之后**（条件 hook）。已移回 hook 区并加注释；新增 `tests/hookOrder.test.ts`（AST 级）守死"hook 不得出现在任何 early return 之后" |
+| ⑦ 导出报告 §1-§7 固定叙事（⏳2） | 🔧 进行中 | HTML/MD 双通道改为「首页只放结论 → §1 研究目标 → §2 用户需求 → §3 市场细分 → §4 竞品缺口 → §5 自身适配 → §6 机会结论 → §7 证据索引」，缺数据一律渲染"未提供" |
+| ⑧ 二级页 ①②③④⑪⑫⑬⑭ 独立页（⏳3） | 🔧 进行中 | 做成真正独立的全屏页（带「← 返回」+ 线框图里的"解决什么问题/从哪进入/返回去哪/依赖哪些数据"契约条）；**强制要求内联与全屏页共用同一份实现**，不允许复制第二份 |
+
+**本轮新增的确定性护栏**（都不依赖 AI 判断）：
+1. `tests/hookOrder.test.ts` —— AST 扫描所有 `.tsx`，禁止 hook 出现在 early return 之后（防 #310 复发）；
+2. `tests/competitorDrilldown.test.ts` —— 下钻入口共享表 + 源码级守卫（按钮文案只能来自一处）；
+3. `vite.config.ts` 的 `server.watch.ignored` —— 修掉编辑 `api/**` 时 dev server 的 `EBUSY` 崩溃（`[action].ts.<pid>.<uuid>.tmpdir` 被 watch 到）。
+
+**诚实边界**：本轮全部是"实现对齐线框图"，**没有**替代用户侧验证；W3–W4 前的 3 份真实品类决策包、10 分钟计时可用性测试、4 视口视觉回归基线仍待用户侧完成（见 `docs/M6-launch-checklist.md` §6/§8）。
+
+---
+
 ## 17. 国内底座迁移（后置，另行立项）
 
 > 用户已确认（§15.1-23）：现阶段沿用 Vercel + Supabase，先把 App 功能做好；国内迁移（免 VPN）在功能打磨完成后另行立项。
@@ -1326,4 +1353,4 @@ devApiPlugin 生成的 `.[action].ts.<pid>.<uuid>.tmpdir/*.tmp`，Windows 上抛
 
 ---
 
-*PRD V2.8 完（终审版）。配套 UI 线框图：`docs/ui-wireframes.html`（主流程 8 屏）、`docs/ui-wireframes-l3.html`（二级页与明细层 23 屏）。*
+*PRD V2.9 完（终审版）。配套 UI 线框图：`docs/ui-wireframes.html`（主流程 8 屏）、`docs/ui-wireframes-l3.html`（二级页与明细层 23 屏）；一致性核对表：`docs/ui-conformance-audit.md`。*
