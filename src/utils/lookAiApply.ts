@@ -6,10 +6,83 @@
 // 所有合并都走 lookAiMerge 的非破坏性规则：**只填空字段，绝不覆盖人工已填内容**。
 
 import { makeMergeAcc, mergeText, mergeList, mergeUnmetNeedCandidates, type MergeAcc } from './lookAiMerge';
-import { createUnmetNeedId, type UserLookData } from './userLook';
+import { createUnmetNeedId, type UserLookData, type SearchPath, type SearchPreference, type SearchPathLayerId } from './userLook';
 import type { MarketLookData } from './marketLook';
 import type { CompetitorLookData } from './competitorLook';
 import type { SelfAssessment, SelfAiDraft } from './selfAssessment';
+
+/** 搜索路径的固定四层顺序（M2 · 看用户 V2） */
+const SEARCH_PATH_LAYER_IDS: SearchPathLayerId[] = ['awareness', 'consideration', 'decision', 'scenario'];
+
+/**
+ * 归一化 AI 返回的搜索路径（AI 输出不可信，必须逐字段校验）：
+ * - 固定按 awareness → consideration → decision → scenario 四层输出
+ * - 词必须非空；share 夹到 0-1；每层最多 12 个词
+ * - 一层都没有 → 视为无效，返回 null（不污染已有数据）
+ */
+export function normalizeSearchPath(raw: unknown): SearchPath | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as { summary?: unknown; layers?: unknown };
+  const layersRaw = Array.isArray(r.layers) ? (r.layers as Record<string, unknown>[]) : [];
+
+  const layers: SearchPath['layers'] = [];
+  for (const id of SEARCH_PATH_LAYER_IDS) {
+    const found = layersRaw.find((l) => l && String(l.layer ?? '').toLowerCase().trim() === id);
+    const wordsRaw = found && Array.isArray(found.words) ? (found.words as Record<string, unknown>[]) : [];
+    const words = wordsRaw
+      .map((w) => {
+        const vol = Number(w?.volume);
+        const share = Number(w?.share);
+        return {
+          word: String(w?.word ?? '').trim(),
+          volume: Number.isFinite(vol) && vol > 0 ? Math.round(vol) : undefined,
+          share: Number.isFinite(share) ? Math.min(1, Math.max(0, share)) : undefined,
+        };
+      })
+      .filter((w) => w.word.length > 0)
+      .slice(0, 12);
+    if (words.length > 0) {
+      layers.push({
+        layer: id,
+        words,
+        note: found && typeof found.note === 'string' && found.note.trim() ? found.note.trim() : undefined,
+      });
+    }
+  }
+  if (layers.length === 0) return null;
+  return {
+    summary: typeof r.summary === 'string' && r.summary.trim() ? r.summary.trim() : undefined,
+    layers,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/** 归一化 AI 返回的搜索偏好卡；全部字段无效则返回 null */
+export function normalizeSearchPreference(raw: unknown): SearchPreference | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const ps = String(r.priceSensitivity ?? '').toLowerCase().trim();
+  const priceSensitivity = ps === 'low' || ps === 'medium' || ps === 'high' ? (ps as 'low' | 'medium' | 'high') : undefined;
+  const noteRaw = typeof r.priceSensitivityNote === 'string' ? r.priceSensitivityNote.trim() : '';
+  const attrRaw = typeof r.attributeMix === 'string' ? r.attributeMix.trim() : '';
+  const lts = Number(r.longTailShare);
+  const longTailShare = Number.isFinite(lts) ? Math.min(1, Math.max(0, lts)) : undefined;
+  const decisionFocus = Array.isArray(r.decisionFocus)
+    ? r.decisionFocus.map((v) => String(v ?? '').trim()).filter(Boolean).slice(0, 6)
+    : undefined;
+
+  if (!priceSensitivity && !noteRaw && !attrRaw && longTailShare === undefined && !decisionFocus?.length) {
+    return null;
+  }
+  return {
+    priceSensitivity,
+    priceSensitivityNote: noteRaw || undefined,
+    attributeMix: attrRaw || undefined,
+    longTailShare,
+    decisionFocus: decisionFocus?.length ? decisionFocus : undefined,
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 export interface MergeResult<T> {
   next: T;
@@ -19,6 +92,33 @@ export interface MergeResult<T> {
 
 export function mergeUserLookAi(data: UserLookData, out: Record<string, unknown>): MergeResult<UserLookData> {
   const acc = makeMergeAcc();
+
+  // M2：搜索路径图 / 搜索偏好卡 —— 只有当前为空时才采用 AI 结果（同样不覆盖人工内容）
+  const aiPath = normalizeSearchPath(out.searchPath);
+  const aiPref = normalizeSearchPreference(out.searchPreference);
+  let searchPath = data.searchPath;
+  if (Array.isArray(data.searchPath?.layers) && data.searchPath!.layers.length > 0) {
+    acc.skipped.push('搜索路径图');
+  } else if (aiPath) {
+    searchPath = aiPath;
+    acc.filled.push(`搜索路径图（${aiPath.layers.length} 层）`);
+  } else {
+    acc.skipped.push('搜索路径图');
+  }
+
+  let searchPreference = data.searchPreference;
+  const prefFilled = data.searchPreference
+    ? Object.keys(data.searchPreference).filter((k) => k !== 'updatedAt').length > 0
+    : false;
+  if (prefFilled) {
+    acc.skipped.push('搜索偏好卡');
+  } else if (aiPref) {
+    searchPreference = aiPref;
+    acc.filled.push('搜索偏好卡');
+  } else {
+    acc.skipped.push('搜索偏好卡');
+  }
+
   const next: UserLookData = {
     ...data,
     targetUser: mergeText(data.targetUser, out.targetUser, '目标用户', acc),
@@ -32,6 +132,8 @@ export function mergeUserLookAi(data: UserLookData, out: Record<string, unknown>
       '未满足需求候选',
       acc
     ),
+    searchPath,
+    searchPreference,
   };
   return { next, filled: acc.filled, skipped: acc.skipped };
 }

@@ -19,6 +19,9 @@ import {
   computeUserProgress,
   emptyUnmetNeedCandidate,
   EVIDENCE_STRENGTH_LABELS,
+  SEARCH_PATH_LAYER_LABELS,
+  SEARCH_PATH_LAYER_HINTS,
+  PRICE_SENSITIVITY_LABELS,
   type UserContext,
   type UserEvidence,
   type UserLookData,
@@ -163,6 +166,97 @@ export function UserLookView({
         onApply={applyAi}
         hint="已经加载了关键词与评论数据时，AI 会把它们合并成需求地图（目标用户 / 场景 / JTBD / 已满足 / 未满足候选），并吸收市场细分里的人群·场景·需求描述。"
       />
+
+      {/* M2：搜索路径图 + 搜索偏好卡（结论先行的第一屏） */}
+      {(data.searchPath || data.searchPreference) && (
+        <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
+          <Card>
+            <div className="p-5">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <p className="text-sm font-semibold text-[#1d1d1f]">搜索路径图</p>
+                <span className="text-[11px] text-[#86868b]">认知 → 考虑 → 决策 → 场景</span>
+              </div>
+              {data.searchPath?.summary && (
+                <p className="text-xs text-[#424245] mb-3 leading-relaxed">{data.searchPath.summary}</p>
+              )}
+              <div className="space-y-3">
+                {(data.searchPath?.layers ?? []).map((layer) => (
+                  <div key={layer.layer} className="rounded-xl border border-black/5 bg-[#f8f9fb] p-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-[#1d1d1f]">{SEARCH_PATH_LAYER_LABELS[layer.layer]}</span>
+                      <span className="text-[10px] text-[#86868b]">{SEARCH_PATH_LAYER_HINTS[layer.layer]}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {layer.words.map((w) => (
+                        <span
+                          key={`${layer.layer}-${w.word}`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white border border-black/8 text-[11px] text-[#424245]"
+                        >
+                          {w.word}
+                          {w.share !== undefined && <span className="text-[#aeaeb2]">{Math.round(w.share * 100)}%</span>}
+                          {w.volume !== undefined && <span className="text-[#aeaeb2]">{w.volume.toLocaleString()}</span>}
+                        </span>
+                      ))}
+                    </div>
+                    {layer.note && <p className="text-[10px] text-[#86868b] mt-1.5 leading-relaxed">{layer.note}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="p-5 space-y-3">
+              <p className="text-sm font-semibold text-[#1d1d1f]">搜索偏好</p>
+              {data.searchPreference?.priceSensitivity && (
+                <div>
+                  <p className="text-[11px] text-[#86868b]">价格敏感度</p>
+                  <p className="text-sm font-semibold text-[#1d1d1f]">
+                    {PRICE_SENSITIVITY_LABELS[data.searchPreference.priceSensitivity]}
+                  </p>
+                  {data.searchPreference.priceSensitivityNote && (
+                    <p className="text-[10px] text-[#86868b] mt-0.5">{data.searchPreference.priceSensitivityNote}</p>
+                  )}
+                </div>
+              )}
+              {data.searchPreference?.attributeMix && (
+                <div>
+                  <p className="text-[11px] text-[#86868b]">词性倾向</p>
+                  <p className="text-xs text-[#424245] leading-relaxed">{data.searchPreference.attributeMix}</p>
+                </div>
+              )}
+              {data.searchPreference?.longTailShare !== undefined && (
+                <div>
+                  <p className="text-[11px] text-[#86868b]">长尾结构</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="flex-1 h-1.5 rounded-full bg-[#e5e5ea] overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-indigo-500"
+                        style={{ width: `${Math.round(data.searchPreference.longTailShare * 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] text-[#424245]">
+                      长尾占 {Math.round(data.searchPreference.longTailShare * 100)}%
+                    </span>
+                  </div>
+                </div>
+              )}
+              {data.searchPreference?.decisionFocus && data.searchPreference.decisionFocus.length > 0 && (
+                <div>
+                  <p className="text-[11px] text-[#86868b] mb-1">决策焦点（买家下单前对比什么）</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {data.searchPreference.decisionFocus.map((f) => (
+                      <span key={f} className="px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[11px] text-indigo-700">
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
       {/* 数据上下文 */}
       <Card>
         <div className="p-5">

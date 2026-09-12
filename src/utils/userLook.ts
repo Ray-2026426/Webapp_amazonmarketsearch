@@ -1,4 +1,4 @@
-﻿// 看用户（FR-04）：关键词 + VOC 合并为用户需求地图与未满足需求候选。
+// 看用户（FR-04）：关键词 + VOC 合并为用户需求地图与未满足需求候选。
 import { get, set } from 'idb-keyval';
 import type { FiveLookProgress } from '../types/researchProject';
 
@@ -35,6 +35,63 @@ export interface UnmetNeedCandidate {
   evidenceStrength: EvidenceStrength;
 }
 
+/** 搜索路径的四层（M2 · 看用户 V2）：认知 → 考虑 → 决策 → 场景 */
+export type SearchPathLayerId = 'awareness' | 'consideration' | 'decision' | 'scenario';
+
+export const SEARCH_PATH_LAYER_LABELS: Record<SearchPathLayerId, string> = {
+  awareness: '认知层',
+  consideration: '考虑层',
+  decision: '决策层',
+  scenario: '场景层',
+};
+
+export const SEARCH_PATH_LAYER_HINTS: Record<SearchPathLayerId, string> = {
+  awareness: '用户第一次想到这个品类时会搜的大词',
+  consideration: '开始比较、加限定词（人群/材质/功能）',
+  decision: '临门一脚的决策词（差异化卖点/规格）',
+  scenario: '场景与复购词（季节/人群/使用场合）',
+};
+
+export interface SearchPathWord {
+  word: string;
+  /** 月搜索量（如有） */
+  volume?: number;
+  /** 在该层的占比 0-1 */
+  share?: number;
+}
+
+export interface SearchPathLayer {
+  layer: SearchPathLayerId;
+  words: SearchPathWord[];
+  note?: string;
+}
+
+export interface SearchPath {
+  /** 一句话结论：用户是怎么一步步搜到这里的 */
+  summary?: string;
+  layers: SearchPathLayer[];
+  updatedAt?: string;
+}
+
+/** 搜索偏好卡（M2）：价格敏感度 / 词性倾向 / 长尾结构 / 购买决策焦点 */
+export interface SearchPreference {
+  priceSensitivity?: 'low' | 'medium' | 'high';
+  priceSensitivityNote?: string;
+  /** 功能/材质/品牌词的占比描述，如「功能与材质词占 62%」 */
+  attributeMix?: string;
+  /** 长尾词占比 0-1 */
+  longTailShare?: number;
+  /** 买家在下单前主要对比什么维度 */
+  decisionFocus?: string[];
+  updatedAt?: string;
+}
+
+export const PRICE_SENSITIVITY_LABELS: Record<'low' | 'medium' | 'high', string> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+};
+
 export interface UserLookData {
   projectId: string;
   targetUser: string;
@@ -42,6 +99,10 @@ export interface UserLookData {
   jobToBeDone: string;
   satisfiedNeeds: string[];
   unmetNeedCandidates: UnmetNeedCandidate[];
+  /** M2：搜索路径图（四层漏斗） */
+  searchPath?: SearchPath;
+  /** M2：搜索偏好卡 */
+  searchPreference?: SearchPreference;
   evidence: UserEvidence | null;
   updatedAt: string;
 }

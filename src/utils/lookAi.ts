@@ -199,6 +199,23 @@ export interface UserAnalysisOutput {
     currentAlternative?: string;
     evidenceStrength?: 'high' | 'medium' | 'low';
   }[];
+  /** M2：搜索路径图（四层漏斗） */
+  searchPath?: {
+    summary?: string;
+    layers?: {
+      layer?: string;
+      words?: { word?: string; volume?: number; share?: number }[];
+      note?: string;
+    }[];
+  };
+  /** M2：搜索偏好卡 */
+  searchPreference?: {
+    priceSensitivity?: string;
+    priceSensitivityNote?: string;
+    attributeMix?: string;
+    longTailShare?: number;
+    decisionFocus?: string[];
+  };
 }
 
 export interface CompetitorAnalysisOutput {
@@ -303,11 +320,29 @@ ${summary}`;
   "satisfiedNeeds": ["已满足的需求（2-4条）"],
   "unmetNeedCandidates": [
     {"targetUser":"","scenario":"","jobToBeDone":"","needStatement":"未满足需求（含证据）","currentAlternative":"用户目前替代方案及代价","evidenceStrength":"high|medium|low"}
-  ]
+  ],
+  "searchPath": {
+    "summary": "用户是怎么一步步搜到这里的（一句话）",
+    "layers": [
+      {"layer":"awareness","words":[{"word":"大词","volume":12000,"share":0.42}],"note":"这一层的特征"},
+      {"layer":"consideration","words":[{"word":"带限定词的词","volume":4800,"share":0.31}],"note":""},
+      {"layer":"decision","words":[{"word":"决策词/卖点词","volume":900,"share":0.17}],"note":""},
+      {"layer":"scenario","words":[{"word":"场景/复购词","volume":300,"share":0.10}],"note":""}
+    ]
+  },
+  "searchPreference": {
+    "priceSensitivity": "low|medium|high",
+    "priceSensitivityNote": "判断依据（如低价词占比 18%）",
+    "attributeMix": "功能/材质/品牌词的结构描述（如「功能与材质词占 62%」）",
+    "longTailShare": 0.42,
+    "decisionFocus": ["买家下单前主要对比的维度（2-4 个）"]
+  }
 }
 要点：
 1) 把「市场细分」里的人群(people)/场景(scenarios)/需求(needs) 与评论/关键词交叉，形成更具体的用户分类，并在输出中体现这些细分视角。
 2) 未满足需求候选 1-4 条，必须来自重复出现的问题/差评/关键词，并说明替代方案。
+3) searchPath 必须严格按 awareness → consideration → decision → scenario 四层输出（每层都要有），每层 3-8 个词；有搜索量就给 volume，并给出该层内占比 share（同一层内合计约为 1）。**只使用数据中真实出现的词，不要编造词或搜索量**。
+4) searchPreference 必须基于词表的真实统计（占比、长尾结构、词性倾向），没有依据的字段就留空并在 note 里写"缺乏数据支撑"。
 数据：
 ${summary}`;
   } else if (look === 'competitor') {
