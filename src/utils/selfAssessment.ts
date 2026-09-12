@@ -3,6 +3,7 @@
 
 import { get, set } from 'idb-keyval';
 import type { FiveLookProgress } from '../types/researchProject';
+import type { QuizData } from './categoryQuiz';
 
 export type SelfStatus = 'have' | 'partial' | 'lack' | 'unknown';
 export type SelfCategory =
@@ -40,6 +41,8 @@ export interface SelfAssessment {
   items: SelfAssessmentItem[];
   /** AI 起草结论（可选） */
   aiDraft?: SelfAiDraft;
+  /** M3⑤：项目内品类选择题（种子题确定性生成 + AI 增补；答案存这里） */
+  quiz?: QuizData;
   updatedAt: string;
 }
 
@@ -95,7 +98,14 @@ function storageKey(userId: string, projectId: string): string {
 export async function loadSelfAssessment(userId: string, projectId: string): Promise<SelfAssessment> {
   try {
     const raw = await get<SelfAssessment>(storageKey(userId, projectId));
-    if (raw && Array.isArray(raw.items) && raw.items.length > 0) return raw;
+    if (raw && Array.isArray(raw.items) && raw.items.length > 0) {
+      // 老记录没有 quiz 字段：补一个空结构，避免下游到处判空
+      const quiz: QuizData =
+        raw.quiz && Array.isArray(raw.quiz.questions)
+          ? { questions: raw.quiz.questions, answers: Array.isArray(raw.quiz.answers) ? raw.quiz.answers : [], updatedAt: raw.quiz.updatedAt || new Date().toISOString() }
+          : { questions: [], answers: [], updatedAt: new Date().toISOString() };
+      return { ...raw, quiz };
+    }
   } catch {
     /* ignore */
   }

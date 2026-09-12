@@ -516,8 +516,25 @@ ${summary}`;
   "gaps": ["能力缺口（2-4条）"],
   "hardConstraints": ["硬约束与止损边界（2-4条）"],
   "fitAssessment": "对机会卡的适配度评价",
-  "summary": "一段给团队看的结构化自评总结"
+  "summary": "一段给团队看的结构化自评总结",
+  "quizQuestions": [
+    {
+      "question": "针对**这个项目**的选择题（不要通用问卷）",
+      "category": "capability|boundary|supply|compliance|finance|risk",
+      "basis": "这题的出题依据（来自哪条数据：哪个竞对的哪个缺口/哪条需求/哪个约束）",
+      "isBoundary": true,
+      "options": [
+        {"label": "A. 选项文案", "status": "have|partial|lack|unknown", "why": "选它意味着什么、为什么不选其它"}
+      ]
+    }
+  ]
 }
+出题要求（重要）：
+1) 最多 5 题，每题 2-5 个选项；**每个选项都必须有 why**（"为什么不"）。
+2) 必须与本项目数据相关（竞对缺口、未满足需求、毛利/合规/交期约束）；数据不足就说数据不足，不要编通用题。
+3) 选项的 status 只能是 have/partial/lack/unknown，且要真实反映"我们能不能做到"，不要都给 have。
+4) 决策边界类（isBoundary=true）只能是"做不到就直接不能进入"的硬约束（毛利红线、MOQ、认证、交期）。
+5) 已经有确定性种子题覆盖的主题不要重复出。
 团队回答：
 ${answerLines}`;
   }

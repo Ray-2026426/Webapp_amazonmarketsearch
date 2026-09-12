@@ -10,6 +10,7 @@ import { createUnmetNeedId, type UserLookData, type SearchPath, type SearchPrefe
 import type { MarketLookData } from './marketLook';
 import type { CompetitorLookData } from './competitorLook';
 import type { SelfAssessment, SelfAiDraft } from './selfAssessment';
+import { mergeCategoryQuestions, normalizeAiQuestions } from './categoryQuiz';
 
 /** 搜索路径的固定四层顺序（M2 · 看用户 V2） */
 const SEARCH_PATH_LAYER_IDS: SearchPathLayerId[] = ['awareness', 'consideration', 'decision', 'scenario'];
@@ -168,7 +169,7 @@ export function mergeCompetitorLookAi(
   return { next, filled: acc.filled, skipped: acc.skipped };
 }
 
-/** 看自己：AI 只写 aiDraft，绝不改动 items 里的人工自评 */
+/** 看自己：AI 只写 aiDraft，绝不改动 items 里的人工自评；M3⑤ 额外并入 AI 增补的品类选择题（不覆盖已有题与回答） */
 export function mergeSelfAi(assessment: SelfAssessment, out: Record<string, unknown>): MergeResult<SelfAssessment> {
   const acc = makeMergeAcc();
   const cur: SelfAiDraft = assessment.aiDraft ?? {};
@@ -180,7 +181,16 @@ export function mergeSelfAi(assessment: SelfAssessment, out: Record<string, unkn
     fitAssessment: mergeText(cur.fitAssessment ?? '', out.fitAssessment, '对机会卡的适配度评价', acc),
     updatedAt: new Date().toISOString(),
   };
-  return { next: { ...assessment, aiDraft }, filled: acc.filled, skipped: acc.skipped };
+  // M3⑤：AI 增补品类选择题（结构校验后按 id 追加，用户已答的题与答案永不丢失）
+  const aiQuiz = normalizeAiQuestions(out.quizQuestions ?? out.questions);
+  let quiz = assessment.quiz ?? { questions: [], answers: [], updatedAt: new Date().toISOString() };
+  if (aiQuiz.length > 0) {
+    const r = mergeCategoryQuestions(quiz, aiQuiz);
+    quiz = r.next;
+    if (r.added > 0) acc.filled.push(`品类选择题（AI 增补 ${r.added} 题，请逐题核对依据）`);
+    if (r.skipped > 0) acc.skipped.push('品类选择题（已有同题，保留原题）');
+  }
+  return { next: { ...assessment, aiDraft, quiz }, filled: acc.filled, skipped: acc.skipped };
 }
 
 /** 把「看自己」已作答项整理成 AI 可读的问答对（未作答项不传，避免 AI 凭空判断） */

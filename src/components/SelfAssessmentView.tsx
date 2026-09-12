@@ -17,6 +17,7 @@ import type { ResearchProject } from '../types/researchProject';
 import { LookAiBar } from './LookAiBar';
 import { mergeSelfAi, buildSelfAnswers } from '../utils/lookAiApply';
 import { addEvidence } from '../utils/evidence';
+import { SelfReadinessPanel } from './SelfReadinessPanel';
 
 const STATUS_ORDER: SelfStatus[] = ['have', 'partial', 'lack', 'unknown'];
 
@@ -136,6 +137,9 @@ export function SelfAssessmentView({
           <SaveBadge state={saveState} />
         </div>
       </div>
+
+      {/* M3⑤：账号背景库（六维度）+ 品类选择题 + 适配度（完成度与适配度分离） */}
+      <SelfReadinessPanel userId={userId} project={project} />
 
       <LookAiBar
         look="self"
