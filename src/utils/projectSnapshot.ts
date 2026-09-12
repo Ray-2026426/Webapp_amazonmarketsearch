@@ -143,6 +143,16 @@ export function snapshotSummary(snap: ProjectSnapshot): SnapshotSummary {
   };
 }
 
+/** 快照是否有实质内容（空快照不应被当成"项目数据"，否则 AI 会永久读到空数据） */
+export function hasSnapshotContent(snap: ProjectSnapshot): boolean {
+  return (
+    snap.products.length > 0 ||
+    snap.keywords.length > 0 ||
+    snap.reviews.length > 0 ||
+    snap.competitorAsins.length > 0
+  );
+}
+
 /** 人类可读的一句话摘要（用于 UI 与 AI 提示） */
 export function describeSnapshot(snap: ProjectSnapshot): string {
   const s = snapshotSummary(snap);

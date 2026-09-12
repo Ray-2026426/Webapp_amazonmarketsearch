@@ -1645,6 +1645,7 @@ export default function App() {
               onOpenTool={(view, look) => { setActiveView(view); setToolReturn({ projectId: activeProject.id, look }); }}
               focusLook={focusLook?.look ?? null}
               focusNonce={focusLook?.nonce ?? 0}
+              onLoadDemo={() => applyDemoWorkspace({ toastMsg: true })}
               onProjectChange={(updated) => setActiveProject(updated)}
             />
           ) : (

@@ -22,9 +22,13 @@ import {
 import { updateLookProgress } from '../utils/projectStore';
 import {
   captureAndSaveSnapshot,
+  captureSnapshot,
+  saveSnapshot,
   loadSnapshot,
   snapshotSummary,
   describeSnapshot,
+  hasSnapshotContent,
+  type ProjectSnapshot,
   type SnapshotSummary,
 } from '../utils/projectSnapshot';
 import { loadEvidence, countEvidenceByLook, describeEvidence, EVIDENCE_LOOK_LABELS } from '../utils/evidence';
@@ -70,10 +74,16 @@ export function LookWizardPanel({
   userId,
   project,
   onProjectChange,
+  onLoadDemo,
+  onOpenTool,
 }: {
   userId: string;
   project: ResearchProject;
   onProjectChange: (updated: ResearchProject) => void;
+  /** 「加载示例数据」——缺失数据时的一键兜底 */
+  onLoadDemo?: () => void;
+  /** 打开对应工具去补数据 */
+  onOpenTool?: (view: 'market' | 'keywords' | 'insights' | 'competitors') => void;
 }) {
   const [steps, setSteps] = useState<WizardStep[]>(initialSteps);
   const [running, setRunning] = useState(false);
@@ -85,8 +95,10 @@ export function LookWizardPanel({
     evidenceByLook: Record<string, number>;
     evidenceTop: string[];
   } | null>(null);
-  const [snap, setSnap] = useState<{ summary: SnapshotSummary; text: string } | null>(null);
+  const [snap, setSnap] = useState<{ raw: ProjectSnapshot; summary: SnapshotSummary; text: string } | null>(null);
   const [snapBusy, setSnapBusy] = useState(false);
+  const snapHasContent = snap ? hasSnapshotContent(snap.raw) : false;
+  const [showDataHelp, setShowDataHelp] = useState(false);
 
   /** 决策草稿：只反映"当前证据状态"，不编造机会（机会结论由看机会负责） */
   const refreshDraft = useCallback(async () => {
@@ -122,7 +134,7 @@ export function LookWizardPanel({
 
   const refreshSnapshot = useCallback(async () => {
     const raw = await loadSnapshot(userId, project.id);
-    setSnap(raw ? { summary: snapshotSummary(raw), text: describeSnapshot(raw) } : null);
+    setSnap(raw ? { raw, summary: snapshotSummary(raw), text: describeSnapshot(raw) } : null);
   }, [userId, project.id]);
 
   useEffect(() => {
@@ -134,8 +146,12 @@ export function LookWizardPanel({
     setSnapBusy(true);
     try {
       const raw = await captureAndSaveSnapshot(userId, project.id);
-      setSnap({ summary: snapshotSummary(raw), text: describeSnapshot(raw) });
-      toast.success('已捕获本项目数据快照');
+      setSnap({ raw, summary: snapshotSummary(raw), text: describeSnapshot(raw) });
+      if (hasSnapshotContent(raw)) {
+        toast.success('已捕获本项目数据快照');
+      } else {
+        toast.warning('当前工作区还没有数据，这份快照是空的：请先加载数据再更新快照');
+      }
     } catch (e) {
       toast.error(`捕获失败：${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -204,15 +220,21 @@ export function LookWizardPanel({
   const run = async () => {
     setRunning(true);
     setSteps(initialSteps());
-    // 先确保有项目快照：否则 AI 会读到全局工作区里其他项目的数据
-    if (!snap) {
-      try {
-        const raw = await captureAndSaveSnapshot(userId, project.id);
-        setSnap({ summary: snapshotSummary(raw), text: describeSnapshot(raw) });
-        toast.info('已自动捕获本项目数据快照：本次分析只使用这份数据');
-      } catch {
-        /* 捕获失败则走回退路径，runLookAnalysis 会在 scopeNote 里明确告知 */
+    // 确保有一份"有内容"的快照：空快照会被重新捕获
+    // （否则 AI 会永久读到空数据 → 四步永远显示"已跳过"，这是 M1 引入的一个真 bug，此处修掉）
+    try {
+      if (!snap || !hasSnapshotContent(snap.raw)) {
+        const raw = await captureSnapshot(userId, project.id);
+        if (hasSnapshotContent(raw)) {
+          await saveSnapshot(userId, project.id, raw);
+          setSnap({ raw, summary: snapshotSummary(raw), text: describeSnapshot(raw) });
+          toast.info('已自动捕获本项目数据快照：本次分析只使用这份数据');
+        } else {
+          setSnap(null);
+        }
       }
+    } catch {
+      /* 捕获失败则走回退路径，runLookAnalysis 会在 scopeNote 里明确告知 */
     }
     let doneCount = 0;
     let failCount = 0;
@@ -244,6 +266,8 @@ export function LookWizardPanel({
     }
     setRunning(false);
     await refreshDraft();
+    await refreshSnapshot();
+    if (doneCount === 0) setShowDataHelp(true);
     if (doneCount === 0 && failCount === 0) {
       toast.info('四步都被跳过：请先到「市场大盘 / 关键词 / 评论 VOC / 竞品」加载数据后重试。');
     } else if (failCount > 0) {
@@ -310,12 +334,48 @@ export function LookWizardPanel({
           })}
         </div>
 
-        {!finished && (
+        {(showDataHelp || !snapHasContent) && (
+          <div className="px-5 py-4 bg-amber-50 border-t border-amber-100">
+            <p className="text-xs font-bold text-[#1d1d1f] mb-1">需要先准备数据（任选其一，30 秒可完成）</p>
+            <p className="text-[11px] text-[#424245] leading-relaxed mb-2.5">
+              四步都读同一份「项目数据快照」。没有 商品表 / 关键词 / 评论 / 竞品 ASIN 时，AI 给不出结论——
+              <b>系统不会伪造结论</b>，所以会标成「已跳过」并说明原因。
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {onLoadDemo && (
+                <button
+                  type="button"
+                  onClick={onLoadDemo}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-[11px] font-semibold hover:bg-indigo-700"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  加载示例数据（最快，立刻体验全流程）
+                </button>
+              )}
+              {onOpenTool && (
+                <>
+                  <button type="button" onClick={() => onOpenTool('market')} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white text-[11px] font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700">
+                    打开市场大盘（上传 Excel / 抓数）
+                  </button>
+                  <button type="button" onClick={() => onOpenTool('keywords')} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white text-[11px] font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700">
+                    打开关键词工具
+                  </button>
+                  <button type="button" onClick={() => onOpenTool('insights')} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white text-[11px] font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700">
+                    打开评论 VOC 工具
+                  </button>
+                  <button type="button" onClick={() => onOpenTool('competitors')} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white text-[11px] font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700">
+                    打开竞品工具
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!finished && !showDataHelp && snapHasContent && (
           <div className="px-5 py-3 bg-[#f8f9fb] border-t border-black/5">
             <p className="text-[11px] text-[#86868b] leading-relaxed">
-              前提：先在「市场大盘」上传产品表 / 历史表，在「关键词分析」或「评论 VOC」加载词与评论，
-              并在「竞品对比」选择竞品 ASIN；AI 结论需在「设置 → API 与模型」配置模型 Key。
-              任何一步缺少数据都会被标为「已跳过」并说明原因，不会伪造结论。
+              数据已就绪。AI 结论需在「设置 → API 与模型」配置模型 Key；任何一步缺少数据都会被标为「已跳过」并说明原因，不会伪造结论。
             </p>
           </div>
         )}

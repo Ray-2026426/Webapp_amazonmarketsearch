@@ -87,6 +87,7 @@ export function ProjectWorkspace({
   onProjectChange,
   focusLook,
   focusNonce,
+  onLoadDemo,
 }: {
   userId: string;
   project: ResearchProject;
@@ -101,6 +102,8 @@ export function ProjectWorkspace({
   /** 从工具返回时要求聚焦的看（配合 focusNonce 触发一次） */
   focusLook?: FiveLookId | null;
   focusNonce?: number;
+  /** 缺失数据时的一键兜底：加载示例数据 */
+  onLoadDemo?: () => void;
 }) {
   const [p, setP] = useState<ResearchProject>(project);
   const [tab, setTab] = useState<Tab>(project.activeLook);
@@ -266,7 +269,13 @@ export function ProjectWorkspace({
       {/* 内容区 */}
       {tab === 'overview' ? (
         <div className="space-y-5">
-          <LookWizardPanel userId={userId} project={p} onProjectChange={applyProjectUpdate} />
+          <LookWizardPanel
+            userId={userId}
+            project={p}
+            onProjectChange={applyProjectUpdate}
+            onLoadDemo={onLoadDemo}
+            onOpenTool={(view) => onOpenTool(view, toolOriginLook)}
+          />
           <ProjectOverviewContent project={p} username={username} userId={userId} onNavigateLook={(look) => void switchToLook(look)} />
         </div>
       ) : tab === 'self' ? (

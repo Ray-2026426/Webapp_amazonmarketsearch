@@ -5,7 +5,7 @@
 import { get } from 'idb-keyval';
 import { generateText, loadAiSettings, type AiSettings } from './aiConfig';
 import { loadUserBackground, buildUserBackgroundSystemPrompt } from './userBackground';
-import { loadSnapshot, describeSnapshot, type ProjectSnapshot } from './projectSnapshot';
+import { loadSnapshot, describeSnapshot, hasSnapshotContent, type ProjectSnapshot } from './projectSnapshot';
 import type { Product, Review, Keyword } from './parser';
 
 export interface LookAiResult {
@@ -240,7 +240,8 @@ async function resolveScopedData(extra?: Record<string, unknown>): Promise<Scope
   const scope = extra?.scope as { userId?: string; projectId?: string } | undefined;
   if (scope?.userId && scope?.projectId) {
     const snap = await loadSnapshot(scope.userId, scope.projectId);
-    if (snap) {
+    // 只有"有内容"的快照才算项目数据；空快照一律视为未捕获，避免永久读到空数据
+    if (snap && hasSnapshotContent(snap)) {
       return {
         market: snapshotToGlobalData(snap),
         dataScope: 'project',
@@ -250,8 +251,9 @@ async function resolveScopedData(extra?: Record<string, unknown>): Promise<Scope
     return {
       market: await gatherGlobalMarketData(),
       dataScope: 'global-fallback',
-      scopeNote:
-        '尚未捕获本项目数据快照，已回退到全局工作区数据（可能混入其他项目的数据）。建议先在项目「概览」页点「捕获项目快照」。',
+      scopeNote: snap
+        ? '本项目的快照是空的（捕获时工作区还没有数据），已回退到全局工作区数据。请先加载数据，再点「更新快照」。'
+        : '尚未捕获本项目数据快照，已回退到全局工作区数据（可能混入其他项目的数据）。建议先在项目「概览」页点「捕获项目快照」。',
     };
   }
   return { market: await gatherGlobalMarketData(), dataScope: 'global-fallback', scopeNote: '' };
