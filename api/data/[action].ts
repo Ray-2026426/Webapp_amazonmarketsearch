@@ -17,10 +17,12 @@ import {
   makeCacheEntry,
   bumpHit,
   pruneCache,
+  isFresh,
   DEFAULT_TTL_SECONDS,
   type PoolCacheEntry,
   type PoolDataType,
 } from '../../src/utils/poolCache';
+import { entryToCacheRow, rowToCacheEntry, prunePlan, summarizeCacheRows } from '../../src/utils/poolCacheStore';
 import {
   createUsageEvent,
   checkQuota,
@@ -84,8 +86,12 @@ function resolveProviderUrl(provider: ProviderName): string {
 /* ───────────── 缓存与用量（进程内；无 service_role 时降级但可用） ───────────── */
 
 /**
- * 进程内缓存：serverless 实例可能被回收，因此这是"尽力而为"的缓存（命中率低于持久化缓存，
- * 但零成本且不会串数据）。持久化缓存（Supabase 表）列为后续项，接口不变。
+ * 缓存双后端（M5 技术债收口）：
+ * - **有 service_role** → 以 Supabase `pool_cache` 表为准（持久化：serverless 实例回收也不丢，
+ *   多实例之间共享，命中率才是真的）；
+ * - **没有 service_role**（本地开发/未配置云端）→ 退回进程内 Map（尽力而为，行为不变）。
+ * 读取顺序：先看进程内（零延迟）→ 未命中再查表 → 表里新鲜就回填进程内。
+ * 写入顺序：两边都写（进程内保温 + 表里持久化）。任何一步失败都不影响业务（缓存不是关键路径）。
  */
 const CACHE = new Map<string, PoolCacheEntry>();
 const USAGE: UsageEvent[] = [];
@@ -95,13 +101,97 @@ function cacheList(): PoolCacheEntry[] {
   return [...CACHE.values()];
 }
 
-function putCache(entry: PoolCacheEntry | null): void {
+function rememberLocally(entry: PoolCacheEntry | null): void {
   if (!entry) return;
   CACHE.set(entry.key, entry);
   const { kept } = pruneCache(cacheList(), { maxEntries: 500 });
   CACHE.clear();
   for (const e of kept) CACHE.set(e.key, e);
 }
+
+/** 读缓存：先进程内，再持久化表（表里已过期的行顺手删掉，避免越积越多） */
+async function readCacheEntry(key: string, nowIso: string): Promise<PoolCacheEntry | null> {
+  const local = CACHE.get(key);
+  if (local && isFresh(local, nowIso)) return local;
+
+  const s = getServiceSupabase();
+  if (!s) return null;
+  try {
+    const { data, error } = await s.from('pool_cache').select('*').eq('key', key).maybeSingle();
+    if (error || !data) return null;
+    const entry = rowToCacheEntry(data);
+    if (!entry) return null;
+    if (!isFresh(entry, nowIso)) {
+      // 过期即删（best-effort）：留着只会让下次查询更慢
+      void s.from('pool_cache').delete().eq('key', key).then(undefined, () => undefined);
+      return null;
+    }
+    rememberLocally(entry);
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+/** 写缓存：进程内 + 持久化表（upsert by key） */
+async function writeCacheEntry(entry: PoolCacheEntry | null): Promise<void> {
+  if (!entry) return;
+  rememberLocally(entry);
+  const s = getServiceSupabase();
+  if (!s) return;
+  try {
+    await s.from('pool_cache').upsert(entryToCacheRow(entry));
+  } catch {
+    /* 写表失败不影响本次返回：进程内已经有 */
+  }
+}
+
+/** 记一次命中：进程内 + 表里的 hits 自增（用于管理员看"缓存省了多少次调用"） */
+async function bumpCacheHitEntry(entry: PoolCacheEntry): Promise<PoolCacheEntry> {
+  const bumped = bumpHit(entry);
+  rememberLocally(bumped);
+  const s = getServiceSupabase();
+  if (s) {
+    try {
+      await s.from('pool_cache').update({ hits: bumped.hits }).eq('key', bumped.key);
+    } catch {
+      /* ignore */
+    }
+  }
+  return bumped;
+}
+
+/** 缓存概览（管理员面板）：有表看表，没表看进程内 */
+async function summarizeCache(nowIso: string): Promise<ReturnType<typeof summarizeCacheRows>> {
+  const s = getServiceSupabase();
+  if (!s) return summarizeCacheRows(cacheList(), nowIso);
+  try {
+    const { data, error } = await s.from('pool_cache').select('*').limit(2000);
+    if (error || !data) return summarizeCacheRows(cacheList(), nowIso);
+    return summarizeCacheRows(data, nowIso);
+  } catch {
+    return summarizeCacheRows(cacheList(), nowIso);
+  }
+}
+
+/** 清理过期缓存（管理员可触发；返回删了多少行） */
+async function pruneExpiredCache(nowIso: string): Promise<{ deleted: number; backend: 'postgres' | 'memory' }> {
+  const s = getServiceSupabase();
+  if (!s) {
+    const { kept, expired } = pruneCache(cacheList(), { maxEntries: 500, nowIso });
+    CACHE.clear();
+    for (const e of kept) CACHE.set(e.key, e);
+    return { deleted: expired, backend: 'memory' };
+  }
+  try {
+    const { expiredBefore } = prunePlan(nowIso);
+    const { data } = await s.from('pool_cache').delete().lte('expires_at', expiredBefore).select('key');
+    return { deleted: Array.isArray(data) ? data.length : 0, backend: 'postgres' };
+  } catch {
+    return { deleted: 0, backend: 'postgres' };
+  }
+}
+
 
 async function recordUsage(event: UsageEvent): Promise<void> {
   USAGE.push(event);
@@ -211,17 +301,23 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
     return json(res, 429, { ok: false, error: quota.reason, quota });
   }
 
-  // ② 缓存
+  // ② 缓存（持久化表优先，进程内兜底）
   const type = (String(body.type || 'other') as PoolDataType) ?? 'other';
   const key = buildCacheKey(type, { provider, tool, args, projectId });
-  const decision = decideCache(cacheList(), key);
-  if (decision.hit && decision.entry) {
-    const bumped = bumpHit(decision.entry);
-    CACHE.set(bumped.key, bumped);
+  const nowIso = new Date().toISOString();
+  const hitEntry = await readCacheEntry(key, nowIso);
+  if (hitEntry) {
+    const bumped = await bumpCacheHitEntry(hitEntry);
     await recordUsage(
       createUsageEvent({ workspaceId, userId: auth.userId, projectId, tool: usageTool, provider, ok: true, cacheHit: true, calls: 0 })
     );
-    return json(res, 200, { ok: true, cached: true, cacheReason: decision.reason, data: decision.entry.value, ttlSeconds: DEFAULT_TTL_SECONDS[type] });
+    return json(res, 200, {
+      ok: true,
+      cached: true,
+      cacheReason: `缓存命中（创建于 ${bumped.createdAt}，命中 ${bumped.hits} 次）`,
+      data: bumped.value,
+      ttlSeconds: DEFAULT_TTL_SECONDS[type],
+    });
   }
 
   // ③ 调外部 + ④ 写缓存 + 记账
@@ -230,7 +326,7 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
   const durationMs = Date.now() - started;
   const ttlSeconds = Number(body.ttlSeconds ?? 0) || DEFAULT_TTL_SECONDS[type];
   if (result.ok) {
-    putCache(makeCacheEntry({ key, type, value: result.data, ok: true, ttlSeconds }));
+    await writeCacheEntry(makeCacheEntry({ key, type, value: result.data, ok: true, ttlSeconds, nowIso }));
   }
   await recordUsage(
     createUsageEvent({
@@ -246,12 +342,12 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
       error: result.ok ? undefined : result.error,
     })
   );
-  if (!result.ok) return json(res, 502, { ok: false, error: result.error, cacheReason: decision.reason });
-  return json(res, 200, { ok: true, cached: false, cacheReason: decision.reason, data: result.data, durationMs, ttlSeconds });
+  if (!result.ok) return json(res, 502, { ok: false, error: result.error, cacheReason: '未命中缓存（本次为真实调用）' });
+  return json(res, 200, { ok: true, cached: false, cacheReason: '未命中缓存（本次为真实调用）', data: result.data, durationMs, ttlSeconds });
 }
 
-/** 状态：哪些 provider 在服务端已配置（只回布尔与指纹，不回密钥） */
-async function handleStatus(_req: VercelRequest, res: VercelResponse) {
+/** 状态：哪些 provider 在服务端已配置（只回布尔与指纹，不回密钥）+ 缓存概览 */
+async function handleStatus(_req: VercelRequest, res: VercelResponse, _auth: unknown, body: Record<string, unknown>) {
   const providers: Record<string, { configured: boolean; fingerprint: string; hasCustomUrl: boolean }> = {};
   for (const p of Object.keys(PROVIDER_ENV_KEY) as ProviderName[]) {
     const secret = await resolveProviderSecret(p);
@@ -261,13 +357,28 @@ async function handleStatus(_req: VercelRequest, res: VercelResponse) {
       hasCustomUrl: Boolean(env(PROVIDER_ENV_URL[p])),
     };
   }
-  const { kept } = pruneCache(cacheList(), { maxEntries: 500 });
+  const nowIso = new Date().toISOString();
+  const cacheSummary = await summarizeCache(nowIso);
+  const pruning = body?.prune === true ? await pruneExpiredCache(nowIso) : null;
+  const usingDb = Boolean(getServiceSupabase());
   return json(res, 200, {
     ok: true,
     providers,
-    cache: { entries: kept.length, types: Object.keys(DEFAULT_TTL_SECONDS) },
+    cache: {
+      backend: usingDb ? 'postgres' : 'memory',
+      entries: cacheSummary.entries,
+      fresh: cacheSummary.fresh,
+      expired: cacheSummary.expired,
+      hits: cacheSummary.hits,
+      hitRate: cacheSummary.hitRate,
+      byType: cacheSummary.byType,
+      types: Object.keys(DEFAULT_TTL_SECONDS),
+    },
+    pruned: pruning,
     usage: describeUsage(summarizeUsage(USAGE, { limit: 20 })),
-    note: '密钥只在服务端；前端通过 /api/data/* 调用，永不接触密钥',
+    note: usingDb
+      ? '密钥只在服务端；缓存持久化在 Supabase pool_cache（实例回收不丢）'
+      : '密钥只在服务端；当前无 service_role，缓存退回进程内（实例回收会丢，接口不变）',
   });
 }
 
@@ -284,7 +395,7 @@ async function handleUsage(req: VercelRequest, res: VercelResponse, auth: { user
 
 const handlers: Record<string, (req: VercelRequest, res: VercelResponse, auth: { userId: string; email: string; workspaceId: string }, body: Record<string, unknown>) => Promise<unknown>> = {
   mcp: handleMcp,
-  status: (req, res) => handleStatus(req, res),
+  status: (req, res, _auth, body) => handleStatus(req, res, _auth, body),
   usage: handleUsage,
 };
 

@@ -22,6 +22,16 @@ export default defineConfig(({ mode }) => {
       hmr: false,
       port: 3000,
       host: '0.0.0.0',
+      watch: {
+        /**
+         * 本地开发踩过的坑：devApiPlugin 用 ssrLoadModule 就地编译 api/**\/*.ts，
+         * Windows 下会在源文件旁边生成 `.[action].ts.<pid>.<uuid>.tmpdir/*.tmp`，
+         * Vite 的 watcher 去 watch 这个临时文件时会抛 EBUSY（resource busy or locked），
+         * **直接让 dev server 崩掉**（编辑 api 路由时必现）。
+         * 这里忽略编译产物与临时目录，避免"改一行后端代码 dev server 就挂"。
+         */
+        ignored: ['**/*.tmpdir/**', '**/*.tmp', '**/node_modules/**', '**/dist/**', '**/.git/**'],
+      },
       proxy: {
         '/api-proxy/gemini': {
           target: 'https://generativelanguage.googleapis.com',
