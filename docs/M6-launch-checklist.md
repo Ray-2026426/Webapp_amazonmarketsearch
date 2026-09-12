@@ -47,16 +47,18 @@
 > → **恒为 false**，导致「管理员后台 / 团队空间」对所有人（包括你）都不显示，无论白名单怎么配。
 > 已修，并加 `tests/adminGate.test.ts` 7 条断言守死（含"全仓库不得再出现 isAdminSession(undefined)"）。
 
-开通步骤（二选一，**都不需要重新部署**）：
+开通步骤（**跑在服务端变量上，不需要改代码、也不需要重新构建前端**）：
 
 | 环境 | 做法 |
 | --- | --- |
-| 线上（Vercel） | Project → Settings → Environment Variables 加 `ADMIN_EMAILS=你的邮箱`（Production 与 Preview 都勾上）→ 保存后**刷新页面**即可（`/api/auth/me` 会用 token 重新确认身份）。无需 Redeploy。 |
+| 线上（Vercel） | Project → Settings → Environment Variables 加 `ADMIN_EMAILS=你的邮箱`（Production 与 Preview 都勾上）→ **需要一次 Redeploy**（Vercel 的环境变量是"部署时快照"，已有部署不会自动读到新值；随便推一个提交或点 Redeploy 都行）→ 之后用户**刷新页面即生效**，不必退出重登（`/api/auth/me` 会用 token 重新确认身份）。 |
 | 本机 | `.env.local` 加 `ADMIN_EMAILS=你的邮箱` → **重启 dev server**（服务端变量在启动时读入）→ 刷新页面。 |
+| 验证 | `POST /api/auth/me` 带自己的 token 应返回 `isAdmin: true`；拿别人的邮箱应返回 `isAdmin: false`，且 `POST /api/admin/health` 返回 403。 |
 
-注意两点：
-1. 别再往 `VITE_ADMIN_EMAILS` 上想办法 —— 它是**构建期**注入：既要把管理员邮箱明文打进公开 JS 包，又必须重新部署才生效。它现在只作为老响应格式的兜底保留。
+注意三点：
+1. 别再往 `VITE_ADMIN_EMAILS` 上想办法 —— 它是**构建期**注入：会把管理员邮箱明文打进公开 JS 包，且改一次要重新构建一次。它现在只作为老响应格式的兜底保留，新部署请留空。
 2. 前端藏 Tab 只是体验，**接口层同样会拦**（`api/admin/*` 与 `api/data/*` 的管理员动作都校验 `isAdminEmail` 并返回 403）；所以"看不到 Tab"不等于"没有权限"，"改前端也没用"。
+3. 本地开发环境的 管理员后台 会因为**没有 `SUPABASE_SERVICE_ROLE_KEY`** 而显示"未配置、不可达"——这是本机缺少服务端密钥，不是权限问题；要读真实用量/审计/用户数据请在线上预览里看。
 
 ## 4. 数据池与成本（`[自动]` + `[用户侧]`）
 
