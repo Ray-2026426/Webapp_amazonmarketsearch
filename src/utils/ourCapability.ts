@@ -98,6 +98,31 @@ export function buildOurCapability(input: BuildOurCapabilityInput): OurCapabilit
 }
 
 /**
+ * M3⑤ · 硬约束结论（存到项目数据里，供 M4「看机会」的机会卡顶部红条与进入方式判定直接读取）。
+ * 三个来源合并去重：看自己自评的决策边界 / 账号背景库（财务红线、合规、MOQ）/ 品类选择题。
+ * 只要有任意一条为真 → blocked=true（最高"验证后进入"，不可"直接进入"）。
+ */
+export interface HardConstraintVerdict {
+  blocked: boolean;
+  notes: string[];
+  updatedAt: string;
+}
+
+export function buildHardConstraintVerdict(input: {
+  items?: SelfAssessmentItem[];
+  /** 背景库推导出的硬约束（capabilityLibrary.capabilityHardConstraints） */
+  libraryNotes?: string[];
+  /** 品类选择题里决策边界答"不具备"的说明（categoryQuiz.toOurCapabilityFromQuiz 的 quizHardNotes） */
+  quizNotes?: string[];
+  now?: string;
+}): HardConstraintVerdict {
+  const fromSelf = hardConstraintsFromSelfAssessment(input.items).notes;
+  const notes = [...new Set([...(input.quizNotes ?? []), ...fromSelf, ...(input.libraryNotes ?? [])].map((n) => String(n || '').trim()).filter(Boolean))];
+  const blocked = hardConstraintsFromSelfAssessment(input.items).blocked || (input.libraryNotes ?? []).length > 0 || (input.quizNotes ?? []).length > 0;
+  return { blocked, notes, updatedAt: input.now ?? new Date().toISOString() };
+}
+
+/**
  * 适配度（确定性，PRD §6.4）：只取相关题；已具备=1 / 部分=0.5 / 不具备=0 / 待确认不纳入；
  * 再乘背景库完整度修正。**完成度与适配度分离**（完成度只看填了多少，适配度只看答得多好）。
  */

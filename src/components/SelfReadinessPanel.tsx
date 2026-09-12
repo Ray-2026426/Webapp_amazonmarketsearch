@@ -26,7 +26,7 @@ import {
   QUIZ_CATEGORY_LABELS,
   defaultQuizData,
 } from '../utils/categoryQuiz';
-import { computeFitScore } from '../utils/ourCapability';
+import { computeFitScore, buildHardConstraintVerdict } from '../utils/ourCapability';
 import { loadUserLook } from '../utils/userLook';
 import { loadMarketLook } from '../utils/marketLook';
 import { loadCompetitorLook, saveCompetitorLook } from '../utils/competitorLook';
@@ -133,20 +133,25 @@ export function SelfReadinessPanel({
 
   const onAnswer = async (questionId: string, optionIndex: number | undefined) => {
     if (!assessment) return;
-    const next = { ...assessment, quiz: setAnswer(assessment.quiz ?? defaultQuizData(), questionId, optionIndex) };
+    const nextQuiz = setAnswer(assessment.quiz ?? defaultQuizData(), questionId, optionIndex);
+    const cap = toOurCapabilityFromQuiz(nextQuiz);
+    // M3⑤：把硬约束结论落到项目数据（M4 看机会的机会卡红条直接读这个，不再重算）
+    const verdict = buildHardConstraintVerdict({
+      items: assessment.items,
+      libraryNotes: capabilityHardConstraints(lib),
+      quizNotes: cap.quizHardNotes,
+    });
+    const next = { ...assessment, quiz: nextQuiz, hardConstraintVerdict: verdict };
     setAssessment(next);
     await saveSelfAssessment(userId, project.id, next);
     // 把答题结果同步给看竞对（赢的路径要用的"我们行不行"+财务口径）
-    if (assessment.quiz) {
-      const cap = toOurCapabilityFromQuiz(next.quiz!);
-      const comp = await loadCompetitorLook(userId, project.id);
-      await saveCompetitorLook(userId, project.id, {
-        ...comp,
-        ourCapabilityByNeedId: { ...(comp.ourCapabilityByNeedId ?? {}), ...cap.byNeedId },
-      });
-    }
+    const comp = await loadCompetitorLook(userId, project.id);
+    await saveCompetitorLook(userId, project.id, {
+      ...comp,
+      ourCapabilityByNeedId: { ...(comp.ourCapabilityByNeedId ?? {}), ...cap.byNeedId },
+    });
     // 适配度（确定性公式）
-    const answers = toAnswersForFit(next.quiz!);
+    const answers = toAnswersForFit(nextQuiz);
     const r = computeFitScore({ answers, backgroundCompleteness: report.completeness });
     setFit({ fitScore: r.fitScore, note: r.note });
   };

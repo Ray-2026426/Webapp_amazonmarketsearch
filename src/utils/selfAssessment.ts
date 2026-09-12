@@ -4,6 +4,7 @@
 import { get, set } from 'idb-keyval';
 import type { FiveLookProgress } from '../types/researchProject';
 import type { QuizData } from './categoryQuiz';
+import type { HardConstraintVerdict } from './ourCapability';
 
 export type SelfStatus = 'have' | 'partial' | 'lack' | 'unknown';
 export type SelfCategory =
@@ -43,6 +44,8 @@ export interface SelfAssessment {
   aiDraft?: SelfAiDraft;
   /** M3⑤：项目内品类选择题（种子题确定性生成 + AI 增补；答案存这里） */
   quiz?: QuizData;
+  /** M3⑤：硬约束结论（供 M4 机会卡红条与"不可直接进入"判定读取） */
+  hardConstraintVerdict?: HardConstraintVerdict;
   updatedAt: string;
 }
 

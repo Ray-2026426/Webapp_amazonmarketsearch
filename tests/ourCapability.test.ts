@@ -5,6 +5,7 @@ import {
   buildOurCapability,
   hardConstraintsFromSelfAssessment,
   computeFitScore,
+  buildHardConstraintVerdict,
 } from '../src/utils/ourCapability';
 import type { SelfAssessmentItem, SelfStatus } from '../src/utils/selfAssessment';
 
@@ -116,6 +117,42 @@ test('适配度：没有可计入的题时不编造分数（0 分 + 说明）', 
   assert.equal(r.fitScore, 0);
   assert.equal(r.answered, 0);
   assert.ok(r.note.includes('"待确认"不参与评分'));
+});
+
+test('硬约束结论：三个来源合并去重，任一命中即 blocked（供 M4 机会卡红条）', () => {
+  const fromSelf = buildHardConstraintVerdict({
+    items: [item({ category: 'boundary', label: '最低毛利', status: 'lack' })],
+  });
+  assert.equal(fromSelf.blocked, true);
+  assert.ok(fromSelf.notes[0].includes('最低毛利'));
+
+  const fromLibrary = buildHardConstraintVerdict({ libraryNotes: ['合规资质「认证」不具备'] });
+  assert.equal(fromLibrary.blocked, true);
+  assert.ok(fromLibrary.notes.some((n) => n.includes('认证')));
+
+  const fromQuiz = buildHardConstraintVerdict({ quizNotes: ['毛利红线答"不具备" → 达不到红线'] });
+  assert.equal(fromQuiz.blocked, true);
+
+  const clean = buildHardConstraintVerdict({ items: [item({ category: 'capability', status: 'lack' })] });
+  assert.equal(clean.blocked, false, '能力类缺口不算硬约束');
+  assert.deepEqual(clean.notes, []);
+  assert.ok(clean.updatedAt.length > 0, '必须带时间戳，便于下游判断新鲜度');
+});
+
+test('硬约束结论：同一句话来自三个来源时只留一条；不同表述都保留', () => {
+  const same = buildHardConstraintVerdict({
+    items: [item({ category: 'boundary', label: '认证', status: 'lack' })],
+    libraryNotes: ['决策边界「认证」不具备'],
+    quizNotes: ['决策边界「认证」不具备'],
+  });
+  assert.equal(same.notes.length, 1, `三个来源同一句应合并成 1 条，实际：${same.notes.join('|')}`);
+
+  const different = buildHardConstraintVerdict({
+    items: [item({ category: 'boundary', label: '认证', status: 'lack' })],
+    libraryNotes: ['合规资质「认证」不具备'],
+  });
+  assert.equal(different.notes.length, 2, '不同表述要都保留（用户需要看到全部依据）');
+  assert.equal(new Set(different.notes).size, different.notes.length);
 });
 
 console.log(`\nresult: ${passed} passed, ${failed} failed`);

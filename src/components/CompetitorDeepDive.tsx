@@ -32,7 +32,7 @@ import {
   type WinningPath,
   type WinningPathDecision,
 } from '../utils/competitorAnalysis';
-import { pickCompetitorsDetailed, ROLE_LABELS, type PickedCompetitor } from '../utils/competitorPicker';
+import { pickCompetitorsDetailed, listReplacementCandidates, ROLE_LABELS, type CompetitorRole, type PickedCompetitor } from '../utils/competitorPicker';
 import type { ResearchProject } from '../types/researchProject';
 import type { HistoryRecord, Product, Review } from '../utils/parser';
 import type { SelfStatus } from '../utils/selfAssessment';
@@ -52,6 +52,10 @@ type Loaded = {
   roles: PickedCompetitor[];
   notes: string[];
   roleOf: Record<string, string>;
+  /** M3①：位置 → 角色（换人时按角色规则重挑候选） */
+  roleById: Record<string, CompetitorRole>;
+  /** 目标细分候选池（换人从这里选） */
+  pool: Product[];
   products: Product[];
   reviews: Review[];
   needs: UnmetNeedCandidate[];
@@ -91,6 +95,8 @@ export function CompetitorDeepDive({
   const [busy, setBusy] = useState(true);
   const [showMissing, setShowMissing] = useState(false);
   const [expandedAsin, setExpandedAsin] = useState<string | null>(null);
+  /** M3①：正在换人的那一列（null = 没在换） */
+  const [swapFor, setSwapFor] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setBusy(true);
@@ -132,8 +138,12 @@ export function CompetitorDeepDive({
       const poolAsins = (look.samplePool ?? []).map((s) => s.trim()).filter(Boolean);
       const columns = poolAsins.length > 0 ? poolAsins : detail.picked.map((p) => p.asin);
       const roleOf: Record<string, string> = {};
+      const roleById: Record<string, CompetitorRole> = {};
       for (const p of detail.picked) {
-        if (columns.includes(p.asin)) roleOf[p.asin] = ROLE_LABELS[p.role];
+        if (columns.includes(p.asin)) {
+          roleOf[p.asin] = ROLE_LABELS[p.role];
+          roleById[p.asin] = p.role;
+        }
       }
 
       // 3) 三列对比 + 覆盖率
@@ -169,6 +179,8 @@ export function CompetitorDeepDive({
         roles: detail.picked,
         notes: detail.notes,
         roleOf,
+        roleById,
+        pool,
         products,
         reviews,
         needs,
@@ -197,6 +209,21 @@ export function CompetitorDeepDive({
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  /** M3① 换人：把某一列换成候选池里的另一个 ASIN（按该角色规则列候选，用户拍板） */
+  const swapCompetitor = useCallback(
+    async (fromAsin: string, toAsin: string) => {
+      if (!data || fromAsin === toAsin) return;
+      const current = (data.samplePool ?? []).map((s) => s.trim()).filter(Boolean);
+      const base = current.length > 0 ? current : (loaded?.columns ?? []);
+      const next = base.map((a) => (a === fromAsin ? toAsin : a));
+      if (!next.includes(toAsin)) next.push(toAsin);
+      setSwapFor(null);
+      await saveCompetitorLook(userId, project.id, { ...data, samplePool: [...new Set(next)] });
+      await reload();
+    },
+    [data, loaded, userId, project.id, reload]
+  );
 
   const persist = useCallback(
     async (patch: Partial<CompetitorLookData>) => {
@@ -383,7 +410,40 @@ export function CompetitorDeepDive({
                       </p>
                       <p className="text-[11px] text-[#86868b] line-clamp-2">{product?.title || '（无标题）'}</p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setSwapFor(swapFor === asin ? null : asin)}
+                      className="shrink-0 rounded-lg border border-black/10 bg-white px-2 py-1 text-[10px] font-semibold text-[#86868b] hover:border-indigo-300 hover:text-indigo-700"
+                    >
+                      {swapFor === asin ? '取消换人' : '换人'}
+                    </button>
                   </div>
+
+                  {/* M3① 换人：从目标细分候选池里按角色规则挑（每人一句"为什么它也行"） */}
+                  {swapFor === asin && (
+                    <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-2.5 space-y-1.5">
+                      <p className="text-[10px] font-semibold text-indigo-800">
+                        换成谁？（按「{loaded.roleOf[asin] || '该角色'}」的规则排序，你拍板）
+                      </p>
+                      {listReplacementCandidates(loaded.pool, loaded.roleById[asin] ?? 'follower', loaded.columns)
+                        .slice(0, 5)
+                        .map((c) => (
+                          <button
+                            key={c.asin}
+                            type="button"
+                            onClick={() => void swapCompetitor(asin, c.asin)}
+                            className="w-full text-left rounded-lg border border-black/8 bg-white px-2 py-1.5 hover:border-indigo-400"
+                          >
+                            <span className="text-[11px] font-mono text-[#1d1d1f]">{c.asin}</span>
+                            <span className="ml-1.5 text-[10px] text-[#86868b]">{c.brand}</span>
+                            <span className="block text-[10px] text-[#86868b] leading-relaxed">{c.why}</span>
+                          </button>
+                        ))}
+                      {listReplacementCandidates(loaded.pool, loaded.roleById[asin] ?? 'follower', loaded.columns).length === 0 && (
+                        <p className="text-[10px] text-[#86868b]">候选池里没有其他商品可换（先扩大细分样本或加载更多数据）</p>
+                      )}
+                    </div>
+                  )}
 
                   {/* 画像 */}
                   <div>
