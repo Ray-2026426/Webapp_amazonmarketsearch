@@ -10,7 +10,13 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type { ControlPoint } from '../src/types/opportunity';
+import type { OpportunityCard } from '../src/types/researchProject';
+import { computeSearchPathFlow, type SearchPathLayerId } from '../src/utils/userLook';
+import { SearchPathDetailBlock } from '../src/components/UserLookView';
+import { OpportunityRoadmapBlock } from '../src/components/OpportunityDecisionBoard';
 import { buildControlPoints, buildDecisionPackage } from '../src/utils/opportunityPlan';
 import {
   canEditThreshold,
@@ -262,6 +268,114 @@ test('⑭ 仍然是带 variant 的同一个组件（没有第二份实现）', (
   assert(count(board, 'CONTROL_POINT_LABELS[kind]') === 1, '控制点只能在 .map 里渲染一次（否则就是复制 markup）');
   assert(board.includes('onEditControlPointThreshold'), 'sheet 形态的编辑回调必须由外层注入');
   assert(board.includes('persistCards(next,') && board.includes('changeControlPointThreshold'), '编辑必须走同一条持久化路径');
+});
+
+console.log('⏳3 残留：真实渲染冒烟（不只是 grep 源码）');
+
+/** ① 用的最小搜索路径数据：只有认知层与决策层，故意**没有**场景层（用来验证空层提示） */
+const SMOKE_SEARCH_PATH = {
+  summary: '先用大词搜，再加限定词',
+  layers: [
+    { layer: 'awareness' as const, words: [{ word: 'cervical pillow', volume: 12000, share: 0.6 }] },
+    { layer: 'decision' as const, words: [{ word: 'adjustable height pillow', volume: 3000, share: 0.25 }] },
+  ],
+};
+
+/** ⑭ 用的最小机会卡：一条人工改过的控制点 + 一条 AI 自造（对不上派生默认值）的控制点 */
+const SMOKE_CARD = {
+  id: 'o1',
+  projectId: 'p1',
+  unmetNeedId: 'n1',
+  title: '可调高度颈椎枕',
+  needStatement: '侧睡需要可调高度的颈椎支撑',
+  currentAlternative: '',
+  currentAlternativeCost: '',
+  solutionHypothesis: '',
+  marketEvidenceIds: [],
+  userEvidenceIds: [],
+  competitorEvidenceIds: [],
+  selfAssessmentId: '',
+  profitScenarioIds: [],
+  profitAssumption: { price: 45, cost: 12, cpc: 1.2 },
+  risks: [],
+  validationActions: [],
+  score: 0,
+  coverage: 0,
+  decision: 'undecided' as const,
+  createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  decisionPackage: {
+    roadmap: [{ id: 'rm1', phase: 'now' as const, action: '送检 3 家工厂打样', cost: 1500 }],
+    resources: [],
+    controlPoints: [
+      {
+        id: 'cpAcos',
+        kind: 'stop' as const,
+        label: '止损：广告效率',
+        metric: 'ACOS',
+        threshold: '14 天 ACOS > 25%',
+        confirmed: false,
+        thresholdEdited: true,
+      },
+      { id: 'cpAi', kind: 'entry' as const, label: 'AI 自造控制点', metric: '自定义指标', threshold: '随便', confirmed: false },
+    ],
+  },
+} as unknown as OpportunityCard;
+
+test('① 层筛选真的筛掉了行（用 react-dom/server 真渲染一次）', () => {
+  const flow = computeSearchPathFlow(SMOKE_SEARCH_PATH);
+  const html = (layerFilter: 'all' | SearchPathLayerId) =>
+    renderToStaticMarkup(
+      createElement(SearchPathDetailBlock, { searchPath: SMOKE_SEARCH_PATH, flow, layerFilter, onLayerFilterChange: () => {} })
+    );
+  const all = html('all');
+  assert(all.includes('cervical pillow') && all.includes('adjustable height pillow'), '全部：两层词都要在');
+  assert(all.includes('占比 60%') && all.includes('月搜索量 12,000') && all.includes('本层合计'), '全部：证据列必须在');
+  const decision = html('decision');
+  assert(decision.includes('adjustable height pillow'), '选中决策层：该层的词要在');
+  assert(!decision.includes('cervical pillow'), '选中决策层：认知层的词必须被筛掉');
+  assert(decision.includes('本层合计'), '筛选不得顺手把本层合计藏掉');
+  assert(decision.includes('不支持拖动排序'), '① 必须写明不做拖动');
+});
+
+test('① 层里没有词时渲染「该层暂无关键词证据」，不是空盒子', () => {
+  const flow = computeSearchPathFlow(SMOKE_SEARCH_PATH);
+  const sheet = renderToStaticMarkup(
+    createElement(SearchPathDetailBlock, {
+      searchPath: SMOKE_SEARCH_PATH,
+      flow,
+      layerFilter: 'scenario', // 数据里根本没有场景层
+      onLayerFilterChange: () => {},
+      variant: 'sheet',
+    })
+  );
+  assert(sheet.includes('该层暂无关键词证据'), '空层必须写明白');
+  assert(sheet.includes('场景层'), '空态里仍然要写清是哪一层');
+  assert(!sheet.includes('cervical pillow'), '筛选到空层时不该漏出别的层的词');
+});
+
+test('⑭ 真实渲染：sheet 形态有阈值输入与「已人工修改」，inline 形态没有输入框', () => {
+  const inline = renderToStaticMarkup(
+    createElement(OpportunityRoadmapBlock, { card: SMOKE_CARD, onToggleControlPoint: () => {} })
+  );
+  const sheet = renderToStaticMarkup(
+    createElement(OpportunityRoadmapBlock, {
+      card: SMOKE_CARD,
+      onToggleControlPoint: () => {},
+      onEditControlPointThreshold: () => {},
+      onResetControlPointThreshold: () => {},
+      variant: 'sheet',
+    })
+  );
+  assert(!inline.includes('data-control-point-threshold-input'), 'inline 形态不得有阈值输入框');
+  assert(inline.includes('查看详情'), 'inline 形态保留「查看详情」入口');
+  assert(inline.includes('已人工修改'), 'inline 形态也要标出人工改过的阈值');
+  assert(sheet.includes('data-control-point-threshold-input'), 'sheet 形态必须有阈值输入框');
+  assert(sheet.includes('value="14 天 ACOS &gt; 25%"'), 'sheet 的输入框要显示人工改过的值');
+  assert(sheet.includes('保存') && sheet.includes('恢复默认'), 'sheet 必须有保存与恢复默认');
+  assert(sheet.includes('派生默认值'), 'sheet 必须说明默认值是哪来的');
+  assert(sheet.includes('106'), '派生默认值应当是真算出来的那条（106）');
+  assert(sheet.includes('未提供'), '对不上派生规则的控制点必须显示「未提供」，不编一个默认值');
 });
 
 console.log(`\nresult: ${passed} passed, ${failed} failed`);
