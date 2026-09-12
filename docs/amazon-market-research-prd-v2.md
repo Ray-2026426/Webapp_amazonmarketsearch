@@ -940,6 +940,11 @@ Evidence {
 
 > M3 进度：① 竞对挑选（表现最好的代表性新人 + 换人 UI）✅、② 三列对比字段表 + 覆盖率 ✅、③ 三块分析（画像/痛点矩阵/满足矩阵）✅、④ 赢的路径（含硬约束只限制进入方式、不抹掉赢面）✅、⑤ 看自己 V2（六维度背景库 + 品类选择题 + 适配度 + 硬约束结论）✅、⑥ 断链 #4/#9/#10 全部关闭 ✅ —— **M3 目标项全部完成**，详见 §15.9。
 | **M4 看机会 V2+决策看板** | 第 13-16 周 | 机会卡决策包（先做/后做/前置资源/控制点）；全局先后建议；Go/No-Go 汇总；HTML/MD 导出；**合并 phase-0 的 6 个能力文件**（`opportunityAi` AI 机会生成 / `opportunityHtmlReport` HTML 审核报告 / `projectDecision` 决策摘要 / `teamStore`+`TeamSettingsPanel` 团队设置，§15.1-24） | 10 个真实品类回放：0 次误判（北极星护栏）；控制点可编辑并出现在导出件；HTML 审核报告可独立打开 |
+
+> M4 进度：① 机会卡模型（§6.5 决策包 + 证据引用 + 推理/反证）✅、② 确定性评分换血（§8.1 25/25/25/15/10）✅、
+> ③ 决策包推导（路线图/前置资源/控制点）✅、④ AI 生成候选 + 反证审查 + 非破坏性合并 ✅、
+> ⑤ Go/No-Go 汇总 + HTML 审核报告 ✅、⑥ 零机会两结论 ✅、⑦ 决策看板 UI ✅、
+> ⑧ phase-0 六个能力文件合并（决策 A）✅ —— 全部落地，详见 §15.10。
 | **M5 数据池+管理员后台+加固+内测** | 第 17-20 周 | 平台统一数据池（网关/缓存/配额/记账）；**管理员后台（§11.4：用户/用量/配置/审计/环境自检）**；安全加固（密钥不出服务端）；性能（项目中心 ≤2s）；**用户逐轮自测** + 内部试用 | 数据池月度成本可度量；管理员可看到每个用户的用量与状态；完成 ≥30 个项目回放；NPS/完成率基线 |
 | **M6 商用收口** | 第 21-24 周 | 团队空间与权限收口；定价/订阅实验设计（Phase B 蓝本）；上线检查清单；操作手册 | 交付 3 份真实品类决策包（HTML/MD）给管理层评审；10 分钟计时可用性测试达标 |
 
@@ -1164,8 +1169,39 @@ Evidence {
 
 ---
 
-## 16. 简洁性裁剪（本轮审查：消灭"看不懂、用不上"，一切服务快速找到未满足需求）
+### 15.10 M4 看机会 V2 —— 完成记录（2026-09）
 
+推送区间：`phase-0` 分支 `bf09a1b →`（**main 保持 `63abd4c` 未动**）。每步通过 `tsc --noEmit` + 全部 26 个测试套件（243 条断言）+ `vite build`。
+
+| M4 目标项 | 状态 | 落点 |
+| --- | --- | --- |
+| ① 机会卡模型（§6.5） | ✅ | `src/types/opportunity.ts`：状态机 ai_candidate→confirmed、进入方式、机会类型/可信度、证据引用、推理步骤、决策包（路线图/前置资源/控制点）、零机会结论；`OpportunityCard` 追加同名可选字段（向后兼容） |
+| ② 确定性评分换血 | ✅ | `opportunityScoreV2.ts`：五维 25/25/25/15/10；**缺项从分母移除并降覆盖度**；覆盖度独立展示不进 100 分；每维带可复核口径 |
+| ③ 决策包推导 | ✅ | `opportunityPlan.ts`：路线图两段式（硬约束优先→打样→测评→认证→备货→Listing→广告）；前置资源对照背景库标已知缺口；控制点三类且一律待确认；`rankOpportunities` 确定性排序 + "由你拍板" |
+| ④ AI 生成 + 反证审查 | ✅ | `opportunityAi.ts`：候选卡 0-3 条；需求 id 与证据编号必须真实存在；评分/状态/决策由系统接管；`mergeGeneratedCards` 保证 AI 返回 0 不删卡、已确认的卡一张不动 |
+| ⑤ Go/No-Go + 导出 | ✅ | `projectDecision.ts`（纯函数 + 薄 IO）、`opportunityHtmlReport.ts`（转义 + 评分拆解/证据/推理/反证/决策包同屏 + 零机会也能导出） |
+| ⑥ 零机会两结论 | ✅ | `opportunityConclusion.ts`：`judged_none`（写明卡在需求已满足/竞争没缝隙/自身接不住/利润不成立）与 `insufficient_evidence`（写明缺什么）；**数据支持机会时返回 null，禁止伪造"无机会"** |
+| ⑦ 决策看板 UI | ✅ | `OpportunityDecisionBoard.tsx`（挂在看机会页顶）：Go/No-Go 汇总 + 硬约束红条 + 零机会结论面板 + 机会卡（评分拆解/路线图/资源缺口/控制点可点确认/证据·推理·反证三栏）+ 拍板按钮 + HTML 导出 |
+| ⑧ 合并 phase-0 六个能力文件 | ✅ | 见下 |
+
+**修复断链 #6（评分通胀）**：旧 `scoreOpportunity` 用页面完成度当质量（市场分 = `market.completionPercent × 20`、竞对分 = `competitor.completionPercent × 20`、自身分 = `self.completionPercent × 15`），"填得越多分越高"。V2 把输入全部换成可追溯证据与确定性指标，并且**评分与"是否填完"彻底无关**（新测试专门锁这条）。
+
+**phase-0 六个能力文件的合并方式（§15.1-24 决策 A）**：
+
+| 文件 | 处理 | 原因 |
+| --- | --- | --- |
+| `opportunityAi.ts` | 按 V2 模型重写 | 原实现依赖已不存在的 `SelfGuidingQuestion` / `accountBackgroundSnapshot` / `OpportunityScoreBreakdown`；其中"AI 出引导题"的职责已由 M3 的品类选择题（`categoryQuiz`）接管 |
+| `opportunityHtmlReport.ts` | 按 V2 卡片重写 | 证据引用、评分拆解、决策包三块都是 V2 新增，旧渲染器渲染不出来 |
+| `projectDecision.ts` | 重写为纯函数 + 薄 IO | 为了让 Go/No-Go 判断可测（AI/IO 不能决定项目级结论） |
+| `teamStore.ts` / `TeamSettingsPanel.tsx` / `teamStore.test.ts` | 原样合并（仅适配 `SessionUser` 字段：`nickname` → `username`） | 三者与机会模型无关；`SessionUser` 确实没有昵称字段，按新代码适配而不复活旧类型；测试断言数不变，未放宽任何校验 |
+
+**环境事实（写下来避免下次踩）**：本机没有 `npm`（只有 harness 自带的 `node`），所以 `npm test` / `npm run build` 无法直接执行；所有验证都用等价命令：`node node_modules/typescript/bin/tsc --noEmit`、`node node_modules/tsx/dist/cli.mjs tests/<f>.test.ts`、`node node_modules/vite/bin/vite.js build`。
+
+**批量改中文的教训（M3 事故的延伸）**：合并 phase-0 文件时必须用 Node 显式 UTF-8 读写（`fs.readFileSync(p,'utf8')` / `writeFileSync(p, text, 'utf8')`），禁止 PowerShell `Get-Content`/`Set-Content`——中文环境下会按 GBK 误读并写坏文件。`tests/terminology.test.ts` 里的"新引入 BOM / 替换字符"守卫就是为这件事加的。
+
+---
+
+## 16. 简洁性裁剪（本轮审查：消灭"看不懂、用不上"，一切服务快速找到未满足需求）
 **总原则（§4 原则 10）**：每个看主屏只放「一句人话结论 + 一个主操作 + 证据数量徽章」，其余全部进二级页；高级/低频功能**默认收起，不删除**；看不懂的东西要么删、要么补一句人话解释。
 
 **主屏最小模板（五个看都遵守）**：

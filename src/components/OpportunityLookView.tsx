@@ -21,6 +21,7 @@ import {
   computeOpportunityProgress,
 } from '../utils/opportunityStore';
 import { loadUserLook, type UserLookData, type UnmetNeedCandidate } from '../utils/userLook';
+import { OpportunityDecisionBoard } from './OpportunityDecisionBoard';
 import { loadSelfAssessment, type SelfAssessment } from '../utils/selfAssessment';
 import { updateLookProgress, setProjectStatus } from '../utils/projectStore';
 import {
@@ -192,6 +193,9 @@ export function OpportunityLookView({
         </div>
         <SubmitReview userId={userId} project={project} cards={cards} onProjectChange={onProjectChange} />
       </div>
+
+      {/* M4：决策看板（Go/No-Go 汇总 + 零机会结论 + 机会卡决策包 + 硬约束红条 + HTML 导出） */}
+      <OpportunityDecisionBoard userId={userId} project={project} onProjectChange={onProjectChange} />
 
       {/* 从未满足需求生成 */}
       <Card>
