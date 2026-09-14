@@ -141,6 +141,8 @@ export interface CloudConfigStatus {
   /** true 表示正在使用不安全的开发默认密钥（生产必须配置 APP_JWT_SECRET） */
   jwtSecretIsInsecureFallback: boolean;
   adminEmailsConfigured: boolean;
+  /** 是否配置了注册邀请码（未配置时线上注册关闭） */
+  signupInviteConfigured?: boolean;
   dataPoolKeys: Record<string, boolean>;
   missing: string[];
   warnings: string[];
@@ -158,6 +160,12 @@ export function getCloudConfigStatus(): CloudConfigStatus {
   const serviceRole = Boolean(env('SUPABASE_SERVICE_ROLE_KEY'));
   const jwtSecret = Boolean(env('APP_JWT_SECRET') || env('SUPABASE_JWT_SECRET'));
   const adminEmails = Boolean(env('ADMIN_EMAILS') || env('VITE_ADMIN_EMAILS'));
+  /**
+   * 注册邀请码（`SIGNUP_INVITE_CODE`，**服务端变量**）。
+   * 为什么必须有：平台的数据池密钥在服务端，任何能注册的人都能**使用**这些密钥去抓数据（花的是你的钱）。
+   * 配了它 → 注册必须带正确邀请码；线上没配 → 直接关闭注册（fail closed）。
+   */
+  const signupInvite = Boolean(String(process.env.SIGNUP_INVITE_CODE || '').trim());
   const dataPoolKeys: Record<string, boolean> = {
     sellersprite: Boolean(env('SELLERSPRITE_SECRET_KEY') || env('VITE_DEFAULT_SELLERSPRITE_SECRET_KEY')),
     deepseek: Boolean(env('DEEPSEEK_API_KEY') || env('VITE_DEFAULT_AI_KEY')),
@@ -183,6 +191,13 @@ export function getCloudConfigStatus(): CloudConfigStatus {
   if (!jwtSecret) {
     warnings.push('APP_JWT_SECRET 未配置，正在使用 dev-insecure-secret（不可用于生产）');
   }
+  if (!signupInvite) {
+    warnings.push(
+      process.env.VERCEL_ENV === 'production'
+        ? '未配置 SIGNUP_INVITE_CODE：线上注册已关闭（没有人能注册，也就没人能用你的数据池密钥）'
+        : '未配置 SIGNUP_INVITE_CODE：当前环境注册开放（仅本地开发可接受）'
+    );
+  }
 
   return {
     ready: Boolean(url && publishable),
@@ -193,6 +208,7 @@ export function getCloudConfigStatus(): CloudConfigStatus {
     jwtSecretConfigured: jwtSecret,
     jwtSecretIsInsecureFallback: !jwtSecret,
     adminEmailsConfigured: adminEmails,
+    signupInviteConfigured: signupInvite,
     dataPoolKeys,
     missing,
     warnings,

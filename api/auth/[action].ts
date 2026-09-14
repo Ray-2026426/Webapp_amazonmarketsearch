@@ -38,11 +38,40 @@ async function login(req: VercelRequest, res: VercelResponse, body: Record<strin
   });
 }
 
+/**
+ * 注册邀请码闸门（服务端唯一实现）。
+ *
+ * 为什么必须有：数据池密钥都在服务端，**任何能注册的人都能用这些密钥去抓数据**（花的是账号主人的钱）。
+ * 所以：
+ *   - 配了 `SIGNUP_INVITE_CODE` → 必须带对邀请码才能注册；
+ *   - 线上（VERCEL_ENV=production）没配 → **直接关闭注册**（fail closed，宁可挡住也不能漏）；
+ *   - 本地开发没配 → 放行，否则没法自己试。
+ */
+function inviteGate(provided: unknown): { ok: boolean; status: number; error: string } {
+  const expected = String(process.env.SIGNUP_INVITE_CODE || '').trim();
+  const given = String(provided ?? '').trim();
+  if (expected) {
+    if (given && given === expected) return { ok: true, status: 0, error: '' };
+    return { ok: false, status: 403, error: '邀请码不正确（内测阶段需要邀请码才能注册）' };
+  }
+  if (process.env.VERCEL_ENV === 'production') {
+    return {
+      ok: false,
+      status: 403,
+      error: '本环境未配置注册邀请码，注册已关闭：管理员在 Vercel 配置 SIGNUP_INVITE_CODE 后才会开放',
+    };
+  }
+  return { ok: true, status: 0, error: '' };
+}
+
 async function register(req: VercelRequest, res: VercelResponse, body: Record<string, unknown>) {
   const account = normalizeAccount((body.account ?? body.email) as string | undefined);
   const password = String(body.password || '');
   if (!account) return json(res, 400, { ok: false, error: accountError() });
   if (password.length < 6) return json(res, 400, { ok: false, error: '密码至少 6 位' });
+
+  const gate = inviteGate(body.inviteCode);
+  if (!gate.ok) return json(res, gate.status, { ok: false, error: gate.error });
 
   const s = getServiceSupabase();
   if (!s) {

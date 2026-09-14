@@ -131,12 +131,16 @@ export interface RegisterResult {
   error?: string;
 }
 
-export async function register(account: string, password: string): Promise<RegisterResult> {
+/**
+ * 注册。`inviteCode` 是内测邀请码（服务端 `SIGNUP_INVITE_CODE` 校验）：
+ * 线上没配邀请码时注册会被服务端拒绝（fail closed），避免陌生人注册后使用平台的数据池密钥。
+ */
+export async function register(account: string, password: string, inviteCode?: string): Promise<RegisterResult> {
   try {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account, password }),
+      body: JSON.stringify({ account, password, inviteCode: inviteCode ?? '' }),
     });
     const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; token?: string; supabaseAccessToken?: string; user?: { id: string; email?: string; account?: string; isAdmin?: boolean } };
     if (!res.ok || !body.ok || !body.token || !body.user) {

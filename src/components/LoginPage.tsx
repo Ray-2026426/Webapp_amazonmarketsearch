@@ -4,7 +4,7 @@ import {
   MessageSquareWarning, KeyRound, FolderOpen, Compass, Tags, GitCompare, MessagesSquare,
   Calculator, Sparkles, Upload, Plug, ArrowDown, Layers, Route, CheckCircle2,
   TrendingUp, Shield, Zap, Clock, Lightbulb, Package, FlaskConical, RefreshCw, ArrowRight,
-  Users, Target, Map, Megaphone, Palette, Quote, Brain,
+  Users, Target, Map, Megaphone, Palette, Quote, Brain, Key,
 } from 'lucide-react';
 import { login, register, saveCreds, loadCreds, clearCreds } from '../utils/auth';
 import { toast } from 'sonner';
@@ -619,6 +619,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  /** 内测邀请码（服务端 SIGNUP_INVITE_CODE 校验；线上未配置时注册会被拒绝） */
+  const [inviteCode, setInviteCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -645,7 +647,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     try {
       if (mode === 'register') {
         if (password !== confirmPassword) { toast.error('两次密码输入不一致'); return; }
-        const r = await register(email, password);
+        const r = await register(email, password, inviteCode);
         if (!r.success) { toast.error(r.error ?? '注册失败'); return; }
         if (rememberMe) saveCreds(email, password); else clearCreds();
         toast.success('注册成功，正在进入...');
@@ -957,6 +959,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     </button>
                   </div>
                 </div>
+
+                {mode === 'register' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[12px] font-semibold text-[#424245]">邀请码</label>
+                    <div className="relative group">
+                      <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-400/0 via-indigo-400/0 to-violet-400/0 group-focus-within:from-indigo-400/6 group-focus-within:via-indigo-400/10 group-focus-within:to-violet-400/6 transition-all duration-300 pointer-events-none" />
+                      <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#aeaeb2] group-focus-within:text-indigo-400 transition-colors z-10" />
+                      <input type="text" value={inviteCode}
+                        onChange={(e) => setInviteCode(e.target.value)}
+                        placeholder="内测邀请码（找管理员要）" required
+                        className="relative w-full pl-10 pr-4 py-3 bg-white border border-black/[0.08] rounded-xl text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:border-indigo-300 text-sm transition-all shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]" />
+                    </div>
+                    <p className="text-[11px] text-[#86868b]">
+                      平台数据池密钥在服务端，为避免陌生人注册后消耗额度，注册需要邀请码。
+                    </p>
+                  </div>
+                )}
 
                 {mode === 'register' && (
                   <div className="space-y-1.5">

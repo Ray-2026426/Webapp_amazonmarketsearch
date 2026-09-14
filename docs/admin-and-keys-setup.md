@@ -18,8 +18,8 @@ Vercel → 项目 `webapp-amazonmarketsearch` → **Settings → Environment Var
 | 变量名 | 值（示例，来自 .env.local） |
 | --- | --- |
 | `DEEPSEEK_API_KEY` | （你的 DeepSeek Key，没有先留空） |
-| `SELLERSPRITE_SECRET_KEY` | `51ebe95758734929acf80c61704e2dda` |
-| `XYDC_SECRET_KEY` | `mcp_407eba6698f9e99d23ecaad5364e4be6` |
+| `SELLERSPRITE_SECRET_KEY` | `<SELLERSPRITE_SECRET_KEY：已移除，请填你自己的>` |
+| `XYDC_SECRET_KEY` | `<VITE_DEFAULT_XYDC_SECRET_KEY：已移除，请填你自己的>` |
 
 > 说明：这些 Key 也写在 `.env.local`（本地开发），但 `.env.local` 按安全原则**不提交 Git**，所以 Vercel 生产/预览环境要单独在平台配置。
 
