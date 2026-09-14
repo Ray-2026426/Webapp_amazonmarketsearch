@@ -79,6 +79,8 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   const [model, setModel] = useState<string>(initialModel);
   const [apiKey, setApiKey] = useState(settings?.apiKey ?? '');
   const [apiUrls, setApiUrls] = useState<Partial<Record<AiProvider, string>>>(sanitizeAiApiUrls(settings?.apiUrls) ?? {});
+  /** 允许浏览器直连（Key 不经过本站服务端）；见 AiSettings.allowBrowserDirect */
+  const [allowBrowserDirect, setAllowBrowserDirect] = useState(settings?.allowBrowserDirect === true);
   const [customModels, setCustomModels] = useState<Partial<Record<AiProvider, string[]>>>(settings?.customModels ?? {});
   const [newCustomModelName, setNewCustomModelName] = useState('');
   const [isTesting, setIsTesting] = useState(false);
@@ -180,6 +182,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
         model,
         apiUrls,
         customModels,
+        allowBrowserDirect,
       });
       if (!res.ok) {
         setModelsError(res.error);
@@ -205,6 +208,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
         model,
         apiUrls,
         customModels,
+        allowBrowserDirect,
       };
       await generateText('你好，请回复"ok"', tmp);
       setTestResult('ok');
@@ -299,6 +303,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
       model,
       apiUrls: cleanedApiUrls,
       customModels,
+      allowBrowserDirect,
     });
     toast.success('设置已保存');
     onClose();
@@ -654,6 +659,29 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                     你的 API Key 会经本站服务端转发到上面这个地址：<b>不保存、不记录、不写日志</b>，仅用于这一次请求。
                     若你的中转本身允许浏览器跨域，也可以改走直连（需要你确认对方开启了 CORS）。
                   </p>
+                )}
+
+                {(trimmedApiUrl.startsWith('http://') || trimmedApiUrl.startsWith('https://')) && (
+                  <label className="flex items-start gap-2 p-3 bg-white border border-black/10 rounded-xl cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={allowBrowserDirect}
+                      onChange={(e) => {
+                        setAllowBrowserDirect(e.target.checked);
+                        setTestResult(null);
+                        toast.success(e.target.checked ? '已改为浏览器直连（Key 不再经过本站服务端）' : '已改为经本站服务端转发');
+                      }}
+                      className="mt-0.5 w-4 h-4 accent-indigo-600"
+                    />
+                    <span className="text-[11px] text-[#424245] leading-relaxed">
+                      <b>浏览器直连</b>（我的接口允许跨域）——勾选后请求与 Key <b>完全不经过本站服务端</b>；
+                      不勾则默认由服务端代为转发（更稳，适合不允许跨域的中转）。
+                      <br />
+                      <span className="text-[#86868b]">
+                        例：<code className="font-mono">api.deepseek.com</code> 实测可直连；自建中转大多不行，建议保持不勾。
+                      </span>
+                    </span>
+                  </label>
                 )}
                 {urlWillAutoComplete && !urlLooksIncomplete && (
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">

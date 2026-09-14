@@ -15,6 +15,12 @@ import {
 import { loadSupabaseConfig, saveSupabaseConfig } from '../utils/supabaseConfig';
 
 /**
+ * 前端构建指纹（vite.config.ts 的 define 注入）。
+ * 兜底写法：万一在未注入的环境里被引用（例如被其它构建工具打包），也不会白屏。
+ */
+const BUILD_STAMP: string = typeof __BUILD_STAMP__ === 'string' ? __BUILD_STAMP__ : '未知（未注入构建指纹）';
+
+/**
  * M0「设置 → 诊断」面板。
  *
  * 背景：过去登录失败时前端只能提示"登录失败"，无法区分
@@ -223,6 +229,13 @@ export function SystemDiagnosticsPanel() {
               {data?.gitRef && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/5 text-[#424245]">分支：{data.gitRef}</span>
               )}
+              {/* 前端构建指纹：回答"我刷新了怎么还是老界面"——一眼看出打开的是哪一次前端构建 */}
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono"
+                title="你正在使用的这次前端构建（commit · 环境 · 分支 · 构建时间）。与 Vercel 部署列表里的那条对比即可确认。"
+              >
+                前端构建：{BUILD_STAMP}
+              </span>
             </div>
             <p className="text-xs text-[#424245] mt-1">
               {ready

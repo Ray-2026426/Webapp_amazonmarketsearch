@@ -20,7 +20,7 @@ import {
   providersWithNonOfficialDefault,
   validateRelayTarget,
 } from '../src/utils/aiEndpoints';
-import { AI_PROVIDERS } from '../src/utils/aiConfig';
+import { AI_PROVIDERS, sanitizeAiSettings } from '../src/utils/aiConfig';
 import {
   modelsAuthHeaders,
   modelsUrlWithKey,
@@ -387,6 +387,51 @@ test('界面有「获取模型」按钮，且与聊天共用同一通道判定',
   assert(route.includes('parseModelsResponse'), '服务端解析必须复用同一份实现');
   assert(/models,\s*\n?\s*chat|chat,\s*\n?\s*models/.test(route.replace(/\s+/g, ' ')) || route.includes('models:'), 'models action 必须注册');
   assert(route.includes('validateRelayTarget'), '取模型列表同样要过 SSRF 校验');
+});
+
+test('浏览器直连开关：勾了就不经服务端，Key 不进本站', () => {
+  const relayed = decideAiTransport({ customUrl: 'https://api.deepseek.com/v1' });
+  assert(relayed.transport === 'relay', '默认应经服务端转发');
+
+  const direct = decideAiTransport({ customUrl: 'https://api.deepseek.com/v1', preferDirect: true });
+  assert(direct.transport === 'direct', `勾选直连后应为 direct，实际 ${direct.transport}`);
+  assert(direct.reason.includes('跨域'), '直连必须提示对方要允许跨域');
+
+  // 取模型列表同样尊重该开关
+  const m = planModelsRequest({ provider: 'deepseek', customBaseUrl: 'https://api.deepseek.com/v1', preferDirect: true });
+  assert(m.transport === 'direct', `取模型也应直连，实际 ${m.transport}`);
+
+  // 设置项要能存下来并被净化
+  const kept = sanitizeAiSettings({
+    provider: 'deepseek',
+    apiKey: 'k',
+    model: 'deepseek-flash',
+    allowBrowserDirect: true,
+  });
+  assert(kept.allowBrowserDirect === true, 'allowBrowserDirect 必须被保留');
+  const dropped = sanitizeAiSettings({ provider: 'deepseek', apiKey: 'k', model: 'm' });
+  assert(dropped.allowBrowserDirect === false, '未勾选时应显式落成 false');
+});
+
+test('构建指纹：诊断面板与启动日志都要能看出"这是哪次构建"', () => {
+  const vite = read('vite.config.ts');
+  assert(vite.includes('__BUILD_STAMP__'), 'vite.config 必须注入构建指纹');
+  assert(vite.includes('VERCEL_GIT_COMMIT_SHA'), '线上应带上 commit 短哈希');
+  const diag = read('src/components/SystemDiagnosticsPanel.tsx');
+  assert(diag.includes('BUILD_STAMP'), '诊断面板必须显示构建指纹');
+  assert(diag.includes('前端构建'), '要用中文写清楚这一行是什么');
+  assert(/typeof __BUILD_STAMP__ === 'string'/.test(diag), '未注入时要有兜底，不能白屏');
+  const main = read('src/main.tsx');
+  assert(main.includes('__BUILD_STAMP__'), '启动时应把指纹打到控制台');
+  const dts = read('src/vite-env.d.ts');
+  assert(dts.includes('declare const __BUILD_STAMP__'), '全局声明要写进 vite-env.d.ts');
+});
+
+test('界面提供「浏览器直连」开关（有些接口确实允许跨域）', () => {
+  const panel = read('src/components/AiSettingsPanel.tsx');
+  assert(panel.includes('allowBrowserDirect'), '设置页必须有该开关');
+  assert(panel.includes('浏览器直连'), '开关文案要说人话');
+  assert(panel.includes('不经过本站服务端'), '要如实说明勾选后的数据流向');
 });
 
 console.log(`\nresult: ${passed} passed, ${failed} failed`);

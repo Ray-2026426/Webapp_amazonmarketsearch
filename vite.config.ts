@@ -7,11 +7,25 @@ import { devApiPlugin } from './server/devApiPlugin';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
+  /**
+   * 构建指纹：用于回答"你看到的是哪一次构建"。
+   * Vercel 会注入 VERCEL_GIT_COMMIT_SHA / VERCEL_ENV / VERCEL_GIT_COMMIT_REF，本地构建则显示 local。
+   */
+  const buildStamp = [
+    (process.env.VERCEL_GIT_COMMIT_SHA || 'local').slice(0, 7),
+    process.env.VERCEL_ENV || mode,
+    process.env.VERCEL_GIT_COMMIT_REF || '',
+    new Date().toISOString().slice(0, 16).replace('T', ' '),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return {
     // devApiPlugin：本地补齐 /api/*（登录、云同步、健康自检），使 npm run dev 与线上行为一致
     plugins: [react(), tailwindcss(), devApiPlugin(env), sellerspriteMcpProxyPlugin(env)],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      __BUILD_STAMP__: JSON.stringify(buildStamp),
     },
     resolve: {
       alias: {

@@ -77,7 +77,12 @@ function trimSlash(url: string): string {
  * 算出"取模型列表"这次请求长什么样。
  * @param customBaseUrl 用户在设置里填的自定义地址（可空；空=走本站默认转发）
  */
-export function planModelsRequest(input: { provider: AiProvider; customBaseUrl?: string | null }): AiModelsRequestPlan {
+export function planModelsRequest(input: {
+  provider: AiProvider;
+  customBaseUrl?: string | null;
+  /** 用户明确选择"浏览器直连"（他的中转/官方接口允许跨域） */
+  preferDirect?: boolean;
+}): AiModelsRequestPlan {
   const { provider } = input;
   const custom = trimSlash(input.customBaseUrl ?? '');
   const authStyle = AUTH_STYLE[provider];
@@ -86,9 +91,9 @@ export function planModelsRequest(input: { provider: AiProvider; customBaseUrl?:
       ? { 'anthropic-version': '2023-06-01' }
       : {};
 
-  // 用户填了自定义地址 → 用他的地址（绝对地址由服务端转发）
+  // 用户填了自定义地址 → 用他的地址（绝对地址默认由服务端转发）
   if (custom) {
-    const transport = decideAiTransport({ customUrl: custom }).transport;
+    const transport = decideAiTransport({ customUrl: custom, preferDirect: input.preferDirect }).transport;
     // 自定义地址通常已经带了 /v1 之类的版本段：只在没有版本段时补
     const base = /\/v\d+([a-z]+)?$/i.test(custom) ? custom : custom;
     return {
@@ -99,7 +104,7 @@ export function planModelsRequest(input: { provider: AiProvider; customBaseUrl?:
       note:
         transport === 'relay'
           ? '你的 Key 会经本站服务端转发去取模型列表（不保存、不记录）'
-          : '浏览器直接请求你的自定义地址',
+          : '浏览器直接请求你的自定义地址（需对方允许跨域）',
     };
   }
 

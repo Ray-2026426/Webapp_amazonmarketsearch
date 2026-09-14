@@ -110,6 +110,13 @@ export interface AiSettings {
   apiUrls?: Partial<Record<AiProvider, string>>;
   /** 自定义模型名列表（按供应商存储） */
   customModels?: Partial<Record<AiProvider, string[]>>;
+  /**
+   * 允许浏览器直连（自定义绝对地址）。
+   * 默认 false：绝对地址经本站服务端转发（浏览器直连会被 CORS 拦）。
+   * 但**有些接口确实允许跨域**（例如 api.deepseek.com 实测能直接从浏览器调通），
+   * 这类用户可以勾选直连：请求与 Key 都不经过本站服务端。
+   */
+  allowBrowserDirect?: boolean;
 }
 
 export function isValidCustomApiUrl(url: string): boolean {
@@ -142,6 +149,7 @@ export function sanitizeAiSettings(settings: AiSettings): AiSettings {
     apiKey: settings.apiKey ?? '',
     model: settings.model || getProviderConfig(settings.provider).defaultModel,
     apiUrls: sanitizeAiApiUrls(settings.apiUrls),
+    allowBrowserDirect: settings.allowBrowserDirect === true,
   };
 }
 
@@ -569,7 +577,10 @@ async function sendOpenAICompatOnce(
   body: Record<string, unknown>,
   headers: Record<string, string>
 ): Promise<{ status: number; ok: boolean; text: string }> {
-  const decision = decideAiTransport({ customUrl: settings.apiUrls?.[settings.provider] });
+  const decision = decideAiTransport({
+    customUrl: settings.apiUrls?.[settings.provider],
+    preferDirect: settings.allowBrowserDirect === true,
+  });
 
   if (decision.transport !== 'relay') {
     const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
@@ -731,6 +742,7 @@ export async function fetchAvailableModels(
   const plan = planModelsRequest({
     provider: settings.provider,
     customBaseUrl: settings.apiUrls?.[settings.provider],
+    preferDirect: settings.allowBrowserDirect === true,
   });
 
   if (!plan.url) return { ok: false, models: [], error: plan.note || '请先填写请求地址' };
@@ -800,7 +812,12 @@ export async function* streamText(
    * 走服务端转发时**不支持流式**（本站的转发接口只做一次性转发，不回 SSE）：
    * 与其静默失败，不如退化成一次性返回（用户仍能拿到完整回答，只是没有逐字输出）。
    */
-  if (decideAiTransport({ customUrl: settings.apiUrls?.[settings.provider] }).transport === 'relay') {
+  if (
+    decideAiTransport({
+      customUrl: settings.apiUrls?.[settings.provider],
+      preferDirect: settings.allowBrowserDirect === true,
+    }).transport === 'relay'
+  ) {
     const text = await generateText(prompt, settings, { systemPrompt });
     yield text;
     return;
