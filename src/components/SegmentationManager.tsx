@@ -744,7 +744,7 @@ export const SegmentationManager = React.memo(function SegmentationManager({
     if (!onRemoveSelectedAsins || selectedAsins.size === 0) return;
     const asins = Array.from(selectedAsins);
     const ok = window.confirm(
-      `确定剔除 ${asins.length} 个 ASIN？\n\n它们会从当前商品明细、历史表现、细分标签和竞品对比选择中移除。此操作不会直接改写你上传的原 Excel；需要源表时请使用“导出清洗后源表”。`
+      `确定剔除 ${asins.length} 个 ASIN？\n\n它们会从当前商品明细、历史表现、细分标签和竞品明细选择中移除。此操作不会直接改写你上传的原 Excel；需要源表时请使用“导出清洗后源表”。`
     );
     if (!ok) return;
     onRemoveSelectedAsins(asins);

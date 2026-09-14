@@ -16,7 +16,7 @@ export interface MarketHistoryMeta {
   marketplaceCode: string;
   productCount: number;
   segmentCount: number;
-  /** 是否含竞品对比结果（总保存后） */
+  /** 是否含竞品明细结果（总保存后） */
   hasCompetitor?: boolean;
   /** 是否含用户洞察 AI 结论（总保存后） */
   hasUserInsights?: boolean;
@@ -54,12 +54,12 @@ export interface MarketHistorySnapshot {
   keywords: Keyword[];
   keywordInsight?: AiInsight | null;
   marketReportCache: { fingerprint: string; body: string } | null;
-  activeView: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit';
+  activeView: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit' | 'projects';
   /** 上传「历史表现」文件时的文件名（无扩展名），用于默认命名 US-xxx */
   historySourceLabel?: string;
   /** 锚点批注（旧快照可能无此字段） */
   anchorAnnotations?: AnchorAnnotation[];
-  /** 竞品分析工作区（总保存一并写入；旧快照可能无） */
+  /** 竞品明细工作区（总保存一并写入；旧快照可能无） */
   competitorWorkspace?: CompetitorWorkspaceState | null;
   /** 用户洞察工作区（深度洞察/旅程表，总保存一并写入；旧快照可能无） */
   userInsightsWorkspace?: UserInsightsWorkspaceState | null;

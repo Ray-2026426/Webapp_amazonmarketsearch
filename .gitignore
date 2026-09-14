@@ -1,6 +1,41 @@
+# ============================================================
+# Kairo (.gitignore)
+# 注意：本仓库是【公开仓库】——以下文件含密钥，绝对不能提交。
+# ============================================================
+
+# 依赖与构建产物
 node_modules/
 dist/
+.npm-cache/
+*.tsbuildinfo
+
+# 环境变量与密钥（最重要）
+.env
 .env.local
+.env.*.local
+!.env.example
 .vercel/
-.DS_Store
+.vercel-local/
+.env.preview.local
+.env.production.local
+env-production.txt
+
+# 本地缓存 / 工具产物
+.cache/
+.turbo/
 *.log
+dev-server.log
+dev-review.out.log
+dev-review.err.log
+.vite-dev.log
+
+# 编辑器与系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# 临时目录
+tmp/
+temp/

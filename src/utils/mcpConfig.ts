@@ -1,5 +1,6 @@
 /** MCP 数据源配置（可多家）+ 应用功能开关（仅存本机浏览器） */
-import { getCurrentUser, isAdminSession } from './auth';
+import { getAuthToken, getCurrentUser, isAdminSession } from './auth';
+import { getDefaultServerKey, pushServerKeys } from './serverKeys';
 
 const MCP_KEY = 'amzdev_mcp_settings';
 const FEATURES_KEY = 'amzdev_feature_flags';
@@ -19,16 +20,7 @@ export const SORFTIME_MCP_PROXY_PATH = '/api-proxy/sorftime-mcp';
 
 export type McpProviderKind = 'sellersprite' | 'lingxing' | 'xydc' | 'sorftime' | 'custom';
 
-/**
- * 管理员默认 MCP（与本机 Cursor mcp.json 对齐）。
- * 换版本 / 清缓存后，ensureAdminMcpDefaults 会自动补回。
- */
-export const ADMIN_DEFAULT_MCP_KEYS = {
-  lingxing: 'b3791d5d4089bfd5a2025b8cdfd1d5ff',
-  sellersprite: '51ebe95758734929acf80c61704e2dda',
-  xydc: 'mcp_407eba6698f9e99d23ecaad5364e4be6',
-  sorftime: 'mddheg1wejzyqlzim2p4d216vmhldz09',
-} as const;
+
 
 function getMcpSettingsKey(): string {
   const user = getCurrentUser();
@@ -65,7 +57,7 @@ function providerKindLabel(kind: McpProviderKind): string {
 
 function envDefaultXydcSecret(): string {
   try {
-    return String(import.meta.env?.VITE_DEFAULT_XYDC_SECRET_KEY ?? '').trim();
+  return getDefaultServerKey('xydc');
   } catch {
     return '';
   }
@@ -73,7 +65,23 @@ function envDefaultXydcSecret(): string {
 
 function envDefaultSellerSpriteSecret(): string {
   try {
-    return String(import.meta.env?.VITE_DEFAULT_SELLERSPRITE_SECRET_KEY ?? '').trim();
+  return getDefaultServerKey('sellersprite');
+  } catch {
+    return '';
+  }
+}
+
+function envDefaultLingXingSecret(): string {
+  try {
+    return getDefaultServerKey('lingxing');
+  } catch {
+    return '';
+  }
+}
+
+function envDefaultSorftimeSecret(): string {
+  try {
+    return getDefaultServerKey('sorftime');
   } catch {
     return '';
   }
@@ -102,7 +110,7 @@ export function createSellerSpriteProvider(partial?: Partial<McpProviderEntry>):
     id: partial?.id || `ss_${uid()}`,
     name: partial?.name || '卖家精灵',
     kind: 'sellersprite',
-    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultSellerSpriteSecret() || ADMIN_DEFAULT_MCP_KEYS.sellersprite : '') || '').trim(),
+    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultSellerSpriteSecret() : '') || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
@@ -114,7 +122,7 @@ export function createLingXingProvider(partial?: Partial<McpProviderEntry>): Mcp
     id: partial?.id || `lx_${uid()}`,
     name: partial?.name || '领星',
     kind: 'lingxing',
-    secretKey: (partial?.secretKey || (defaultsAllowed ? ADMIN_DEFAULT_MCP_KEYS.lingxing : '') || '').trim(),
+    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultLingXingSecret() : '') || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
@@ -137,7 +145,7 @@ export function createXydcProvider(partial?: Partial<McpProviderEntry>): McpProv
     id: partial?.id || `xydc_${uid()}`,
     name: partial?.name || '西柚洞察',
     kind: 'xydc',
-    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultXydcSecret() || ADMIN_DEFAULT_MCP_KEYS.xydc : '') || '').trim(),
+    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultXydcSecret() : '') || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
@@ -149,7 +157,7 @@ export function createSorftimeProvider(partial?: Partial<McpProviderEntry>): Mcp
     id: partial?.id || `sorf_${uid()}`,
     name: partial?.name || 'Sorftime',
     kind: 'sorftime',
-    secretKey: (partial?.secretKey || (defaultsAllowed ? ADMIN_DEFAULT_MCP_KEYS.sorftime : '') || '').trim(),
+    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultSorftimeSecret() : '') || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
@@ -163,11 +171,13 @@ function parseProviderKind(raw: unknown): McpProviderKind {
   return 'sellersprite';
 }
 
-/** 保证四家内置数据源默认存在，并在 Key 为空时用管理员默认值补齐 */
+/** 保证四家内置数据源默认存在；Key 为空时仅用环境变量默认值兜底（不写死） */
 function ensureBuiltinProviders(providers: McpProviderEntry[]): McpProviderEntry[] {
   const defaultsAllowed = canUseAdminMcpDefaults();
-  const envXydc = defaultsAllowed ? envDefaultXydcSecret() || ADMIN_DEFAULT_MCP_KEYS.xydc : '';
-  const envSs = defaultsAllowed ? envDefaultSellerSpriteSecret() || ADMIN_DEFAULT_MCP_KEYS.sellersprite : '';
+  const envXydc = defaultsAllowed ? envDefaultXydcSecret() : '';
+  const envSs = defaultsAllowed ? envDefaultSellerSpriteSecret() : '';
+  const envLx = defaultsAllowed ? envDefaultLingXingSecret() : '';
+  const envSorf = defaultsAllowed ? envDefaultSorftimeSecret() : '';
   const list = providers.map((p) => {
     if (p.kind === 'xydc' && !p.secretKey.trim() && envXydc) {
       return { ...p, secretKey: envXydc };
@@ -175,11 +185,11 @@ function ensureBuiltinProviders(providers: McpProviderEntry[]): McpProviderEntry
     if (p.kind === 'sellersprite' && !p.secretKey.trim() && envSs) {
       return { ...p, secretKey: envSs };
     }
-    if (defaultsAllowed && p.kind === 'lingxing' && !p.secretKey.trim()) {
-      return { ...p, secretKey: ADMIN_DEFAULT_MCP_KEYS.lingxing };
+    if (p.kind === 'lingxing' && !p.secretKey.trim() && envLx) {
+      return { ...p, secretKey: envLx };
     }
-    if (defaultsAllowed && p.kind === 'sorftime' && !p.secretKey.trim()) {
-      return { ...p, secretKey: ADMIN_DEFAULT_MCP_KEYS.sorftime };
+    if (p.kind === 'sorftime' && !p.secretKey.trim() && envSorf) {
+      return { ...p, secretKey: envSorf };
     }
     return p;
   });
@@ -256,9 +266,8 @@ function loadMcpSettingsRaw(): McpSettings {
   } catch {
     /* ignore */
   }
-  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
-    secretKey: defaultsAllowed ? ADMIN_DEFAULT_MCP_KEYS.sellersprite : '',
+    secretKey: '',
     mcpUrl: '',
     providers: [
       createLingXingProvider(),
@@ -281,29 +290,10 @@ export function ensureAdminMcpDefaults(): McpSettings {
   if (!canUseAdminMcpDefaults()) {
     return loadMcpSettingsRaw();
   }
+  // 只保证四家内置数据源结构齐全；Key 保留管理员在设置页填写并持久化的值，不再写死。
   const current = loadMcpSettingsRaw();
-  const providers = ensureBuiltinProviders(current.providers || []).map((p) => {
-    if (p.kind === 'lingxing') {
-      return { ...p, secretKey: ADMIN_DEFAULT_MCP_KEYS.lingxing, enabled: true, mcpUrl: '' };
-    }
-    if (p.kind === 'sellersprite') {
-      return { ...p, secretKey: ADMIN_DEFAULT_MCP_KEYS.sellersprite, enabled: true, mcpUrl: '' };
-    }
-    if (p.kind === 'xydc') {
-      return { ...p, secretKey: ADMIN_DEFAULT_MCP_KEYS.xydc, enabled: true, mcpUrl: '' };
-    }
-    if (p.kind === 'sorftime') {
-      return { ...p, secretKey: ADMIN_DEFAULT_MCP_KEYS.sorftime, enabled: true, mcpUrl: '' };
-    }
-    return p;
-  });
-  const next: McpSettings = {
-    secretKey: ADMIN_DEFAULT_MCP_KEYS.sellersprite,
-    mcpUrl: '',
-    providers,
-  };
-  saveMcpSettings(next);
-  return next;
+  saveMcpSettings(current);
+  return current;
 }
 
 export function isOfficialSellerSpriteMcpUrl(url: string): boolean {
@@ -460,6 +450,16 @@ export function saveMcpSettings(settings: McpSettings): void {
       providers,
     } satisfies McpSettings)
   );
+  // 管理员保存时同步到服务器
+  const token = getAuthToken();
+  if (isAdminSession(getCurrentUser()) && token) {
+    void pushServerKeys(token, {
+      sellersprite: providers.find((p) => p.kind === 'sellersprite')?.secretKey || '',
+      xydc: providers.find((p) => p.kind === 'xydc')?.secretKey || '',
+      lingxing: providers.find((p) => p.kind === 'lingxing')?.secretKey || '',
+      sorftime: providers.find((p) => p.kind === 'sorftime')?.secretKey || '',
+    });
+  }
 }
 
 export function loadFeatureFlags(): AppFeatureFlags {

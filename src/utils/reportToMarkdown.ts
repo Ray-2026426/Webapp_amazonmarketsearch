@@ -1,4 +1,28 @@
 import type { AiInsight } from '../components/KeywordAnalysis';
+/** 把 <table> 转成 GFM 表格，避免导出 Markdown 时表格破裂 */
+function convertHtmlTables(html: string): string {
+  return html.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, inner) => {
+    const rows: string[][] = [];
+    const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = trRe.exec(inner)) !== null) {
+      const cells: string[] = [];
+      const tdRe = /<(th|td)[^>]*>([\s\S]*?)<\/\1>/gi;
+      let cm: RegExpExecArray | null;
+      while ((cm = tdRe.exec(m[1])) !== null) {
+        cells.push(stripTags(cm[2]).replace(/\s+/g, ' ').trim());
+      }
+      if (cells.length) rows.push(cells);
+    }
+    if (!rows.length) return '';
+    const colCount = Math.max(...rows.map((r) => r.length));
+    const esc = (cell: string) => cell.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+    const header = '| ' + Array.from({ length: colCount }, (_, i) => esc(rows[0][i] ?? '')).join(' | ') + ' |';
+    const sep = '|' + Array(colCount).fill('---').join('|') + '|';
+    const body = rows.slice(1).map((r) => '| ' + Array.from({ length: colCount }, (_, i) => esc(r[i] ?? '')).join(' | ') + ' |');
+    return '\n' + [header, sep, ...body].join('\n') + '\n';
+  });
+}
 
 /** 把 HTML 粗转成可读 Markdown（不做 1:1 样式还原） */
 export function htmlToMarkdown(html: string): string {
@@ -8,6 +32,7 @@ export function htmlToMarkdown(html: string): string {
     .replace(/<!--[\s\S]*?-->/g, '');
 
   s = s.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '');
+  s = convertHtmlTables(s);
 
   s = s.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, (_, t) => `\n# ${stripTags(t).trim()}\n\n`);
   s = s.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (_, t) => `\n## ${stripTags(t).trim()}\n\n`);
@@ -22,10 +47,6 @@ export function htmlToMarkdown(html: string): string {
   s = s.replace(/<p[^>]*>/gi, '');
   s = s.replace(/<\/div>/gi, '\n');
   s = s.replace(/<div[^>]*>/gi, '');
-  s = s.replace(/<\/tr>/gi, '\n');
-  s = s.replace(/<\/(td|th)>/gi, ' | ');
-  s = s.replace(/<(td|th)[^>]*>/gi, '');
-  s = s.replace(/<\/?(table|thead|tbody|tr)[^>]*>/gi, '\n');
 
   s = s.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '**$1**');
   s = s.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**');

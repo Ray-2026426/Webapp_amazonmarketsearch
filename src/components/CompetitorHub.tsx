@@ -40,6 +40,7 @@ import {
 } from '../utils/competitorHistory';
 import { FeishuPushButton } from './FeishuPushButton';
 import { competitorReportToMarkdown } from '../utils/reportToMarkdown';
+import { shouldApplyDrilldownTab } from '../utils/competitorDrilldown';
 
 type WizardStep = 1 | 2 | 3;
 type ResultTab = 'listing' | 'traffic' | 'matrix';
@@ -49,7 +50,14 @@ interface CompetitorHubProps {
   marketplaceCode?: string;
   domain?: string;
   preselectedAsins?: string[];
-  /** 示例模式：直接展示真实竞品对比结果（无需再点「开始对比」） */
+  /**
+   * 线框图 ⏳4：从「看竞对」的下钻入口 ⑦⑧⑨ 进来时指定落在哪个视图
+   * （⑦单竞对深度页/⑧主图逐张 → listing；⑨流量结构 → traffic），而不是一律落 Listing。
+   */
+  preselectedResultTab?: ResultTab;
+  /** 递增即强制再应用一次 preselectedResultTab（已在竞品明细里再点 ⑧/⑨ 也能切换） */
+  resultTabRequestKey?: number;
+  /** 示例模式：直接展示真实竞品明细结果（无需再点「开始对比」） */
   demoSnapshot?: CompetitorDemoSnapshot | null;
   /** 登录用户 id；游客用 guest，用于本机历史隔离 */
   userId?: string;
@@ -256,6 +264,8 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
   products,
   marketplaceCode = 'US',
   preselectedAsins = [],
+  preselectedResultTab,
+  resultTabRequestKey = 0,
   demoSnapshot = null,
   userId = 'guest',
   workspaceFromParent = null,
@@ -322,6 +332,26 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
     Boolean(seed?.hasResult || demoSnapshot?.details?.length)
   );
   const [resultTab, setResultTab] = useState<ResultTab>('listing');
+
+  /**
+   * 线框图 ⏳4：⑦⑧⑨ 下钻自带「要看哪个视图」的意图。
+   * 带到 ASIN 的同时落到对应 Tab（Listing 详情页 / 流量 / 语义矩阵），
+   * 并保证同一次请求只应用一次——之后用户手动切 Tab 不会被抢回去。
+   * 必须在 hook 区（任何 early return 之前），否则触发 React #310。
+   */
+  const appliedDrilldownNonce = useRef(resultTabRequestKey);
+  useEffect(() => {
+    const shouldApply = shouldApplyDrilldownTab({
+      requested: preselectedResultTab,
+      hasResult,
+      nonce: resultTabRequestKey,
+      appliedNonce: appliedDrilldownNonce.current,
+    });
+    if (!shouldApply) return;
+    appliedDrilldownNonce.current = resultTabRequestKey;
+    setStep(3);
+    setResultTab(preselectedResultTab as ResultTab);
+  }, [preselectedResultTab, resultTabRequestKey, hasResult]);
 
   const [details, setDetails] = useState<AsinDetailSnapshot[]>(
     () => seed?.details ?? demoSnapshot?.details ?? []
@@ -738,7 +768,7 @@ export const CompetitorHub: React.FC<CompetitorHubProps> = ({
         <div>
           <h2 className="text-[24px] font-bold text-[#1d1d1f] tracking-tight flex items-center gap-2">
             <Crosshair className="w-6 h-6 text-indigo-600" />
-            竞品分析
+            竞品明细
           </h2>
           <p className="text-[#86868b] text-sm mt-1">
             可从市场大盘 ASIN 列表勾选带入，或手动添加。对比完成后可一键生成「Listing + 流量 + 产品矩阵」综合 AI 报告。
@@ -1240,7 +1270,7 @@ function ListingBuyerView({
       : '';
     const trendSection = trendLines ? `\n## 历史月度销量 / 销售额 / 价格趋势\n${trendLines}\n` : '';
     const dataScopeLines = [
-      '- 来源: 竞品分析模块中的卖家精灵 MCP Listing 详情数据',
+      '- 来源: 竞品明细模块中的卖家精灵 MCP Listing 详情数据',
       `- 站点: ${marketplace}`,
       ...(trendLines ? ['- 历史月度销量/销售额: 已通过卖家精灵 asin_sales_trend 抓取'] : []),
     ].join('\n');

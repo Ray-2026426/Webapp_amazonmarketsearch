@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>亚马逊市场调研 App · 商用化改革 UI 线框图（PRD V2 配套）</title>
+<style>
+  :root {
+    --ink: #1d1d1f;
+    --sub: #86868b;
+    --line: #d2d2d7;
+    --soft: #f5f5f7;
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --amber: #b45309;
+    --amber-soft: #fffbeb;
+    --green: #047857;
+    --green-soft: #ecfdf5;
+    --rose: #be123c;
+    --rose-soft: #fff1f2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #e8e8ed; color: var(--ink); line-height: 1.55;
+  }
+  header.toc-bar {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(255,255,255,.92); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+    padding: 10px 24px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  }
+  .toc-bar .brand { font-weight: 700; margin-right: 12px; font-size: 14px; }
+  .toc-bar a {
+    font-size: 12.5px; color: var(--sub); text-decoration: none;
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; background: #fff;
+  }
+  .toc-bar a:hover { color: var(--accent); border-color: var(--accent); }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 28px 24px 80px; }
+  h1 { font-size: 26px; letter-spacing: .5px; }
+  .subtitle { color: var(--sub); margin: 6px 0 8px; font-size: 14px; }
+  .legend { font-size: 12.5px; color: var(--sub); margin-bottom: 8px; }
+  .legend b { color: var(--ink); }
+  section.panel {
+    background: #fff; border: 1px solid var(--line); border-radius: 16px;
+    padding: 22px; margin-top: 30px; box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }
+  section.panel h2 { font-size: 19px; margin-bottom: 2px; }
+  section.panel h2 .tag {
+    display: inline-block; font-size: 11px; font-weight: 600; vertical-align: 2px;
+    background: var(--accent-soft); color: var(--accent);
+    border: 1px solid #c7d2fe; border-radius: 6px; padding: 1px 7px; margin-left: 8px;
+  }
+  section.panel > p.note { font-size: 13px; color: var(--sub); margin: 4px 0 16px; }
+  .canvas {
+    border: 1px solid var(--line); border-radius: 12px; background: #fafafa;
+    padding: 16px; overflow-x: auto;
+  }
+  /* 通用线框元素 */
+  .frame { background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+  .wbox {
+    background: #fff; border: 1px dashed var(--line); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; color: var(--sub); position: relative;
+  }
+  .wbox.dark { border-style: solid; border-color: var(--ink); color: var(--ink); font-weight: 600; }
+  .wbox.accent { border-color: var(--accent); border-style: solid; }
+  .wbox.accent-soft { border-color: #c7d2fe; background: var(--accent-soft); color: var(--accent); }
+  .wbox .lbl { position: absolute; top: -9px; left: 8px; background: #fff; padding: 0 5px; font-size: 10.5px; color: var(--sub); }
+  .wbox.filled { background: #e5e5ea; border-style: solid; border-color: #c7c7cc; color: #6e6e73; }
+  .btn {
+    display: inline-block; border: 1.5px solid var(--accent); color: #fff; background: var(--accent);
+    border-radius: 8px; padding: 3px 12px; font-size: 12px; font-weight: 600;
+  }
+  .btn.ghost { background: #fff; color: var(--accent); }
+  .btn.gray { border-color: var(--line); background: #fff; color: var(--ink); font-weight: 500; }
+  .chip {
+    display: inline-block; border-radius: 999px; font-size: 11px; padding: 1px 9px;
+    background: #e5e5ea; color: #6e6e73;
+  }
+  .chip.on { background: var(--accent); color: #fff; }
+  .chip.warn { background: var(--amber-soft); color: var(--amber); border: 1px solid #fcd34d; }
+  .chip.ok { background: var(--green-soft); color: var(--green); border: 1px solid #a7f3d0; }
+  .chip.bad { background: var(--rose-soft); color: var(--rose); border: 1px solid #fecdd3; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.done { background: var(--green); } .dot.cur { background: var(--accent); } .dot.todo { background: #c7c7cc; }
+  .bar {
+    height: 7px; border-radius: 999px; background: #e5e5ea; overflow: hidden; flex: 1;
+  }
+  .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+  .img-ph { background: repeating-linear-gradient(45deg,#f1f1f4,#f1f1f4 6px,#e9e9ee 6px,#e9e9ee 12px); border:1px dashed #c7c7cc; border-radius:8px; color:#a1a1a6; display:flex; align-items:center; justify-content:center; font-size:11px; }
+  .table-mini { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .table-mini th, .table-mini td { border: 1px solid #e5e5ea; padding: 5px 8px; text-align: left; color: #424245; }
+  .table-mini th { background: #f5f5f7; color: var(--sub); font-weight: 600; font-size: 11px; }
+  .hint { font-size: 12px; color: var(--sub); margin-top: 8px; }
+  .row { display: flex; gap: 12px; } .col { flex: 1; min-width: 0; }
+  .mt8 { margin-top: 8px; } .mt12 { margin-top: 12px; } .mt16 { margin-top: 16px; }
+  .fl { display: flex; align-items: center; gap: 8px; }
+  .sb { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .step-bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .step {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px;
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; background: #fff; color: var(--sub);
+  }
+  .step.cur { border-color: var(--accent); background: var(--accent); color: #fff; }
+  .step.done { color: var(--green); border-color: #a7f3d0; }
+  .arrow-tag { color: #c7c7cc; font-size: 12px; }
+</style>
+</head>
+<body>
+<header class="toc-bar">
+  <span class="brand">◈ Kairo · UI 线框图 V2.3</span>
+  <a href="#s1">1 全局壳+项目中心</a>
+  <a href="#s2">2 项目骨架·向导</a>
+  <a href="#s3">3 看用户</a>
+  <a href="#s4">4 看市场·细分</a>
+  <a href="#s5">5 看竞对·三列对比</a>
+  <a href="#s6">6 看自己·选择题</a>
+  <a href="#s7">7 看机会·决策看板</a>
+  <a href="#s8">8 导出决策包</a>
+  <a href="ui-wireframes-l3.html" style="border-color:#4f46e5;color:#4f46e5;">➜ 二级页 / 明细层 23 屏（配套文件）</a>
+</header>
+
+<div class="wrap">
+  <h1>亚马逊市场调研 App · 商用化改革 UI 线框图</h1>
+  <p class="subtitle">PRD V2.7（终审版）· 本文件画"五看主流程 8 屏" · <b>二级页与明细层 23 屏见 <a href="ui-wireframes-l3.html">ui-wireframes-l3.html</a></b> · 灰色块=内容占位 · 靛蓝=主操作/当前步</p>
+  <p class="legend"><b>图例</b>：虚线框=待填/自动生成区；实线框=已确认结论；🔵主操作按钮；🟢完成状态；🟡需复核；🔴否决/硬约束。</p>
+
+  <!-- 1 全局壳 + 项目中心 -->
+  <section class="panel" id="s1">
+    <h2>1. 全局壳 + 项目中心<span class="tag">改造：左侧栏 + 去掉五模块顶级导航</span></h2>
+    <p class="note">左侧栏全局常驻：<b>项目中心 / 利润计算器（原样）/ 市场大盘·全市场（原样）/ 设置</b>。关键词/VOC/竞品降为明细层，只从五看内按需打开。项目中心从"管理后台"改为"少量深度项目宽卡"。</p>
+    <div class="canvas">
+      <div class="frame" style="max-width:1000px; margin:0 auto; display:flex;">
+        <div style="width:150px; border-right:1px solid var(--line); padding:12px 10px; flex-shrink:0;">
+          <div style="font-weight:700; margin-bottom:14px;">◈ Kairo</div>
+          <div class="fl" style="flex-direction:column; align-items:flex-start; gap:8px;">
+            <span class="chip on" style="width:100%; text-align:left;">项目中心</span>
+            <span class="chip" style="width:100%; text-align:left;">利润计算器</span>
+            <span class="chip" style="width:100%; text-align:left;">市场大盘·全市场</span>
+            <span class="chip" style="width:100%; text-align:left;">设置</span>
+          </div>
+          <div class="hint" style="margin-top:12px;">利润计算器 / 市场大盘（全市场）= 原样照搬，不进任何项目</div>
+        </div>
+        <div style="flex:1;">
+        <div class="sb" style="padding:10px 14px; border-bottom:1px solid var(--line);">
+          <div class="fl">
+            <span style="font-weight:600;">项目中心</span>
+          </div>
+          <div class="fl"><span class="wbox dark" style="padding:2px 10px;">新建项目 ＋</span><span class="chip">头像</span></div>
+        </div>
+        <div style="padding:16px; display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px;">
+          <div class="wbox" style="text-align:left; padding:14px;">
+            <div class="sb"><b style="font-size:13.5px;">侧睡枕 · US</b><span class="chip ok">验证后进入</span></div>
+            <div style="font-size:12px; color:var(--sub); margin:6px 0 10px;">结论：侧睡"高度可调"需求未满足，细分价值中高，先验证 CVR。</div>
+            <div class="fl" style="font-size:11px; color:var(--sub);">
+              <span class="dot done"></span><span class="dot done"></span><span class="dot done"></span><span class="dot done"></span><span class="dot cur"></span>
+              <span>看用户→看市场→看竞对→看自己✓ 下一步：看机会（约 2 分钟）</span>
+            </div>
+            <div class="mt8"><span class="btn" style="font-size:11px;">继续看机会 →</span></div>
+          </div>
+          <div class="wbox" style="text-align:left; padding:14px;">
+            <div class="sb"><b style="font-size:13.5px;">宠物饮水机 · US</b><span class="chip warn">看市场待复核</span></div>
+            <div style="font-size:12px; color:var(--sub); margin:6px 0 10px;">需求分类有更新，细分方案需重新确认。</div>
+            <div class="fl" style="font-size:11px; color:var(--sub);">
+              <span class="dot done"></span><span class="dot cur"></span><span class="dot todo"></span><span class="dot todo"></span><span class="dot todo"></span>
+              <span>下一步：复核细分方案</span>
+            </div>
+            <div class="mt8"><span class="btn ghost" style="font-size:11px;">去复核 →</span></div>
+          </div>
+          <div class="wbox" style="text-align:center; padding:26px 14px; color:var(--sub); font-size:12.5px;">
+            输入品类名 / 关键词 / 竞品 ASIN<br/>＋ 站点 ＋ 研究目标<br/>
+            <div class="mt8"><span class="btn gray" style="font-size:11px;">▢ 品类：如 side sleeper pillow</span></div>
+            <div class="hint">10 分钟出 Go/No-Go 决策包</div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 项目骨架·向导 -->
+  <section class="panel" id="s2">
+    <h2>2. 项目内骨架：向导步骤条 + 决策草稿常驻<span class="tag">核心 IA 变化</span></h2>
+    <p class="note">默认按 用户→市场→竞对→自己→机会 推进；可回退/跳过（跳过标风险）。<b>触发模型：一键向导 + 每步局部重跑</b>（不做"每板块各自 AI 按钮"）。右侧"决策草稿"全程显示进展与缺口。</p>
+    <div class="canvas">
+      <div class="frame" style="max-width:1080px; margin:0 auto;">
+        <div class="sb" style="padding:10px 14px; border-bottom:1px solid var(--line);">
+          <div class="fl"><span class="chip">← 项目中心</span><span style="font-size:13px;font-weight:600;">侧睡枕 · US · 新品立项</span></div>
+          <div class="fl"><span class="chip ok">已保存 10:24</span><span class="btn ghost" style="font-size:11px;">导出决策包 ▾</span></div>
+        </div>
+        <div style="padding:12px 14px; border-bottom:1px solid var(--line);">
+          <div class="step-bar">
+            <span class="step done"><span class="dot done"></span>看用户</span><span class="arrow-tag">─</span>
+            <span class="step done"><span class="dot done"></span>看市场</span><span class="arrow-tag">─</span>
+            <span class="step done"><span class="dot done"></span>看竞对</span><span class="arrow-tag">─</span>
+            <span class="step done"><span class="dot done"></span>看自己</span><span class="arrow-tag">─</span>
+            <span class="step cur"><span class="dot cur"></span>看机会</span><span class="arrow-tag">─</span>
+            <span class="step">报告</span>
+          </div>
+        </div>
+        <div class="row" style="padding:16px;">
+          <div class="col" style="flex:2.6;">
+            <div class="wbox accent" style="padding:10px;">
+              <span class="lbl" style="color:var(--accent);">触发：一键向导（起步 / 运行态）</span>
+              <div class="fl" style="flex-wrap:wrap;">
+                <span class="btn" style="font-size:11px;">▶ 开始分析</span>
+                <span class="btn gray" style="font-size:11px;">重新取数</span>
+                <span class="btn gray" style="font-size:11px;">AI 重跑这一步</span>
+                <span class="btn gray" style="font-size:11px;">手动改结论</span>
+              </div>
+              <div class="hint">一键后按序自动执行：取数 → 看用户 → 看市场 → 看竞对 → 看自己出题；<b>每步停在"请确认"卡</b>等人拍板。口径：快速模式 词 TOP200 · 评论 60 条（3 次调用）· 竞对 3 个；深度模式评论 200 条（10 次调用），同 ASIN 缓存 14-30 天。</div>
+            </div>
+            <div class="wbox dark mt12" style="padding:12px;">
+              <span class="lbl">本看结论</span>
+              <div style="font-size:13px;">存在 1 个值得验证的机会 + 1 个暂缓。<b>Go/No-Go：验证后进入（侧睡可调枕）</b></div>
+              <div class="hint" style="color:var(--sub);">AI 起草 · 已人工确认 · 证据 12 条可追溯</div>
+            </div>
+            <div class="row mt12">
+              <div class="col wbox" style="padding:10px;"><span class="lbl">机会卡 #O1</span>75 分 · 侧睡颈椎支撑枕<br/><span class="chip ok">验证后进入</span></div>
+              <div class="col wbox" style="padding:10px;"><span class="lbl">机会卡 #O2</span>41 分 · 凉感+支撑二合一<br/><span class="chip">暂缓</span></div>
+            </div>
+            <div class="wbox mt12" style="padding:10px;"><span class="lbl">优先级矩阵 2×2（分数×覆盖度）</span>
+              <table class="table-mini">
+                <tr><th>高价值·高覆盖</th><th>高价值·需补证据</th></tr>
+                <tr><td>#O1 侧睡可调枕</td><td>—</td></tr>
+                <tr><th>低价值·待完善</th><th>低价值·低覆盖</th></tr>
+                <tr><td>#O2 凉感二合一</td><td>—</td></tr>
+              </table>
+            </div>
+          </div>
+          <div class="col wbox accent-soft" style="flex:1; padding:12px;">
+            <span class="lbl" style="color:var(--accent);">决策草稿（常驻）</span>
+            <div style="font-size:12px; color:var(--ink); margin-top:6px;">当前证据下的机会方向：</div>
+            <div class="mt8 chip on">侧睡可调高度枕（强）</div>
+            <div class="mt8 chip">凉感+支撑二合一（中）</div>
+            <div class="mt8" style="font-size:12px; color:var(--accent);">已完成：用户✓ 市场✓ 竞对✓ 自己✓<br/>下一步：确认机会卡与控制点</div>
+            <div class="mt12"><span class="btn" style="width:100%; text-align:center;">生成机会卡</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 看用户 -->
+  <section class="panel" id="s3">
+    <h2>3. 看用户：搜索路径 → 搜索偏好 → 需求分类 → 细分标准<span class="tag">新增：搜索路径/偏好/细分逻辑</span></h2>
+    <p class="note">建项目必须给一个"数据锚点"（品类名/关键词/ASIN 三选一），系统反查扩展出 词 TOP200 + 评论 60 条（深度 200 条）+ 竞品标题 TOP30，再 AI 聚类起草；用户做 ≤3 个选择题 + 一次"作为细分标准"标记。<b>①②③④ 每一项都可下钻到二级页</b>（搜索路径详情 / 搜索偏好详情 / 需求分类树证据链 / 细分标准设置，见配套文件二级页①②③④）。</p>
+    <div class="canvas">
+      <div class="frame" style="max-width:1080px; margin:0 auto; padding:16px;">
+        <div class="wbox dark" style="padding:10px;"><span class="lbl">结论</span>侧睡人群搜索路径清晰：大词入场→按"睡姿+材质"分化→决策词集中在"高度可调/颈部支撑"，且该需求在评论中被反复抱怨（42/200 条）。</div>
+        <div class="wbox accent-soft mt12" style="padding:10px;">
+          <span class="lbl" style="color:var(--accent);">数据锚点（建项目三选一）→ 反查扩展 · 快速口径：词 TOP200 / 评论 200 / 竞品标题 TOP30</span>
+          <div style="font-size:12px; color:var(--ink);">
+            品类名 → 类目 TOP 榜 → 头部 ASIN 评论/标题 ｜ 关键词 → 扩展/ABA → TOP200 词 ｜ ASIN → 流量词反查 + 评论<br/>
+            <b>双通道</b>：词/评论/竞对 Listing 走 MCP 抓取（小数据）· 产品表/历史表走上传 Excel（大数据，不烧 MCP 次数）<br/>
+            无数据池时：①上传词表/评论 Excel ②粘贴 ASIN ③用示例品类（真实薄枕头）跑通，标注"示例数据"——建项目时即检查并提示
+          </div>
+        </div>
+        <div class="row mt12">
+          <div class="col wbox" style="padding:12px;">
+            <span class="lbl">① 搜索路径图（AI 生成·请确认）</span>
+            <div style="font-size:12px; color:var(--sub);">
+              认知层：bed pillow 12k<br/>考虑层：pillow for side sleeper 4.8k / memory foam 3.1k<br/>决策层：adjustable height pillow 0.9k · neck support 0.7k<br/>场景层：cooling · washable · travel
+            </div>
+            <div class="mt8 fl"><span class="btn" style="font-size:11px;">✓ 确认路径</span><span class="btn gray" style="font-size:11px;">拖动调整</span></div>
+          </div>
+          <div class="col wbox" style="padding:12px;">
+            <span class="lbl">② 搜索偏好画像</span>
+            <div style="font-size:12px; color:var(--sub);">
+              价格敏感：中（低价词 18%）<br/>材质/功能词占比：62%<br/>长尾词：42%（高于大盘）<br/>对比焦点：高度调节、支撑、凉感
+            </div>
+            <div class="mt8 fl"><span class="btn gray" style="font-size:11px;">✓ 确认</span></div>
+          </div>
+        </div>
+        <div class="wbox mt12" style="padding:12px;">
+          <span class="lbl">③ 需求分类树（核心产物·可合并/拆分/重命名）</span>
+          <div style="font-size:12.5px;">
+            <span class="chip">支撑需求</span> → <span class="chip warn">高度可调（部分满足·证据 6）</span> <span class="chip ok">颈部贴合（已满足）</span><br/>
+            <span class="chip">体感需求</span> → <span class="chip ok">凉感（已满足）</span> <span class="chip warn">透气（部分满足·证据 3）</span><br/>
+            <span class="chip">维护需求</span> → <span class="chip ok">可机洗（已满足）</span>
+            <div class="hint">证据：关键词意图聚类 + 评论 VOC 打标，每条可点回原文引用。</div>
+          </div>
+        </div>
+        <div class="wbox accent mt12" style="padding:12px;">
+          <span class="lbl" style="color:var(--accent);">④ 细分标准建议（联动看市场）</span>
+          <div class="fl" style="font-size:12.5px; flex-wrap:wrap;">
+            <span class="chip on">按睡姿切（侧睡/仰睡/俯睡）</span>
+            <span class="chip">按材质切</span><span class="chip">按价格带切</span>
+            <span class="btn" style="font-size:11px;">标记为市场细分标准 →</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 看市场·细分 -->
+  <section class="panel" id="s4">
+    <h2>4. 看市场：需求驱动的市场细分<span class="tag">核心改革：三方合成</span></h2>
+    <p class="note">细分 = 看用户需求分类 × 大盘商品属性 × 竞品标题聚类；AI 出 2-3 个方案供选择题确认，再跑确定性评分（趋势/体量/竞争）。<b>点"查看完整大盘"= 打开老版「市场大盘」整页并自动筛选到该细分（详见配套文件二级页⑤）</b>，顶部筛选条显示"当前：侧睡枕细分（23 ASIN）"，可就地切换细分或切到全市场。</p>
+    <div class="canvas">
+      <div class="frame" style="max-width:1080px; margin:0 auto; padding:16px;">
+        <div class="wbox dark" style="padding:10px;"><span class="lbl">结论</span>按"睡姿"切出的侧睡细分机会分 82，规模 23 个 ASIN / 月销 $1.2M，趋势向上，集中度中等——建议作为目标细分。</div>
+        <div class="wbox mt12" style="padding:12px;">
+          <span class="lbl">① 选细分方案（选择题）</span>
+          <div class="fl" style="flex-wrap:wrap;">
+            <span class="chip on">方案A：按睡姿切 3 块（推荐·与需求分类一致）</span>
+            <span class="chip">方案B：按材质切 4 块</span>
+            <span class="chip">方案C：按价格带切 3 块</span>
+            <span class="btn ghost" style="font-size:11px;">微调方案</span>
+          </div>
+          <div class="hint">数据通道：产品表/历史表来自上传 Excel（大数据不烧 MCP 次数）；词/评论/Listing 走 MCP 抓取。缺产品表时此处提示上传，或标"全市场回退"。</div>
+        </div>
+        <div class="row mt12">
+          <div class="col wbox accent" style="padding:12px;">
+            <span class="lbl" style="color:var(--accent);">侧睡枕细分 · 82 分 ★推荐</span>
+            <div class="fl mt8" style="font-size:12px; gap:6px;"><span style="color:var(--sub);">趋势</span><div class="bar"><i style="width:78%"></i></div><span>78</span></div>
+            <div class="fl mt8" style="font-size:12px; gap:6px;"><span style="color:var(--sub);">体量</span><div class="bar"><i style="width:88%"></i></div><span>88</span></div>
+            <div class="fl mt8" style="font-size:12px; gap:6px;"><span style="color:var(--sub);">竞争</span><div class="bar"><i style="width:80%"></i></div><span>80</span></div>
+            <div class="hint">23 ASIN · 月销 $1.2M · 均价 $41 · 代表 ASIN B0XXX</div>
+          </div>
+          <div class="col wbox" style="padding:12px;">
+            <span class="lbl">仰睡枕细分 · 61 分</span>
+            <div class="hint">18 ASIN · 月销 $0.6M · 均价 $35</div>
+            <div class="mt8"><span class="btn gray" style="font-size:11px;">查看完整大盘 →</span></div>
+          </div>
+          <div class="col wbox" style="padding:12px;">
+            <span class="lbl">俯睡枕细分 · 35 分</span>
+            <div class="hint">9 ASIN · 月销 $0.2M · 均价 $33</div>
+            <div class="mt8"><span class="btn gray" style="font-size:11px;">查看完整大盘 →</span></div>
+          </div>
+        </div>
+        <div class="wbox mt12" style="padding:12px;">
+          <span class="lbl">② 选目标细分（喂给看竞对）</span>
+          <div class="fl"><span class="chip on">侧睡枕细分（ASIN 池 23 个 → 自动进入看竞对样本池）</span><span class="btn" style="font-size:11px;">确认目标细分 →</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 看竞对·三列对比 -->
+  <section class="panel" id="s5">
+    <h2>5. 看竞对：全量 Listing 三列对比 + 每竞对三块分析 + 赢的路径<span class="tag">第二轮升级</span></h2>
+    <p class="note">自动挑选头部/跟随者/新人各 1 个并抓取全量数据（买家前台能看到的一切 + 卖家精灵能抓到的一切，每个字段标注来源）；每个竞对下方做三块分析（用户画像 / 痛点未满足矩阵 / 需求满足矩阵）；全部完成后才允许做结论：赢的路径三选一。</p>
+    <div class="canvas">
+      <div class="frame" style="max-width:1080px; margin:0 auto; padding:16px;">
+        <div class="wbox dark" style="padding:10px;"><span class="lbl">结论（对比全部完成后产出）</span>未被满足的需求："高度可调+凉感"二合一无人覆盖（证据 #C4）；看自己确认供应链可承接 → <b>赢的路径：人无我有</b>。</div>
+        <div class="fl mt12" style="font-size:12px; flex-wrap:wrap;">
+          <span class="chip on">● 头部 B0A（销量第一）</span><span class="chip">跟随者 B0B（增长 35%）</span><span class="chip">● 新人 B0D（上架 92 天·新人中表现最优）</span>
+          <span class="chip gray" style="background:#f5f5f7;">🖥前台可见</span><span class="chip gray" style="background:#f5f5f7;">🔮卖家精灵</span>
+          <span class="btn gray" style="font-size:11px;">换人</span><span class="btn gray" style="font-size:11px;">+ 手动添加</span>
+        </div>
+        <table class="table-mini mt12">
+          <tr>
+            <th style="width:110px;">组 / 字段（标来源）</th>
+            <th>● 头部 B0A</th><th>跟随者 B0B</th><th>● 新人 B0D</th>
+          </tr>
+          <tr>
+            <th>🖥 主图/视频</th>
+            <td><div class="img-ph" style="height:44px;">主图×7</div>视频 ✓</td>
+            <td><div class="img-ph" style="height:44px;">主图×7</div>视频 ✗</td>
+            <td><div class="img-ph" style="height:44px;">主图×7</div>视频 ✓</td>
+          </tr>
+          <tr>
+            <th>🖥 价格/划线价</th>
+            <td>$45.9 · 券 -20%</td><td>$39.9</td><td>$42.9 · 划线 $59</td>
+          </tr>
+          <tr>
+            <th>🖥 评分/分布</th>
+            <td>4.5★ 12k 评 [分布图]</td><td>4.3★ 6k 评 [分布图]</td><td>4.1★ 0.8k 评 [分布图]</td>
+          </tr>
+          <tr>
+            <th>🖥 变体矩阵</th>
+            <td>父+5子（色×尺）</td><td>父+3子</td><td>父+2子</td>
+          </tr>
+          <tr>
+            <th>🖥 参数/Q&A</th>
+            <td>材质/尺寸/重量 · QA 45</td><td>材质/尺寸/重量 · QA 12</td><td>材质/尺寸/重量 · QA 6</td>
+          </tr>
+          <tr>
+            <th>🖥 五点/A+/品牌故事</th>
+            <td>五点✓ A+✓ 故事✓</td><td>五点✓ A+✓ 故事✗</td><td>五点✓ A+✗ 故事✗</td>
+          </tr>
+          <tr>
+            <th>🖥 BSR/上架时间</th>
+            <td>#12 枕类 · 2019</td><td>#38 · 2021</td><td>#52 · 2026.6</td>
+          </tr>
+          <tr>
+            <th>🔮 月销量/销额</th>
+            <td>8.2k / $376k</td><td>4.6k / $184k</td><td>1.9k / $82k</td>
+          </tr>
+          <tr>
+            <th>🔮 流量词</th>
+            <td>词 45（自然 18）</td><td>词 32（自然 16）</td><td>词 18（自然 13）</td>
+          </tr>
+          <tr>
+            <th>🔮 ABA 排名</th>
+            <td>大词 #3</td><td>大词 #9</td><td>长尾 #1 ×6</td>
+          </tr>
+          <tr>
+            <th>🔮 广告依赖度</th>
+            <td>60% · 自然:广告 3:7</td><td>42% · 5:5</td><td>25% · 7:3</td>
+          </tr>
+          <tr>
+            <th>🔮 历史价格/排名</th>
+            <td>[走势图]</td><td>[走势图]</td><td>[走势图]</td>
+          </tr>
+          <tr>
+            <td colspan="4" style="background:var(--accent-soft); color:var(--accent); font-size:12px;">
+              AI 一行话：头部广告强吃大词；新人长尾自然起量。共同缺陷："高度不可调"差评三列均 8%+。
+            </td>
+          </tr>
+        </table>
+        <div class="wbox mt12" style="padding:10px;">
+          <span class="lbl">每竞对三块分析（以 B0A 为例 · B0B/B0D 同构 · 全部完成后才解锁结论）</span>
+          <div class="row mt8">
+            <div class="col wbox" style="padding:8px;"><span class="lbl">① 用户画像（人群/场景/需求）</span>
+              <div style="font-size:12px;">人群：夏季怕热的侧睡者<br/>场景：夜间睡眠/孕期<br/>需求排序：凉感&gt;支撑&gt;易清洗<br/><span style="color:var(--sub);">每条附评论原文引用</span></div>
+            </div>
+            <div class="col wbox" style="padding:8px;"><span class="lbl">② 痛点未满足矩阵</span>
+              <div style="font-size:12px;">"睡醒颈痛"12% → 命中需求#U3（高度可调），该竞对未解决<br/>"闷热"8% → 凉感未做透</div>
+            </div>
+            <div class="col wbox" style="padding:8px;"><span class="lbl">③ 需求满足矩阵</span>
+              <div style="font-size:12px;">高度可调 ◐ ｜ 凉感 ● ｜ 透气 ◐ ｜ 可机洗 ●<br/><span style="color:var(--sub);">单元格点击看证据原文</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="wbox mt12" style="padding:10px;">
+          <span class="lbl">赢的路径（三选一 · 落到一种才完成本看）</span>
+          <div class="fl mt8" style="flex-wrap:wrap;">
+            <span class="chip on">◉ 人无我有："高度可调+凉感"二合一无人覆盖</span>
+            <span class="chip">○ 人有我优</span>
+            <span class="chip">○ 人优我廉（须在毛利红线内）</span>
+            <span class="chip">○ 无赢面/自身接不住</span>
+            <span class="btn" style="font-size:11px;">✓ 确认赢的路径</span>
+          </div>
+          <div class="hint">三种都不成立 → 显式"无赢面"结论，喂给看机会的"无机会"分支。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 看自己·选择题 -->
+  <section class="panel" id="s6">
+    <h2>6. 看自己：背景库（一次维护）+ 品类选择题（AI 动态出题）<span class="tag">修复 42 题负担与"适配度=完成度"</span></h2>
+    <p class="note">六维度背景在账号层渐进维护；项目内只答与本项目直接相关的 5-8 道选择题；硬约束答"不具备"→ 关联机会不能推荐"直接进入"。</p>
+    <div class="canvas">
+      <div class="frame" style="max-width:1080px; margin:0 auto; padding:16px;">
+        <div class="row">
+          <div class="col wbox" style="padding:12px;">
+            <span class="lbl">账号背景库（六维度·渐进）</span>
+            <div style="font-size:12px; color:var(--sub);">
+              ▣ 资金预算 <span class="chip ok">完整</span><br/>▣ 供应链 <span class="chip ok">完整</span><br/>▢ 类目经验 <span class="chip warn">部分</span><br/>▢ 合规资质 <span class="chip warn">部分</span><br/>▢ 目标财务 <span class="chip ok">完整</span><br/>▢ 风险偏好 <span class="chip warn">待填</span>
+            </div>
+            <div class="hint">背景完整度 60% → 影响适配度可信度</div>
+            <div class="mt8"><span class="btn gray" style="font-size:11px;">补全背景</span></div>
+          </div>
+          <div class="col" style="flex:1.6;">
+            <div class="wbox" style="padding:12px;"><span class="lbl">品类选择题（AI 结合需求+细分+缝隙出题 · 5-8 题）</span>
+              <div class="mt8" style="font-size:12.5px;">Q2/6 头部竞品持有"凉感面料"相关专利。您的供应链能否 60 天内交付同级凉感面料？</div>
+              <div class="fl mt8" style="flex-wrap:wrap;">
+                <span class="chip on">A 能</span><span class="chip">B 能但需 90 天</span><span class="chip">C 不能</span><span class="chip">D 不确定</span>
+              </div>
+              <div class="hint">AI 提示：选 C 将触发"产品差异不可行"硬约束 → 该机会不可推荐直接进入。</div>
+            </div>
+            <div class="wbox accent-soft mt12" style="padding:12px;">
+              <span class="lbl" style="color:var(--accent);">适配度与硬约束（确定性计算）</span>
+              <div style="font-size:12.5px;">相关题适配度：<b>68%</b>（已具备 4 · 部分 2 · 不具备 1 · 待确认 1）<br/>硬约束：<span class="chip bad">毛利红线：目标售价 $42 下净利率 8% &lt; 红线 13%</span> <span class="chip ok">MOQ 200 ✓</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 看机会·决策看板 -->
+  <section class="panel" id="s7">
+    <h2>7. 看机会：决策看板（机会卡 = 决策包）<span class="tag">新增：先做/后做/前置资源/控制点</span></h2>
+    <p class="note">0-N 张机会卡；每卡含执行路线图与三类控制点；零机会时区分"已判断无机会"与"证据不足"。</p>
+    <div class="canvas">
+      <div class="frame" style="max-width:1080px; margin:0 auto; padding:16px;">
+        <div class="wbox dark" style="padding:10px;"><span class="lbl">Go/No-Go 结论</span>存在 1 个值得验证的机会。建议：<b>验证后进入 #O1（侧睡颈椎支撑枕）</b>；#O2 暂缓。零机会候选已被反证审查排除（理由可查）。</div>
+        <div class="wbox mt12" style="padding:12px;">
+          <div class="sb"><span class="lbl" style="position:static; background:none; padding:0;">#O1 侧睡颈椎支撑枕 · <b>75 分</b> · 覆盖度 0.8 · <span class="chip ok">◉ 验证后进入</span></span><span class="chip">AI候选→已确认</span></div>
+          <table class="table-mini mt8">
+            <tr><th>需求强度</th><th>市场机会</th><th>竞品缺口</th><th>自身适配</th><th>证据可信度</th></tr>
+            <tr><td><div class="fl"><div class="bar"><i style="width:85%"></i></div>21/25</div></td>
+                <td><div class="fl"><div class="bar"><i style="width:75%"></i></div>19/25</div></td>
+                <td><div class="fl"><div class="bar"><i style="width:85%"></i></div>21/25</div></td>
+                <td><div class="fl"><div class="bar"><i style="width:50%"></i></div>8/15</div></td>
+                <td><div class="fl"><div class="bar"><i style="width:60%"></i></div>6/10</div></td></tr>
+          </table>
+          <div class="row mt12">
+            <div class="col wbox" style="padding:10px;"><span class="lbl">先做（0-30 天）</span>
+              <div style="font-size:12px;">① 3 家工厂打样（≈$1,500）<br/>② 20 件侧睡用户测评（$800）<br/>③ 认证预沟通（CPC / 加州65）</div>
+            </div>
+            <div class="col wbox" style="padding:10px;"><span class="lbl">后做（30-90 天）</span>
+              <div style="font-size:12px;">① 首批 500 件 FBA（≈$12,000）<br/>② Listing 按需求#U3 词簇上线<br/>③ 广告 $30/天 验证 CVR≥8%</div>
+            </div>
+            <div class="col wbox" style="padding:10px;"><span class="lbl">前置资源</span>
+              <div style="font-size:12px;">打样费 / 测评样品 / 认证费 / 首批资金 / 词簇素材包 <span class="chip bad">供应链账期：缺口</span></div>
+            </div>
+            <div class="col wbox" style="padding:10px;"><span class="lbl">控制点</span>
+              <div style="font-size:12px;"><span class="chip ok">准入：CVR≥8% 才放量</span><br/><span class="chip ok">过程：退货率&lt;3%</span><br/><span class="chip bad">止损：14 天 ACOS&gt;35% 或亏损&gt;$5k 即撤</span></div>
+            </div>
+          </div>
+          <div class="fl mt8"><span class="btn gray" style="font-size:11px;">证据</span><span class="btn gray" style="font-size:11px;">推理</span><span class="btn gray" style="font-size:11px;">反证</span><span class="btn gray" style="font-size:11px;">编辑</span></div>
+        </div>
+        <div class="wbox mt12" style="padding:12px;">
+          <span class="lbl">全局先后建议（AI 起草·你拍板）</span>
+          <div style="font-size:12.5px;">先 #O1：它与 #O2 共用供应链，先验证 #O1 可摊薄 #O2 打样成本；#O2 待 #O1 凉感面料结论后再启动。</div>
+        </div>
+        <div class="fl mt12"><span class="btn" style="font-size:11px;">确认 Go/No-Go</span><span class="btn ghost" style="font-size:11px;">导出 HTML 审核报告</span><span class="btn ghost" style="font-size:11px;">Markdown</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 导出决策包 -->
+  <section class="panel" id="s8">
+    <h2>8. 导出决策包：HTML / MD 叙事结构<span class="tag">交付物（无 PPT）</span></h2>
+    <p class="note">固定叙事：研究目标 → 用户需求 → 市场细分 → 竞品缺口 → 自身适配 → 机会结论 → 证据索引。首页只放结论。</p>
+    <div class="canvas">
+      <div class="frame" style="max-width:820px; margin:0 auto; padding:16px;">
+        <div class="wbox dark" style="padding:12px; text-align:center;">
+          <div style="font-size:14px; font-weight:700;">侧睡枕品类立项决策包</div>
+          <div style="font-size:12px; color:var(--sub);">US 站 · 生成于 2026-09-10 · 分析口径：词 TOP200 / 评论 200 条样本 / 竞对 3</div>
+          <div class="mt8" style="font-size:13px;"><b>结论：验证后进入</b> —— 侧睡"高度可调"需求未被满足，细分机会分 82，先打样测评验证 CVR≥8%。</div>
+          <div class="mt8"><span class="chip ok">机会 1</span><span class="chip">暂缓 1</span><span class="chip">证据 12 条</span></div>
+        </div>
+        <div class="row mt12">
+          <div class="col wbox" style="padding:10px;"><span class="lbl">§1 研究目标</span>品类/关键词/ASIN 输入 + 目标</div>
+          <div class="col wbox" style="padding:10px;"><span class="lbl">§2 用户需求</span>搜索路径 + 需求分类树（带证据）</div>
+        </div>
+        <div class="row mt12">
+          <div class="col wbox" style="padding:10px;"><span class="lbl">§3 市场细分</span>方案 + 评分排行 + 目标细分</div>
+          <div class="col wbox" style="padding:10px;"><span class="lbl">§4 竞品缺口</span>三列对比摘要 + 每竞对三块分析 + 赢的路径</div>
+        </div>
+        <div class="row mt12">
+          <div class="col wbox" style="padding:10px;"><span class="lbl">§5 自身适配</span>适配度 + 硬约束</div>
+          <div class="col wbox" style="padding:10px;"><span class="lbl">§6 机会结论</span>机会卡 + 路线图 + 控制点 + Go/No-Go</div>
+        </div>
+        <div class="wbox mt12" style="padding:10px;"><span class="lbl">§7 证据索引与口径</span>每条结论 → 来源编号（关键词表 #n / 评论 #n / 图表 / ASIN）· AI 判断与人工修改分别标注</div>
+      </div>
+    </div>
+  </section>
+
+  <p class="hint" style="text-align:center; margin-top:32px;">Kairo 商用化改革 · PRD V2.3 配套线框图 · 与 docs/amazon-market-research-prd-v2.md 一同评审</p>
+</div>
+</body>
+</html>

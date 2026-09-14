@@ -5,8 +5,7 @@ import { loadAiSettings, generateText } from '../utils/aiConfig';
 import { getPrompt } from './AiPromptManager';
 import { Product, HistoryRecord } from '../utils/parser';
 import { toast } from 'sonner';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { MarkdownReport } from './MarkdownReport';
 import { FeishuPushButton } from './FeishuPushButton';
 import { marketReportToMarkdown } from '../utils/reportToMarkdown';
 import type { MarketDataQuality } from '../utils/dataQuality';
@@ -181,20 +180,6 @@ ${products.slice(0, 20).map(p => `- ${p.title} (价格: $${p.price}, 评分: ${p
     void generateReportRef.current();
   }, [cachedReportMarkdown]);
 
-  const renderSection = (icon: React.ReactNode, title: string, content: string) => (
-    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center gap-3 border-b border-black/5 pb-3">
-        <div className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
-          {icon}
-        </div>
-        <h3 className="text-xl font-bold text-[#1d1d1f]">{title}</h3>
-      </div>
-      <div className="prose prose-sm max-w-none text-[#424245] leading-relaxed">
-        <Markdown>{content}</Markdown>
-      </div>
-    </div>
-  );
-
   if (hidden) {
     return null;
   }
@@ -307,9 +292,7 @@ ${products.slice(0, 20).map(p => `- ${p.title} (价格: $${p.price}, 评分: ${p
                     className="w-full min-h-[60vh] p-6 border border-indigo-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm resize-y"
                   />
                 ) : (
-                  <div className="markdown-body">
-                    <Markdown remarkPlugins={[remarkGfm]}>{report}</Markdown>
-                  </div>
+                  <MarkdownReport>{report}</MarkdownReport>
                 )}
               </div>
 

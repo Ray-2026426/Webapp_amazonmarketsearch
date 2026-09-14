@@ -1,0 +1,457 @@
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Circle,
+  AlertTriangle,
+  Loader2,
+  Wrench,
+  Target,
+  Users,
+  Crosshair,
+  UserCog,
+  Sparkles,
+  Pencil,
+  FileText,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { cn } from './ui/Card';
+import { Card } from './ui/Card';
+import { ProjectOverviewContent } from './ProjectOverview';
+import { LookWizardPanel } from './LookWizardPanel';
+import { DecisionDraftRail } from './DecisionDraftRail';
+import { SelfAssessmentView } from './SelfAssessmentView';
+import { MarketLookView } from './MarketLookView';
+import { UserLookView } from './UserLookView';
+import { CompetitorLookView } from './CompetitorLookView';
+import { OpportunityLookView } from './OpportunityLookView';
+import { EditProjectModal } from './EditProjectModal';
+import { ProjectMembersModal } from './ProjectMembersModal';
+import { ReportsView } from './ReportsView';
+import { L3Sheet, type L3BodyRender } from './L3Sheet';
+import { l3Page, type L3Id } from '../utils/l3Pages';
+import { setActiveLook } from '../utils/projectStore';
+import { syncUserProjectsToCloud } from '../utils/projectCloudAutosync';
+import type { MarketContext } from '../utils/marketLook';
+import type { UserContext } from '../utils/userLook';
+import type { CompetitorContext } from '../utils/competitorLook';
+import {
+  FIVE_LOOK_LABELS,
+  FIVE_LOOKS,
+  LOOK_STATUS_LABELS,
+  type FiveLookId,
+  type LookStatus,
+  type ResearchProject,
+} from '../types/researchProject';
+
+type Tab = 'overview' | FiveLookId | 'reports';
+
+const LOOK_ICONS: Record<FiveLookId, typeof Target> = {
+  market: Target,
+  user: Users,
+  competitor: Crosshair,
+  self: UserCog,
+  opportunity: Sparkles,
+};
+
+const LOOK_STATUS_BADGE: Record<LookStatus, string> = {
+  not_started: 'bg-[#f5f5f7] text-[#86868b] border-black/5',
+  in_progress: 'bg-amber-50 text-amber-700 border-amber-100',
+  completed: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+  stale: 'bg-rose-50 text-rose-700 border-rose-100',
+};
+
+const LOOK_STATUS_DOT: Record<LookStatus, string> = {
+  not_started: 'bg-[#c7c7cc]',
+  in_progress: 'bg-amber-500',
+  completed: 'bg-emerald-500',
+  stale: 'bg-rose-500',
+};
+
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+const SAVE_HINT: Record<SaveState, { text: string; cls: string; icon: typeof Circle }> = {
+  idle: { text: '已保存', cls: 'text-[#aeaeb2]', icon: CheckCircle2 },
+  saving: { text: '保存中…', cls: 'text-amber-600', icon: Loader2 },
+  saved: { text: '已保存', cls: 'text-emerald-600', icon: CheckCircle2 },
+  error: { text: '保存失败，点击重试', cls: 'text-rose-600', icon: AlertTriangle },
+};
+
+export function ProjectWorkspace({
+  userId,
+  project,
+  username,
+  marketContext,
+  userContext,
+  competitorContext,
+  onBack,
+  onOpenTool,
+  onProjectChange,
+  focusLook,
+  focusNonce,
+  onLoadDemo,
+  onOpenSettings,
+  onSendToComparison,
+  onOpenUserInsights,
+  onOpenMarketSegment,
+}: {
+  userId: string;
+  project: ResearchProject;
+  username: string;
+  marketContext: MarketContext;
+  userContext: UserContext;
+  competitorContext: CompetitorContext;
+  onBack: () => void;
+  /** M1 · ToolRoute：带上"从哪一个看来"，供 App 在返回时精确回到该看 */
+  onOpenTool: (view: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit', fromLook: FiveLookId) => void;
+  onProjectChange: (updated: ResearchProject) => void;
+  /** 从工具返回时要求聚焦的看（配合 focusNonce 触发一次） */
+  focusLook?: FiveLookId | null;
+  focusNonce?: number;
+  /** 缺失数据时的一键兜底：加载示例数据 */
+  onLoadDemo?: () => void;
+  /** 缺 AI Key 时的一键动作：打开设置面板 */
+  onOpenSettings?: () => void;
+  /** M3⑥ 断链 #4：把竞对 ASIN 送入「竞品明细」对比池（⏳4：可指定落在哪个视图） */
+  onSendToComparison?: (asins: string[], tab?: 'listing' | 'traffic' | 'matrix') => void;
+  /** 线框图 ⑩：打开「评论 VOC / 用户洞察」（看竞对的评论与画像证据页） */
+  onOpenUserInsights?: () => void;
+  /** 线框图 ⑤：从看市场点「查看完整大盘」时把细分带进市场大盘 */
+  onOpenMarketSegment?: (segment: string) => void;
+}) {
+  const [p, setP] = useState<ResearchProject>(project);
+  const [tab, setTab] = useState<Tab>(project.activeLook);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [editOpen, setEditOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
+  /** 决策草稿的重算信号：向导跑完/数据变化时递增，让常驻草稿立即刷新 */
+  const [draftNonce, setDraftNonce] = useState(0);
+  const bumpDraft = () => setDraftNonce((n) => n + 1);
+  const initialSyncKey = useRef(`${project.id}:${project.version}:${project.updatedAt}`);
+  const lastQueuedSyncKey = useRef(initialSyncKey.current);
+
+  /* ── ⏳3（线框图 ①②③④⑪⑫⑬⑭）：二级页 = 真正的全屏 L3 页 ────────────────────────
+   * 全项目**只有一个** `L3Sheet`，就渲染在项目壳里（看某一看时右侧决策草稿仍然挂在下面，只是被盖住）。
+   * 页壳本身不认识业务数据：正文由"拥有这份数据的那一个视图"注册进来
+   * （`onRegisterL3Bodies`），而且注册的就是**同一个内联区块组件**（只换 variant='sheet'），
+   * 所以不存在第二份实现。关闭时把注册函数置空，回到主屏即可。 */
+  const [l3, setL3] = useState<L3Id | null>(null);
+  /** ⑬⑭ 是"某一张机会卡"的详情页，打开时需要把卡片 id 一起带上 */
+  const [l3CardId, setL3CardId] = useState<string | null>(null);
+  const [l3Body, setL3Body] = useState<L3BodyRender | null>(null);
+
+  const openL3 = useCallback((id: L3Id, cardId?: string) => {
+    setL3CardId(cardId ?? null);
+    setL3(id);
+  }, []);
+
+  const closeL3 = useCallback(() => {
+    setL3(null);
+    setL3CardId(null);
+    setL3Body(null);
+  }, []);
+
+  /** 视图注册"这一页的正文怎么渲染"；函数身份只在视图数据变化时改变（视图侧用 ref 稳定住） */
+  const registerL3Bodies = useCallback((render: L3BodyRender | null) => {
+    setL3Body(() => render);
+  }, []);
+
+  // 换一个看就关掉二级页（二级页的正文属于上一个看，留着会指向不存在的数据）
+  useEffect(() => {
+    setL3(null);
+    setL3CardId(null);
+    setL3Body(null);
+  }, [tab]);
+
+  const queueCloudSync = () => {
+    lastQueuedSyncKey.current = '';
+    void syncUserProjectsToCloud(userId);
+  };
+
+  useEffect(() => {
+    const syncKey = `${p.id}:${p.version}:${p.updatedAt}`;
+    if (syncKey === initialSyncKey.current || syncKey === lastQueuedSyncKey.current) return;
+    lastQueuedSyncKey.current = syncKey;
+    const timer = window.setTimeout(() => {
+      void syncUserProjectsToCloud(userId);
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [p.id, p.version, p.updatedAt, userId]);
+
+  const applyProjectUpdate = (updated: ResearchProject) => {
+    setP(updated);
+    onProjectChange(updated);
+  };
+
+  // M1 · ToolRoute：从工具返回时，精确回到当初打开工具的那一个看
+  const focusNonceRef = useRef(0);
+  useEffect(() => {
+    if (!focusLook || !focusNonce) return;
+    if (focusNonceRef.current === focusNonce) return;
+    focusNonceRef.current = focusNonce;
+    void switchToLook(focusLook);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusLook, focusNonce]);
+
+  const switchToLook = async (look: FiveLookId) => {
+    setTab(look);
+    if (p.activeLook === look) return;
+    setSaveState('saving');
+    try {
+      const updated = await setActiveLook(userId, p.id, look);
+      if (updated) {
+        applyProjectUpdate(updated);
+        setSaveState('saved');
+      } else {
+        setSaveState('error');
+        toast.error('保存工作位置失败');
+      }
+    } catch {
+      setSaveState('error');
+      toast.error('保存工作位置失败');
+    }
+  };
+
+  const retrySave = async () => {
+    setSaveState('saving');
+    try {
+      const updated = await setActiveLook(userId, p.id, tab as FiveLookId);
+      if (updated) {
+        applyProjectUpdate(updated);
+        setSaveState('saved');
+      } else {
+        setSaveState('error');
+      }
+    } catch {
+      setSaveState('error');
+    }
+  };
+
+  /** 打开工具时记录"从哪一个看来"（概览/报告页则退回项目当前活跃的看） */
+  const toolOriginLook: FiveLookId = tab === 'overview' || tab === 'reports' ? p.activeLook : tab;
+
+  const toolButtons: { label: string; view: 'market' | 'competitors' | 'insights' | 'keywords' | 'profit' }[] =
+    tab === 'market'
+      ? [{ label: '打开市场大盘工具', view: 'market' }]
+      : tab === 'user'
+        ? [{ label: '打开关键词工具', view: 'keywords' }, { label: '打开评论 / VOC 工具', view: 'insights' }]
+        : tab === 'competitor'
+          ? [{ label: '打开竞品明细工具', view: 'competitors' }]
+          : tab === 'self'
+            ? [{ label: '打开利润计算器', view: 'profit' }]
+            : [];
+  const hint = SAVE_HINT[saveState];
+  const HintIcon = hint.icon;
+
+  return (
+    <div className="max-w-6xl mx-auto w-full">
+      {/* 顶部：返回 + 项目名 + 保存状态 */}
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div className="flex items-start gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-1 shrink-0 w-8 h-8 rounded-xl border border-black/8 bg-white text-[#86868b] hover:text-indigo-600 hover:border-indigo-200 transition-all flex items-center justify-center"
+            title="返回项目中心"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-bold text-[#1d1d1f] truncate">{p.name}</h2>
+              <button type="button" onClick={() => setEditOpen(true)} title="编辑项目" className="shrink-0 w-7 h-7 rounded-lg hover:bg-[#f5f5f7] flex items-center justify-center text-[#aeaeb2] hover:text-indigo-600 transition-colors">
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button type="button" onClick={() => setMembersOpen(true)} title="项目成员" className="shrink-0 w-7 h-7 rounded-lg hover:bg-[#f5f5f7] flex items-center justify-center text-[#aeaeb2] hover:text-indigo-600 transition-colors">
+                <Users className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <p className="text-sm text-[#86868b] mt-0.5">{p.marketplace} · {p.objective || '未设置目标'}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={saveState === 'error' ? retrySave : undefined}
+          className={cn('inline-flex items-center gap-1.5 text-xs font-medium shrink-0 mt-1', hint.cls)}
+        >
+          <HintIcon className={cn('w-3.5 h-3.5', saveState === 'saving' && 'animate-spin')} />
+          {hint.text}
+        </button>
+      </div>
+
+      {/* 打开对应的分析工具（工具仍在全局工作区，通过项目入口进入） */}
+      {toolButtons.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {toolButtons.map((b) => (
+            <button
+              key={b.view}
+              type="button"
+              onClick={() => onOpenTool(b.view, toolOriginLook)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-all active:scale-[0.98]"
+            >
+              <Wrench className="w-3.5 h-3.5" />
+              {b.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 向导步骤条：五看带序号（非线性，可任意顺序进入） */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-5 border-b border-black/5 pb-3">
+        <TabButton active={tab === 'overview'} onClick={() => setTab('overview')} label="概览" />
+        {FIVE_LOOKS.map((look, idx) => {
+          const Icon = LOOK_ICONS[look];
+          const s = p.fiveLookProgress[look].status;
+          return (
+            <TabButton
+              key={look}
+              active={tab === look}
+              onClick={() => void switchToLook(look)}
+              label={`${idx + 1} ${FIVE_LOOK_LABELS[look]}`}
+              icon={<Icon className="w-3.5 h-3.5" />}
+              dot={<span className={cn('w-1.5 h-1.5 rounded-full', LOOK_STATUS_DOT[s])} />}
+            />
+          );
+        })}
+        <TabButton active={tab === 'reports'} onClick={() => setTab('reports')} label="报告" icon={<FileText className="w-3.5 h-3.5" />} />
+      </div>
+
+      {/* 内容区 + 常驻决策草稿（线框图 Screen 2：草稿全程跟随，不只在概览页） */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
+        <div className="min-w-0">
+      {tab === 'overview' ? (
+        <div className="space-y-5">
+          <LookWizardPanel
+            userId={userId}
+            project={p}
+            onProjectChange={applyProjectUpdate}
+            onLoadDemo={onLoadDemo}
+            onOpenTool={(view) => onOpenTool(view, toolOriginLook)}
+            onOpenSettings={onOpenSettings}
+            onDraftChanged={bumpDraft}
+          />
+          <ProjectOverviewContent project={p} username={username} userId={userId} onNavigateLook={(look) => void switchToLook(look)} />
+        </div>
+      ) : tab === 'self' ? (
+        <SelfAssessmentView
+          userId={userId}
+          project={p}
+          onProjectChange={applyProjectUpdate}
+          onOpenL3={openL3}
+          onRegisterL3Bodies={registerL3Bodies}
+        />
+      ) : tab === 'market' ? (
+        <MarketLookView userId={userId} project={p} marketContext={marketContext} onProjectChange={applyProjectUpdate} onOpenMarketTool={(segment) => (onOpenMarketSegment ? onOpenMarketSegment(segment) : onOpenTool('market', 'market'))} />
+      ) : tab === 'user' ? (
+        <UserLookView
+          userId={userId}
+          project={p}
+          userContext={userContext}
+          onProjectChange={applyProjectUpdate}
+          onOpenL3={openL3}
+          onRegisterL3Bodies={registerL3Bodies}
+        />
+      ) : tab === 'competitor' ? (
+        <CompetitorLookView userId={userId} project={p} competitorContext={competitorContext} onProjectChange={applyProjectUpdate} onOpenCompetitorTool={() => onOpenTool('competitors', 'competitor')} onSendToComparison={onSendToComparison} onOpenUserInsights={onOpenUserInsights} />
+      ) : tab === 'opportunity' ? (
+        <OpportunityLookView
+          userId={userId}
+          project={p}
+          onProjectChange={applyProjectUpdate}
+          onNavigateLook={(look) => void switchToLook(look)}
+          onOpenL3={openL3}
+          onRegisterL3Bodies={registerL3Bodies}
+        />
+      ) : (
+        <ReportsView userId={userId} project={p} onContentChange={queueCloudSync} />
+      )}
+        </div>
+        <div className="xl:sticky xl:top-4">
+          <DecisionDraftRail
+            userId={userId}
+            project={p}
+            onGoto={(look) => void switchToLook(look)}
+            refreshKey={draftNonce}
+          />
+        </div>
+      </div>
+      {editOpen && (
+        <EditProjectModal
+          userId={userId}
+          project={p}
+          onClose={() => setEditOpen(false)}
+          onSaved={(updated) => {
+            setEditOpen(false);
+            applyProjectUpdate(updated);
+          }}
+        />
+      )}
+      {membersOpen && (
+        <ProjectMembersModal
+          projectId={p.id}
+          currentUserId={userId}
+          onClose={() => setMembersOpen(false)}
+        />
+      )}
+
+      {/* ⏳3：二级页全屏页壳（线框图 ①②③④⑪⑫⑬⑭）。
+          全项目只渲染这一个 L3Sheet：正文由当前这一看的视图注册，且与内联区块是同一个组件。 */}
+      {l3 && (
+        <L3Sheet
+          page={l3Page(l3)}
+          onClose={closeL3}
+          busy={!l3Body}
+          footer={
+            <span className="text-[11px] text-[#86868b] hidden sm:inline">
+              {p.name} · {p.marketplace}
+            </span>
+          }
+        >
+          {l3Body ? l3Body(l3, l3CardId ?? undefined) ?? <L3EmptyBody /> : <L3EmptyBody />}
+        </L3Sheet>
+      )}
+    </div>
+  );
+}
+
+/** 二级页正文还没注册上来时的一帧占位（正常情况下只有一帧） */
+function L3EmptyBody() {
+  return (
+    <Card className="py-10 text-center">
+      <p className="text-sm text-[#aeaeb2]">正在准备这一页的内容…</p>
+    </Card>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  label,
+  icon,
+  dot,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  icon?: ReactNode;
+  dot?: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium border transition-all',
+        active
+          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-200'
+          : 'bg-white text-[#86868b] border-black/8 hover:text-indigo-600 hover:border-indigo-200'
+      )}
+    >
+      {icon}
+      {label}
+      {dot}
+    </button>
+  );
+}
+

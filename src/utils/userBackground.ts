@@ -49,7 +49,7 @@ export const ADMIN_DEFAULT_USER_BACKGROUND: UserBackgroundProfile = {
   role: '项目负责人 / 亚马逊市场调研与选品决策负责人',
   company: 'OG 项目组 / 跨境电商团队',
   brands: 'OG 项目组、Kairo 市场调研工具',
-  categories: '亚马逊新品选品、用户洞察、关键词分析、评论洞察、竞品分析、Listing 优化',
+  categories: '亚马逊新品选品、用户洞察、关键词分析、评论洞察、竞品明细、Listing 优化',
   marketplaces: 'US、UK、DE 为主，兼顾其他亚马逊站点',
   experience: '持续搭建亚马逊市场调研 Web App，关注选品判断、用户洞察、竞品拆解、数据抓取与 AI 报告质量。',
   goals:

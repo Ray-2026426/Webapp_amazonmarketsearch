@@ -1,9 +1,17 @@
 import { buildUserBackgroundSystemPrompt } from './userBackground';
-import { getCurrentUser, isAdminSession } from './auth';
+import { getAuthToken, getCurrentUser, isAdminSession } from './auth';
+import { decideAiTransport } from './aiEndpoints';
+import {
+  modelsAuthHeaders,
+  modelsUrlWithKey,
+  parseModelsResponse,
+  planModelsRequest,
+} from './aiModels';
+import { getDefaultServerKey, pushServerKeys } from './serverKeys';
 
 // AI Provider Configuration & Unified Call Layer
 
-export type AiProvider = 'gemini' | 'openai' | 'claude' | 'deepseek' | 'qwen' | 'moonshot' | 'zhipu' | 'doubao';
+export type AiProvider = 'gemini' | 'openai' | 'claude' | 'deepseek' | 'qwen' | 'moonshot' | 'zhipu' | 'doubao' | 'custom';
 
 export interface AiProviderConfig {
   id: AiProvider;
@@ -43,8 +51,13 @@ export const AI_PROVIDERS: AiProviderConfig[] = [
     id: 'deepseek',
     name: 'DeepSeek',
     baseUrl: '/api-proxy/deepseek',
-    defaultModel: 'deepseek-chat',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    /**
+     * 默认模型与可选列表按官方**实际支持**的名字给。
+     * 依据：官方接口报错原文「The supported API model names are deepseek-flash, deepseek-v4-pro」
+     * （2026-09 用户实测；旧列表里的 deepseek-chat/deepseek-reasoner 已不被接受，会导致 400）。
+     */
+    defaultModel: 'deepseek-flash',
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
     apiKeyPlaceholder: 'sk-...',
   },
   {
@@ -79,6 +92,19 @@ export const AI_PROVIDERS: AiProviderConfig[] = [
     models: ['doubao-seed-1-6-flash-250615', 'doubao-seed-1-6-thinking-250715', 'doubao-1-5-pro-32k-250115', 'doubao-1-5-lite-32k-250115'],
     apiKeyPlaceholder: 'Volcengine Ark API Key',
   },
+  {
+    /**
+     * 自定义 / 第三方中转（用户诉求："增加一个自定义配置，方便我增加第三方中转 api"）。
+     * 没有默认地址与默认模型：**必须**在设置里填 Base URL 与模型名。
+     * 走 OpenAI 兼容（`/chat/completions`）形态；地址是绝对地址时由本站服务端转发（绕开浏览器跨域）。
+     */
+    id: 'custom',
+    name: '自定义 / 第三方中转',
+    baseUrl: '',
+    defaultModel: '',
+    models: [],
+    apiKeyPlaceholder: '你的中转站 Key',
+  },
 ];
 
 export interface AiSettings {
@@ -89,11 +115,53 @@ export interface AiSettings {
   apiUrls?: Partial<Record<AiProvider, string>>;
   /** 自定义模型名列表（按供应商存储） */
   customModels?: Partial<Record<AiProvider, string[]>>;
+  /**
+   * 允许浏览器直连（自定义绝对地址）。
+   * 默认 false：绝对地址经本站服务端转发（浏览器直连会被 CORS 拦）。
+   * 但**有些接口确实允许跨域**（例如 api.deepseek.com 实测能直接从浏览器调通），
+   * 这类用户可以勾选直连：请求与 Key 都不经过本站服务端。
+   */
+  allowBrowserDirect?: boolean;
+}
+
+export function isValidCustomApiUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('/')) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function sanitizeAiApiUrls(
+  apiUrls?: Partial<Record<AiProvider, string>>
+): Partial<Record<AiProvider, string>> | undefined {
+  if (!apiUrls) return undefined;
+  const cleaned: Partial<Record<AiProvider, string>> = {};
+  for (const provider of AI_PROVIDERS.map((p) => p.id)) {
+    const value = apiUrls[provider]?.trim();
+    if (value && isValidCustomApiUrl(value)) cleaned[provider] = value;
+  }
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+}
+
+export function sanitizeAiSettings(settings: AiSettings): AiSettings {
+  return {
+    ...settings,
+    apiKey: settings.apiKey ?? '',
+    model: settings.model || getProviderConfig(settings.provider).defaultModel,
+    apiUrls: sanitizeAiApiUrls(settings.apiUrls),
+    allowBrowserDirect: settings.allowBrowserDirect === true,
+  };
 }
 
 /** 获取某个供应商生效的 API URL（优先使用自定义 URL，否则返回默认 URL） */
 export function getEffectiveApiUrl(settings: AiSettings, provider: AiProvider): string {
-  return settings.apiUrls?.[provider]?.trim() || getProviderConfig(provider).baseUrl;
+  const customUrl = settings.apiUrls?.[provider]?.trim();
+  return customUrl && isValidCustomApiUrl(customUrl) ? customUrl : getProviderConfig(provider).baseUrl;
 }
 
 /** 获取某个供应商的完整模型列表（默认模型 + 自定义模型） */
@@ -118,16 +186,17 @@ export function loadAiSettings(): AiSettings | null {
   try {
     const storageKey = getAiSettingsKey();
     const raw = localStorage.getItem(storageKey);
-    if (raw) return JSON.parse(raw) as AiSettings;
+    if (raw) return sanitizeAiSettings(JSON.parse(raw) as AiSettings);
     const legacyRaw = canUseDefaultAiKey() ? localStorage.getItem(AI_SETTINGS_KEY) : null;
     if (legacyRaw) {
-      localStorage.setItem(storageKey, legacyRaw);
-      return JSON.parse(legacyRaw) as AiSettings;
+      const migrated = sanitizeAiSettings(JSON.parse(legacyRaw) as AiSettings);
+      localStorage.setItem(storageKey, JSON.stringify(migrated));
+      return migrated;
     }
     // \u56de\u9000\u5230 .env.local \u9ed8\u8ba4\u914d\u7f6e\uff0c\u65e0\u9700\u624b\u52a8\u8f93\u5165
-    const defaultKey = canUseDefaultAiKey() ? (import.meta.env.VITE_DEFAULT_AI_KEY as string | undefined) : '';
+    const defaultKey = canUseDefaultAiKey() ? getDefaultServerKey('deepseek') : '';
     const defaultProvider = (import.meta.env.VITE_DEFAULT_AI_PROVIDER ?? 'deepseek') as AiProvider;
-    const defaultModel = (import.meta.env.VITE_DEFAULT_AI_MODEL ?? 'deepseek-chat') as string;
+    const defaultModel = (import.meta.env.VITE_DEFAULT_AI_MODEL ?? 'deepseek-flash') as string;
     // 无密钥时也返回 DeepSeek 默认项，方便你在「AI 设置」里直接填 Key
     return {
       provider: defaultProvider,
@@ -140,7 +209,13 @@ export function loadAiSettings(): AiSettings | null {
 }
 
 export function saveAiSettings(settings: AiSettings): void {
-  localStorage.setItem(getAiSettingsKey(), JSON.stringify(settings));
+  const cleaned = sanitizeAiSettings(settings);
+  localStorage.setItem(getAiSettingsKey(), JSON.stringify(cleaned));
+
+  const token = getAuthToken();
+  if (isAdminSession(getCurrentUser()) && token && cleaned.provider === 'deepseek') {
+    void pushServerKeys(token, { deepseek: cleaned.apiKey });
+  }
 }
 
 export function getProviderConfig(provider: AiProvider): AiProviderConfig {
@@ -364,13 +439,15 @@ async function callGeminiWithImages(
 
 /** 是否填写了自定义 API URL */
 export function hasCustomApiUrl(settings: AiSettings, provider: AiProvider): boolean {
-  return Boolean(settings.apiUrls?.[provider]?.trim());
+  const customUrl = settings.apiUrls?.[provider]?.trim();
+  return Boolean(customUrl && isValidCustomApiUrl(customUrl));
 }
 
 /** 将用户填写的中转 API 地址补全为可请求的完整 endpoint（不会重复添加 /v1） */
 export function resolveCustomApiUrl(url: string, provider: AiProvider): string {
   const cleaned = url.trim().replace(/\/+$/, '');
   if (!cleaned) return cleaned;
+  if (!isValidCustomApiUrl(cleaned)) return '';
 
   if (provider === 'gemini') {
     if (/\/models\/.*:generateContent$/i.test(cleaned) || /\/generateContent$/i.test(cleaned)) {
@@ -453,8 +530,13 @@ function parseOpenAICompatResponse(text: string, endpoint: string): string {
 /** 构建 API endpoint */
 export function buildEndpoint(settings: AiSettings, provider: AiProvider): string {
   const customUrl = settings.apiUrls?.[provider]?.trim();
-  if (customUrl) {
+  if (customUrl && isValidCustomApiUrl(customUrl)) {
     return resolveCustomApiUrl(customUrl, provider);
+  }
+
+  // 自定义供应商没有默认地址：宁可抛出明确错误，也不要拼出一个必然 404 的同源路径
+  if (provider === 'custom') {
+    throw new Error('自定义 / 第三方中转需要先填写「API 请求地址」与「模型名」（设置 → API 与模型）');
   }
 
   const baseUrl = getProviderConfig(provider).baseUrl.replace(/\/+$/, '');
@@ -484,6 +566,65 @@ function buildRequestHeaders(settings: AiSettings): Record<string, string> {
 }
 
 // \u2500\u2500\u2500 OpenAI-Compatible (OpenAI / DeepSeek / Qwen / Moonshot / Zhipu) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+/**
+ * 发一次 OpenAI 兼容请求，并在必要时改走**本站服务端转发**。
+ *
+ * 为什么：用户在设置里填的第三方中转是绝对地址，浏览器直连会被 CORS 拦死
+ * （这正是内置供应商都走 `/api-proxy/*` 同源代理的原因）。通道由 `decideAiTransport` 判定：
+ * - `proxy` / `direct` → 保持原样，浏览器直接 `fetch`（**零回归**）；
+ * - `relay` → 交给 `POST /api/ai/chat`，由服务端代发（Key 只做一次性转发，不保存不记录）。
+ *
+ * 两种通道都归一化成同一种返回形状，所以上层的重试与错误话术完全共用，不会出现"直连能重试、转发不重试"。
+ */
+async function sendOpenAICompatOnce(
+  endpoint: string,
+  settings: AiSettings,
+  body: Record<string, unknown>,
+  headers: Record<string, string>
+): Promise<{ status: number; ok: boolean; text: string }> {
+  const decision = decideAiTransport({
+    customUrl: settings.apiUrls?.[settings.provider],
+    preferDirect: settings.allowBrowserDirect === true,
+  });
+
+  if (decision.transport !== 'relay') {
+    const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+    return { status: res.status, ok: res.ok, text: await res.text() };
+  }
+
+  const token = getAuthToken() ?? '';
+  const res = await fetch('/api/ai/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      token,
+      url: endpoint,
+      shape: 'openai',
+      model: settings.model,
+      messages: body.messages,
+      apiKey: settings.apiKey,
+    }),
+  });
+  const raw = await res.text();
+  let parsed: { ok?: boolean; content?: string; error?: string } = {};
+  try {
+    parsed = JSON.parse(raw) as typeof parsed;
+  } catch {
+    /* 非 JSON（例如网关返回 HTML）→ 走下面的失败分支 */
+  }
+
+  if (res.ok && parsed.ok === true && typeof parsed.content === 'string') {
+    // 归一化成 OpenAI 兼容响应，交给同一个解析函数
+    return { status: 200, ok: true, text: JSON.stringify({ choices: [{ message: { content: parsed.content } }] }) };
+  }
+  const message = parsed.error || raw || '服务端转发失败';
+  return {
+    status: res.status && res.status >= 400 ? res.status : 502,
+    ok: false,
+    text: JSON.stringify({ error: { message } }),
+  };
+}
+
 async function callOpenAICompat(
   prompt: string,
   settings: AiSettings,
@@ -511,29 +652,23 @@ async function callOpenAICompat(
   const providerName = cfg.name || 'AI';
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+    const { status, ok, text } = await sendOpenAICompatOnce(endpoint, settings, body, headers);
 
-    if (res.ok) {
-      const text = await res.text();
+    if (ok) {
       return parseOpenAICompatResponse(text, endpoint);
     }
 
-    const text = await res.text();
     let errMsg = text;
     try {
       const errJson = JSON.parse(text);
       errMsg = errJson?.error?.message || errJson?.message || text;
     } catch {}
 
-    if (shouldRetry(res.status, errMsg, attempt, maxAttempts)) {
+    if (shouldRetry(status, errMsg, attempt, maxAttempts)) {
       await sleep(1200 * attempt);
       continue;
     }
-    throw new Error(normalizeAiError(providerName, res.status, errMsg));
+    throw new Error(normalizeAiError(providerName, status, errMsg));
   }
 
   throw new Error(`${providerName} 请求失败，请稍后重试。`);
@@ -575,32 +710,90 @@ async function callOpenAICompatWithImages(
   const providerName = cfg.name || 'AI';
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+    const { status, ok, text } = await sendOpenAICompatOnce(endpoint, settings, body, headers);
 
-    if (res.ok) {
-      const text = await res.text();
+    if (ok) {
       return parseOpenAICompatResponse(text, endpoint);
     }
 
-    const text = await res.text();
     let errMsg = text;
     try {
       const errJson = JSON.parse(text);
       errMsg = errJson?.error?.message || errJson?.message || text;
     } catch {}
 
-    if (shouldRetry(res.status, errMsg, attempt, maxAttempts)) {
+    if (shouldRetry(status, errMsg, attempt, maxAttempts)) {
       await sleep(1200 * attempt);
       continue;
     }
-    throw new Error(normalizeAiError(providerName, res.status, errMsg));
+    throw new Error(normalizeAiError(providerName, status, errMsg));
   }
 
   throw new Error(`${providerName} 视觉分析请求失败，请稍后重试。`);
+}
+
+// ─── 获取模型列表（用户诉求：填完 Key 点一下，列出这个 Key 能用的模型再选） ──────────
+/**
+ * 用当前设置里的 Key 去取**可用模型列表**。
+ *
+ * 通道与聊天请求保持一致（`planModelsRequest` 给出）：
+ * - 内置供应商且没填自定义地址 → 走同源代理路径（浏览器直连，不受 CORS 限制）；
+ * - 填了绝对地址 → 交给 `POST /api/ai/models` 由服务端代取（浏览器官网直连会被 CORS 拦）。
+ * 两种通道的解析都用同一个纯函数 `parseModelsResponse`，不会出现"直连能解析、转发解析不了"。
+ */
+export async function fetchAvailableModels(
+  settings: AiSettings
+): Promise<{ ok: boolean; models: string[]; error: string }> {
+  const plan = planModelsRequest({
+    provider: settings.provider,
+    customBaseUrl: settings.apiUrls?.[settings.provider],
+    preferDirect: settings.allowBrowserDirect === true,
+  });
+
+  if (!plan.url) return { ok: false, models: [], error: plan.note || '请先填写请求地址' };
+
+  if (plan.transport === 'relay') {
+    try {
+      const res = await fetch('/api/ai/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: getAuthToken() ?? '',
+          url: plan.url,
+          authStyle: plan.authStyle,
+          extraHeaders: plan.extraHeaders,
+          apiKey: settings.apiKey,
+        }),
+      });
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text) as { ok?: boolean; models?: string[]; error?: string };
+        if (data.ok && Array.isArray(data.models)) return { ok: true, models: data.models, error: '' };
+        return { ok: false, models: [], error: data.error || `取模型列表失败（HTTP ${res.status}）` };
+      } catch {
+        return { ok: false, models: [], error: `取模型列表失败（HTTP ${res.status}）：${text.slice(0, 200)}` };
+      }
+    } catch (e) {
+      return { ok: false, models: [], error: e instanceof Error ? e.message : '取模型列表失败' };
+    }
+  }
+
+  const url = modelsUrlWithKey(plan, settings.apiKey);
+  const headers = modelsAuthHeaders(plan, settings.apiKey);
+  try {
+    const res = await fetch(url, { method: 'GET', headers });
+    const text = await res.text();
+    return parseModelsResponse(res.status, text);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      models: [],
+      error: /Failed to fetch|NetworkError/i.test(msg)
+        ? '取模型列表被浏览器拦住了（跨域）：请改用「自定义 / 第三方中转」并让它经本站服务端转发'
+        : `取模型列表失败：${msg}`,
+    };
+  }
 }
 
 // ─── Streaming (OpenAI-compatible only, for chatbot) ──────────────────────────
@@ -619,6 +812,21 @@ export async function* streamText(
   const mergedSystem = mergeSystemPrompt(systemPrompt);
   const cfg = getProviderConfig(settings.provider);
   const endpoint = buildEndpoint(settings, settings.provider);
+
+  /**
+   * 走服务端转发时**不支持流式**（本站的转发接口只做一次性转发，不回 SSE）：
+   * 与其静默失败，不如退化成一次性返回（用户仍能拿到完整回答，只是没有逐字输出）。
+   */
+  if (
+    decideAiTransport({
+      customUrl: settings.apiUrls?.[settings.provider],
+      preferDirect: settings.allowBrowserDirect === true,
+    }).transport === 'relay'
+  ) {
+    const text = await generateText(prompt, settings, { systemPrompt });
+    yield text;
+    return;
+  }
 
   const messages: { role: string; content: string }[] = [];
   if (mergedSystem) messages.push({ role: 'system', content: mergedSystem });

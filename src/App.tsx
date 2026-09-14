@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer, CheckSquare, Crosshair } from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, Package, DollarSign, Users, LayoutDashboard, FolderKanban, Settings, Loader2, Star, MessageCircle, Activity, Store, Scale, Box, MapPin, Filter, Layers, Calculator, X, Sparkles, Trash2, Trophy, History, Printer, CheckSquare, Crosshair } from 'lucide-react';
 import { MetricCard } from './components/MetricCard';
 import { MarketTrendChart } from './components/MarketTrendChart';
 import { PriceDistributionChart } from './components/PriceDistributionChart';
@@ -21,6 +21,8 @@ import { MarketAnalysisReport } from './components/MarketAnalysisReport';
 import { MarketHistoryModal } from './components/MarketHistoryModal';
 import { saveMarketSnapshot, suggestMarketSnapshotTitle, type MarketHistorySnapshot } from './utils/marketHistory';
 import type { CompetitorWorkspaceState } from './utils/competitorHistory';
+import { normalizeComparisonAsins } from './utils/competitorPicker';
+import { drilldownLabel } from './utils/competitorDrilldown';
 import {
   normalizeUserInsightsWorkspace,
   type UserInsightsWorkspaceState,
@@ -29,12 +31,22 @@ import { clearWorkspaceIndexedDb } from './utils/workspaceIdb';
 import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, HistoryRecord, Review, Keyword, getCurrencySymbol, formatRevenue, computeMarketReportFingerprint } from './utils/parser';
 import { get, set, del } from 'idb-keyval';
 import { Toaster, toast } from 'sonner';
-import { ensureBuiltinAdmin, getCurrentUser, isAdminSession, logout, type SessionUser } from './utils/auth';
+import { getAuthToken, getCurrentUser, isAdminSession, logout, refreshAdminFlag, type SessionUser } from './utils/auth';
 import { ensureAdminMcpDefaults, loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
-import { loadAiSettings, saveAiSettings, AiSettings } from './utils/aiConfig';
+import { loadAiSettings, saveAiSettings, sanitizeAiSettings, AiSettings } from './utils/aiConfig';
+import { fetchServerKeyStatuses, migrateLegacyKeys } from './utils/serverKeys';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
 import { getDemoData, DEMO_DATA_VERSION, type CompetitorDemoSnapshot } from './utils/demoData';
+import type { MarketContext } from './utils/marketLook';
+import { saveReport } from './utils/reportStore';
+import { syncUserProjectsToCloud } from './utils/projectCloudAutosync';
+import { aiInsightToMarkdown, vocReportToMarkdown, competitorReportToMarkdown } from './utils/reportToMarkdown';
+import { FIVE_LOOK_LABELS, type FiveLookId, type ResearchProject } from './types/researchProject';
+import type { UserContext } from './utils/userLook';
+import type { CompetitorContext } from './utils/competitorLook';
 import { LoginPage } from './components/LoginPage';
+import { ProjectCenter } from './components/ProjectCenter';
+import { ProjectWorkspace } from './components/ProjectWorkspace';
 import { AiSettingsPanel } from './components/AiSettingsPanel';
 import { savePromptItem, resetPromptToDefault } from './components/AiPromptManager';
 import { OpportunityScanner } from './components/OpportunityScanner';
@@ -126,24 +138,55 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 export default function App() {
   // ── Auth & AI Settings ────────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(() => {
-    ensureBuiltinAdmin();
-    const user = getCurrentUser();
-    if (isAdminSession(user)) {
-      try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
-    }
-    return user;
+    return getCurrentUser();
   });
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(() => loadAiSettings());
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
   const [isAvatarSettingsOpen, setIsAvatarSettingsOpen] = useState(false);
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
+  const [activeProject, setActiveProject] = useState<ResearchProject | null>(null);
+  /** 线框图 Screen 4：从看市场点「查看完整大盘」时带过来的细分（大盘顶部显示筛选上下文） */
+  const [marketSegmentFocus, setMarketSegmentFocus] = useState<string | null>(null);
 
-  // 每次进入应用：同步内置管理员 + 四家 MCP 默认 Key
+  // 管理员登录后：① 迁移浏览器里残留的明文密钥到服务端 ② 读取"服务端配没配"的状态。
+  // M5 安全加固：前端不再保存/持有密钥（旧实现把明文存进 localStorage，已废弃）。
+  /**
+   * 管理员身份以**服务端**为准：刷新页面时用 token 问一次 /api/auth/me。
+   * 这样改了 ADMIN_EMAILS 白名单之后，用户刷新即生效 —— 不必退出重登，也不必重新部署
+   * （VITE_ADMIN_EMAILS 是构建期注入，改它必须重新打包，还会把管理员邮箱打进公开 JS 包）。
+   */
   useEffect(() => {
-    ensureBuiltinAdmin();
-    if (isAdminSession(currentUser)) {
+    let cancelled = false;
+    void (async () => {
+      const refreshed = await refreshAdminFlag();
+      if (cancelled || !refreshed) return;
+      setCurrentUser((prev) => {
+        if (!prev || prev.id !== refreshed.id) return prev;
+        if (prev.role === refreshed.role) return prev;
+        return { ...prev, role: refreshed.role };
+      });
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!isAdminSession(currentUser)) return;
+    const token = getAuthToken();
+    if (!token) return;
+    let cancelled = false;
+    void (async () => {
+      const migration = await migrateLegacyKeys(token);
+      if (cancelled) return;
+      if (migration.names.length > 0) {
+        if (migration.migrated) toast.success(migration.message);
+        else toast.warning(migration.message);
+      }
+      await fetchServerKeyStatuses(token); // 只缓存状态（configured + 指纹）
+      if (cancelled) return;
       try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
-    }
+      setAiSettings(loadAiSettings());
+    })();
+    return () => { cancelled = true; };
   }, [currentUser]);
 
   // 飞书 OAuth 回跳：把 token 写入本机
@@ -157,9 +200,6 @@ export default function App() {
     const isGuest = sessionStorage.getItem('guest_mode') === '1';
     if (!isGuest) {
       const user = getCurrentUser();
-      if (isAdminSession(user)) {
-        try { ensureAdminMcpDefaults(); } catch { /* ignore */ }
-      }
       setCurrentUser(user);
       setAiSettings(loadAiSettings());
     } else {
@@ -175,8 +215,9 @@ export default function App() {
   }, []);
 
   const handleSaveAiSettings = useCallback((settings: AiSettings) => {
-    saveAiSettings(settings);
-    setAiSettings(settings);
+    const cleaned = sanitizeAiSettings(settings);
+    saveAiSettings(cleaned);
+    setAiSettings(cleaned);
   }, []);
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -214,7 +255,13 @@ export default function App() {
     setIsSegmentationOpen(false);
   }, []);
 
-  const [activeView, setActiveView] = useState<'market' | 'competitors' | 'insights' | 'keywords' | 'profit'>('market');
+  const [activeView, setActiveView] = useState<'projects' | 'market' | 'competitors' | 'insights' | 'keywords' | 'profit'>('projects');
+  /**
+   * M1 · ToolRoute 上下文透传（PRD §2.7.6）：
+   * 从某个看打开工具时记住"从哪一个看来"，返回时直接回到那一个看，而不是笼统回到项目。
+   */
+  const [toolReturn, setToolReturn] = useState<{ projectId: string; look: FiveLookId } | null>(null);
+  const [focusLook, setFocusLook] = useState<{ look: FiveLookId; nonce: number } | null>(null);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isReportHidden, setIsReportHidden] = useState(false);
   const [isMarketHistoryOpen, setIsMarketHistoryOpen] = useState(false);
@@ -241,7 +288,40 @@ export default function App() {
 
   const handlePersistMarketReport = useCallback((body: string) => {
     setMarketReportCache({ fingerprint: reportDataFingerprint, body });
-  }, [reportDataFingerprint]);
+    if (activeProject) {
+      const uid = currentUser?.id ?? '';
+      void saveReport(uid, activeProject.id, {
+        reportType: 'market',
+        subjectId: marketplace.code,
+        title: `看市场报告 · ${marketplace.code}`,
+        markdown: body,
+        dataFingerprint: reportDataFingerprint,
+        promptVersion: 'market-v1',
+        modelName: aiSettings?.model ?? '',
+      })
+        .then(() => syncUserProjectsToCloud(uid))
+        .catch(() => {});
+    }
+  }, [reportDataFingerprint, activeProject, currentUser, marketplace.code, aiSettings]);
+
+  const archiveProjectReport = useCallback(
+    (reportType: 'user' | 'competitor', subjectId: string, title: string, markdown: string, dataFingerprint: string) => {
+      if (!activeProject || !markdown.trim()) return;
+      const uid = currentUser?.id ?? '';
+      void saveReport(uid, activeProject.id, {
+        reportType,
+        subjectId,
+        title,
+        markdown,
+        dataFingerprint,
+        promptVersion: 'v1',
+        modelName: aiSettings?.model ?? '',
+      })
+        .then(() => syncUserProjectsToCloud(uid))
+        .catch(() => {});
+    },
+    [activeProject, currentUser, aiSettings]
+  );
 
   const openMarketReport = useCallback(() => {
     setIsReportOpen(true);
@@ -268,7 +348,10 @@ export default function App() {
   const handleKeywordInsightSync = useCallback((state: AiInsight | null) => {
     setKeywordInsight(state);
     void set('keywordInsight', state);
-  }, []);
+    if (state) {
+      archiveProjectReport('user', 'keyword', '看用户报告 · 关键词', aiInsightToMarkdown(state, '看用户报告 · 关键词'), `kw:${keywords.length}:${reviews.length}`);
+    }
+  }, [archiveProjectReport, keywords.length, reviews.length]);
 
   /** 主内容滚动区 ref，供锚点批注绑定滚动与点击捕获 */
   const scrollMainRef = useRef<HTMLDivElement>(null);
@@ -277,11 +360,14 @@ export default function App() {
   /** 是否打开「点页面添加批注」模式 */
   const [annotateMode, setAnnotateMode] = useState(false);
   const [selectedCompareAsins, setSelectedCompareAsins] = useState<string[]>([]);
-  /** 示例竞品快照：游客/示例模式下让竞品分析页直接有结果可看 */
+  /** 示例竞品快照：游客/示例模式下让竞品明细页直接有结果可看 */
   const [competitorDemo, setCompetitorDemo] = useState<CompetitorDemoSnapshot | null>(null);
   /** 竞品工作区（由 CompetitorHub 同步上来，供保存数据） */
   const [competitorWorkspace, setCompetitorWorkspace] = useState<CompetitorWorkspaceState | null>(null);
   const [competitorRestoreKey, setCompetitorRestoreKey] = useState(0);
+  /** 线框图 ⏳4：⑦⑧⑨ 下钻要求竞品明细直接落到哪个视图；nonce 递增即再应用一次 */
+  const [competitorResultTab, setCompetitorResultTab] = useState<'listing' | 'traffic' | 'matrix'>('listing');
+  const [competitorResultTabNonce, setCompetitorResultTabNonce] = useState(0);
   const [competitorRestorePayload, setCompetitorRestorePayload] = useState<CompetitorWorkspaceState | null>(null);
   /** 用户洞察工作区：深度洞察报告 / 5W1H 旅程表，随 IndexedDB 与保存数据恢复 */
   const [userInsightsWorkspace, setUserInsightsWorkspace] = useState<UserInsightsWorkspaceState | null>(null);
@@ -290,7 +376,37 @@ export default function App() {
   const handleUserInsightsWorkspaceSync = useCallback((state: UserInsightsWorkspaceState) => {
     setUserInsightsWorkspace(state);
     void set('userInsightsWorkspace', state);
-  }, []);
+    const md = vocReportToMarkdown({ insight: state.deepInsight, markdown: state.deepReport, title: '看用户报告 · VOC' });
+    if (md) archiveProjectReport('user', 'voc', '看用户报告 · VOC', md, `voc:${reviews.length}`);
+  }, [archiveProjectReport, reviews.length]);
+
+  const handleCompetitorWorkspaceSync = useCallback((state: CompetitorWorkspaceState) => {
+    setCompetitorWorkspace(state);
+    if (state?.aiReportHtml) {
+      archiveProjectReport('competitor', state.selected.join(','), '看竞对报告', competitorReportToMarkdown(state.aiReportHtml, '看竞对报告'), `comp:${state.selected.length}`);
+    }
+  }, [archiveProjectReport]);
+
+  /**
+   * M3⑥ 断链 #4：把看竞对里挑出的竞对 ASIN **自动送进竞品明细的对比池**并切到该工具。
+   * 走的是大盘选品表同一条通路（selectedCompareAsins → CompetitorHub 的 preselectedAsins），
+   * 并记住来源项目与看，保证返回按钮回到「看竞对」而不是丢失上下文。
+   */
+  const sendAsinsToComparison = useCallback((asins: string[], tab?: 'listing' | 'traffic' | 'matrix') => {
+    const clean = normalizeComparisonAsins(asins);
+    if (clean.length === 0) {
+      toast.error('还没有可带入的竞对 ASIN');
+      return;
+    }
+    setSelectedCompareAsins(clean);
+    setActiveView('competitors');
+    // ⏳4：⑦⑧⑨ 各看各的视图（Listing 详情页 / 流量 / 语义矩阵），不再一律落 Listing
+    setCompetitorResultTab(tab ?? 'listing');
+    setCompetitorResultTabNonce((n) => n + 1);
+    if (activeProject) setToolReturn({ projectId: activeProject.id, look: 'competitor' });
+    const tabLabel = drilldownLabel(tab ?? 'listing');
+    toast.success(`已把 ${clean.length} 个竞对 ASIN 带入竞品明细（${tabLabel}）`);
+  }, [activeProject]);
 
   const isRegisteredUser = Boolean(currentUser && currentUser.id !== 'guest');
 
@@ -320,9 +436,19 @@ export default function App() {
     setUserInsightsRestoreKey((k) => k + 1);
     setCompetitorDemo(demo.competitorDemo);
     setSelectedCompareAsins(demo.competitorDemo.selectedAsins.slice(0, 5));
-    // 示例报告指纹按「无分层」计算，同步清空分层以免缓存对不上
-    setSegments([]);
-    setAsinToSegment({});
+    // 断链 #8 修复（PRD §2.3-8）：示例数据过去把细分清空，导致演示态下「细分评分 / 竞对自动挑选」
+    // 恒显"还没有细分市场"，五看空转、新用户第一印象是"功能不可用"。
+    // 现在改为：用示例商品自身派生出展示用细分（优先 subCategory，其次价格带），
+    // 并用**同一份细分**计算示例报告指纹 —— 缓存依然命中，示例报告照旧立刻可见。
+    const demoAsinToSegment: Record<string, string> = {};
+    for (const p of demo.products) {
+      const byCat = (p.subCategory || '').trim();
+      const key = byCat || (p.price >= 45 ? '$45+' : p.price >= 30 ? '$30–45' : '<$30');
+      demoAsinToSegment[p.asin] = key;
+    }
+    const demoSegments = Array.from(new Set(Object.values(demoAsinToSegment)));
+    setSegments(demoSegments);
+    setAsinToSegment(demoAsinToSegment);
     setSegmentChildren({});
     setAsinToSubSegment({});
     setSegmentDescriptions({});
@@ -331,9 +457,19 @@ export default function App() {
     setAsinToLevel3Segment({});
     setSegmentLevel3Descriptions({});
     setSegmentDepth(1);
-    // 与空分层默认态指纹对齐，便于打开「市场报告」直接看到示例文案
+    // 与上面同一份细分对齐，示例报告缓存保持命中
     const reportFp = computeMarketReportFingerprint(
-      demo.products, [], {}, {}, {}, {}, {}, {}, {}, {}, 1
+      demo.products,
+      demoSegments,
+      demoAsinToSegment,
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      1
     );
     const reportCache = { fingerprint: reportFp, body: demo.marketReportMarkdown };
     setMarketReportCache(reportCache);
@@ -356,7 +492,7 @@ export default function App() {
     setSelectedCompareAsins((prev) => {
       if (prev.includes(asin)) return prev.filter((a) => a !== asin);
       if (prev.length >= 5) {
-        toast.warning('竞品对比最多选 5 个 ASIN，请先取消一个再选');
+        toast.warning('竞品明细最多选 5 个 ASIN，请先取消一个再选');
         return prev;
       }
       return [...prev, asin];
@@ -514,14 +650,14 @@ export default function App() {
       marketReportCache,
       activeView,
       anchorAnnotations,
-      competitorWorkspace: competitorWorkspace?.hasResult ? competitorWorkspace : competitorWorkspace,
+      competitorWorkspace,
       userInsightsWorkspace,
     });
     if ('error' in res) {
       toast.error(res.error);
       return;
     }
-    const withComp = competitorWorkspace?.hasResult ? '（含竞品分析）' : '';
+    const withComp = competitorWorkspace?.hasResult ? '（含竞品明细）' : '';
     toast.success(`已保存数据到本机历史${withComp}`);
   }, [
     isRegisteredUser,
@@ -895,6 +1031,13 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isInitializing, isDataLoaded, reviews.length]);
 
+  // 断链修复（PRD §2.3-9 / §2.7.4 第 7 条）：competitorWorkspace 此前「只读不写」——
+  // lookAi.gatherGlobalMarketData 会读这个 IDB 键，但全库没有任何 set，导致 competitorAsins 恒为空。
+  useEffect(() => {
+    if (isInitializing || isRestoring) return;
+    void set('competitorWorkspace', competitorWorkspace);
+  }, [competitorWorkspace, isInitializing, isRestoring]);
+
   // Save state to IndexedDB when it changes（有市场数据或仅有评论数据时都持久化）
   useEffect(() => {
     if (isInitializing) return;
@@ -1222,6 +1365,29 @@ export default function App() {
     setLastYearKpiMonths(lastYear);
   }, []);
 
+  const marketContext = useMemo<MarketContext>(() => ({
+    loaded: isDataLoaded,
+    marketplace: marketplace.code,
+    sampleSize: products.length,
+    months,
+    sourceLabel: historySourceLabel,
+    isDemo: isDemoData,
+  }), [isDataLoaded, marketplace.code, products.length, months, historySourceLabel, isDemoData]);
+
+  const userContext = useMemo<UserContext>(() => ({
+    keywordsCount: keywords.length,
+    reviewsCount: reviews.length,
+    sourceLabel: historySourceLabel,
+    isDemo: isDemoData,
+  }), [keywords.length, reviews.length, historySourceLabel, isDemoData]);
+
+  const competitorContext = useMemo<CompetitorContext>(() => ({
+    loaded: competitorWorkspace?.hasResult ?? false,
+    asinCount: competitorWorkspace?.selected?.length ?? 0,
+    marketplace: competitorWorkspace?.marketplace ?? '',
+    isDemo: isDemoData,
+  }), [competitorWorkspace, isDemoData]);
+
   /** 侧栏「定位」：切到批注所在 Tab 并滚动、高亮锚点模块 */
   const jumpToAnnotation = useCallback((a: AnchorAnnotation) => {
     setActiveView(a.view);
@@ -1301,41 +1467,62 @@ export default function App() {
         </div>
         <nav className="flex-1 p-4 space-y-1">
           <button 
-            onClick={() => setActiveView('market')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'market' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            onClick={() => { setActiveProject(null); setActiveView('projects'); setToolReturn(null); }}
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'projects' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
           >
-            <LayoutDashboard className="w-5 h-5" />
-            <span>市场大盘</span>
+            <FolderKanban className="w-5 h-5" />
+            <span>项目中心</span>
           </button>
-          <button 
-            onClick={() => setActiveView('competitors')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'competitors' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <Crosshair className="w-5 h-5" />
-            <span>竞品分析</span>
-          </button>
-          <button 
-            onClick={() => setActiveView('insights')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'insights' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <Users className="w-5 h-5" />
-            <span>用户洞察</span>
-          </button>
-          <button 
-            onClick={() => setActiveView('keywords')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'keywords' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <TrendingUp className="w-5 h-5" />
-            <span>关键词分析</span>
-          </button>
-          <button 
-            onClick={() => setActiveView('profit')}
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'profit' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <Calculator className="w-5 h-5" />
-            <span>利润计算器</span>
-          </button>
-        </nav>
+          {/*
+            用户明确要求（2026-09）：把老版几个模块挂回侧栏，放在「项目中心」下面，按此顺序：
+            市场大盘 → 竞品明细 → 用户洞察 → 关键词分析 → 利润计算器。
+            注意：这与线框图第 1 屏"关键词 / VOC / 竞对相关模块降为明细层、不入顶级导航"**冲突**，
+            属用户指示的临时回退，已记入 docs/ui-conformance-audit.md 与 PRD §15.18。
+            术语：此处按项目正式术语用「竞品明细」（禁用词表见 tests/terminology.test.ts）。
+          */}
+          <div className="pl-2 pt-1 mt-1 ml-3 space-y-0.5 border-l border-black/5">
+            <button
+              onClick={() => setActiveView('market')}
+              title="老版市场大盘（全市场）· 原样保留"
+              className={`w-full flex items-center space-x-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeView === 'market' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>市场大盘</span>
+            </button>
+            <button
+              onClick={() => setActiveView('competitors')}
+              title="老版竞品明细模块 · 原样保留"
+              className={`w-full flex items-center space-x-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeView === 'competitors' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            >
+              <Crosshair className="w-4 h-4" />
+              <span>竞品明细</span>
+            </button>
+            <button
+              onClick={() => setActiveView('insights')}
+              title="老版用户洞察 / 评论 VOC · 原样保留"
+              className={`w-full flex items-center space-x-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeView === 'insights' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            >
+              <Users className="w-4 h-4" />
+              <span>用户洞察</span>
+            </button>
+            <button
+              onClick={() => setActiveView('keywords')}
+              title="老版关键词分析 · 原样保留"
+              className={`w-full flex items-center space-x-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeView === 'keywords' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span>关键词分析</span>
+            </button>
+            <button
+              onClick={() => setActiveView('profit')}
+              title="独立工具 · 原样保留老版利润计算器"
+              className={`w-full flex items-center space-x-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeView === 'profit' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            >
+              <Calculator className="w-4 h-4" />
+              <span>利润计算器</span>
+            </button>
+          </div>
+</nav>
         <div className="p-4 border-t border-black/5 space-y-2">
           {isRegisteredUser && (
             <div className="flex items-stretch gap-1.5 px-2">
@@ -1407,12 +1594,32 @@ export default function App() {
         {/* Header */}
         <header className="bg-white/80 backdrop-blur-md border-b border-black/5 px-8 py-4 flex items-center justify-between z-10 sticky top-0">
           <div className="flex items-center space-x-4">
+            {activeProject && activeView !== 'projects' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveView('projects');
+                  // 回到"当初打开工具的那一个看"
+                  if (toolReturn && toolReturn.projectId === activeProject.id) {
+                    setFocusLook({ look: toolReturn.look, nonce: Date.now() });
+                  }
+                }}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-200 transition-all"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                {toolReturn && toolReturn.projectId === activeProject.id
+                  ? `返回 ${FIVE_LOOK_LABELS[toolReturn.look]}`
+                  : '返回项目'}
+              </button>
+            )}
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight text-[#1d1d1f]">
-                {activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品分析' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
+                {activeView === 'projects' ? '项目中心' : activeView === 'market' ? '市场大盘' : activeView === 'competitors' ? '竞品明细' : activeView === 'insights' ? '用户洞察' : activeView === 'keywords' ? '关键词分析' : '利润计算器'}
               </h1>
               <p className="text-[15px] text-[#86868b] mt-1">
-                {activeView === 'market' 
+                {activeView === 'projects'
+                  ? '创建并继续市调项目，跟踪五看进度与下一步。'
+                  : activeView === 'market' 
                   ? '分析市场趋势、竞争对手及产品机会。' 
                   : activeView === 'competitors'
                   ? '选定竞品 ASIN，从 Listing、流量、产品矩阵三视角全盘对比。'
@@ -1432,6 +1639,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3 shrink-0" data-print-hidden>
+            {activeView !== 'projects' && (
             <button
               type="button"
               onClick={handleExportPdf}
@@ -1440,6 +1648,7 @@ export default function App() {
               <Printer className="w-4 h-4 text-indigo-600" />
               存为 PDF
             </button>
+            )}
             {activeView === 'market' && isDataLoaded && (
             <div className="flex items-center space-x-4">
               {/* Market Segmentation Button */}
@@ -1495,7 +1704,7 @@ export default function App() {
                 <div className="flex items-center gap-2 text-sm text-indigo-800">
                   <Sparkles className="w-4 h-4 shrink-0" />
                   <span>
-                    当前为<strong>示例</strong>：含 ASIN 主图、销量趋势、评论、关键词洞察与竞品对比，可直接点左侧各板块预览。
+                    当前为<strong>示例</strong>：含 ASIN 主图、销量趋势、评论、关键词洞察与竞品明细，可直接点左侧各板块预览。
                     上传你自己的市场数据即可切换为工作台。
                   </span>
                 </div>
@@ -1509,6 +1718,35 @@ export default function App() {
               </div>
             </div>
           )}
+          {activeView === 'projects' && (activeProject ? (
+            <ProjectWorkspace
+              userId={currentUser?.id ?? ''}
+              project={activeProject}
+              username={currentUser?.username ?? ''}
+              marketContext={marketContext}
+              userContext={userContext}
+              competitorContext={competitorContext}
+              onBack={() => { setActiveProject(null); setToolReturn(null); }}
+              onOpenTool={(view, look) => { setActiveView(view); setToolReturn({ projectId: activeProject.id, look }); }}
+              focusLook={focusLook?.look ?? null}
+              focusNonce={focusLook?.nonce ?? 0}
+              onLoadDemo={() => applyDemoWorkspace({ toastMsg: true })}
+              onOpenSettings={() => setIsAvatarSettingsOpen(true)}
+              onSendToComparison={sendAsinsToComparison}
+              onOpenMarketSegment={(segment) => {
+                setMarketSegmentFocus(segment);
+                setActiveView('market');
+                if (activeProject) setToolReturn({ projectId: activeProject.id, look: 'market' });
+              }}
+              onOpenUserInsights={() => {
+                setActiveView('insights');
+                if (activeProject) setToolReturn({ projectId: activeProject.id, look: 'competitor' });
+              }}
+              onProjectChange={(updated) => setActiveProject(updated)}
+            />
+          ) : (
+            <ProjectCenter userId={currentUser?.id ?? ''} username={currentUser?.username ?? ''} marketContext={marketContext} userContext={userContext} competitorContext={competitorContext} onOpenProject={setActiveProject} />
+          ))}
           {!isDataLoaded && activeView === 'market' ? (
             <div className="h-full flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-700">
               <div className="text-center space-y-2">
@@ -1527,6 +1765,25 @@ export default function App() {
             <>
               {activeView === 'market' && isDataLoaded &&
                 <div className="max-w-7xl mx-auto space-y-8" data-annotate-anchor="market-root">
+                {/* 线框图 Screen 4 ⑤：从看市场点「查看完整大盘」带过来的筛选上下文 */}
+                {marketSegmentFocus && (
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 flex flex-wrap items-center gap-2">
+                    <Layers className="w-4 h-4 text-indigo-600" />
+                    <span className="text-sm font-semibold text-indigo-800">
+                      当前：{marketSegmentFocus}（来自看市场 · 已选中该细分）
+                    </span>
+                    <span className="text-[11px] text-indigo-700/80">
+                      本页为老版「市场大盘」整页复用；要按细分筛选请用下方「细分」筛选器，或切到全市场。
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setMarketSegmentFocus(null)}
+                      className="ml-auto rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:border-indigo-400"
+                    >
+                      切到全市场（清除筛选）
+                    </button>
+                  </div>
+                )}
                 {/* KPI Cards Header */}
                 <div className="flex flex-col space-y-4" data-annotate-anchor="market-kpi-header">
                   {/* ── Market Scorecard（默认隐藏，设置 → 功能开关 中开启） ── */}
@@ -1714,7 +1971,7 @@ export default function App() {
                           return;
                         }
                         setActiveView('competitors');
-                        toast.success(`已带入 ${selectedCompareAsins.length} 个 ASIN 到竞品对比`);
+                        toast.success(`已带入 ${selectedCompareAsins.length} 个 ASIN 到竞品明细`);
                       }}
                       maxSelect={5}
                     />
@@ -1734,12 +1991,14 @@ export default function App() {
                     marketplaceCode={marketplace.code}
                     domain={marketplace.domain}
                     preselectedAsins={selectedCompareAsins}
+                    preselectedResultTab={competitorResultTab}
+                    resultTabRequestKey={competitorResultTabNonce}
                     demoSnapshot={isDemoData ? competitorDemo : null}
                     userId={currentUser?.id || 'guest'}
                     workspaceFromParent={competitorWorkspace}
                     workspaceRestoreKey={competitorRestoreKey}
                     restorePayload={competitorRestorePayload}
-                    onWorkspaceSync={setCompetitorWorkspace}
+                    onWorkspaceSync={handleCompetitorWorkspaceSync}
                   />
                 </div>
               )}
