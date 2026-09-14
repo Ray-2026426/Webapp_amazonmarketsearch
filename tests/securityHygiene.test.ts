@@ -166,5 +166,28 @@ test('自检接口会报告"是否配了邀请码"（管理员能一眼看出线
   assert(/线上注册已关闭/.test(shared), '未配置时要在 warnings 里说清楚后果');
 });
 
+console.log('安全守卫：数据库迁移状态可自检（不靠猜）');
+
+test('管理员自检逐表探测，并给出"要不要迁移"的结论与补法', () => {
+  const api = read('api/admin/[action].ts');
+  assert(api.includes('EXPECTED_TABLES'), '必须维护期望表清单');
+  for (const t of ['projects', 'project_members', 'project_assets', 'usage_events', 'audit_events', 'pool_cache']) {
+    assert(api.includes(`name: '${t}'`), `期望表清单缺少 ${t}`);
+  }
+  assert(api.includes('all_in_one.sql'), '必须告诉用户跑哪个文件');
+  assert(/无需迁移/.test(api), '齐了要明说"无需迁移"');
+  assert(/missingRequired/.test(api), '必须区分必建表与可选表');
+
+  const panel = read('src/components/AdminConsolePanel.tsx');
+  assert(panel.includes('数据库表'), '管理员后台必须显示表状态');
+  assert(panel.includes('要不要跑迁移'), '标题要说人话');
+});
+
+test('数据库自检不得回显任何表内数据（只回状态）', () => {
+  const api = read('api/admin/[action].ts');
+  assert(/head: true/.test(api), '探测应该用 head:true，不取任何行');
+  assert(!/return json\(res, 200, \{[\s\S]*rows/.test(api.split('async function tableStatus')[1]?.split('async function health')[0] ?? ''), '表自检不得返回行数据');
+});
+
 console.log(`\nresult: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -28,6 +28,61 @@ function maskKeyLocal(value: string): string {
 }
 
 /** 环境自检（§11.4「环境自检」+ §2.5-4 的根治）：只回状态与指纹，不回值 */
+/**
+ * 数据库表自检（回答"我到底要不要跑迁移"）。
+ *
+ * 背景：用户不确定 Supabase 那几张表建没建。猜没用 —— 直接逐表探测：
+ * 用 `select ... head:true` 拿一行，出错（PostgREST 的 42P01 = 表不存在）就是没建。
+ * 只回"表名 + 建没建 + 错误码"，不含任何数据内容。
+ */
+const EXPECTED_TABLES = [
+  { name: 'projects', migration: '001', required: true, why: '项目与五看数据' },
+  { name: 'project_members', migration: '002/006', required: true, why: '项目成员与权限' },
+  { name: 'project_assets', migration: '007', required: false, why: '报告资产（缺失只影响资产上传）' },
+  { name: 'usage_events', migration: '008', required: false, why: '用量记账（缺失则用量统计为空）' },
+  { name: 'audit_events', migration: '008', required: false, why: '审计日志（缺失则审计为空）' },
+  { name: 'pool_cache', migration: '009', required: false, why: '数据池缓存（缺失则退化为进程内缓存，成本变高）' },
+] as const;
+
+async function tableStatus(): Promise<{
+  client: 'service_role' | 'none';
+  tables: { name: string; ok: boolean; migration: string; required: boolean; why: string; error?: string }[];
+  missingRequired: string[];
+  hint: string;
+}> {
+  const s = getServiceSupabase();
+  const tables: { name: string; ok: boolean; migration: string; required: boolean; why: string; error?: string }[] = [];
+  if (!s) {
+    return {
+      client: 'none',
+      tables: EXPECTED_TABLES.map((t) => ({ name: t.name, ok: false, migration: t.migration, required: t.required, why: t.why, error: '未配置 SERVICE_ROLE_KEY，无法探测' })),
+      missingRequired: [],
+      hint: '未配置 SUPABASE_SERVICE_ROLE_KEY：服务端读不了数据库，先在 Vercel 配好这个变量',
+    };
+  }
+  for (const t of EXPECTED_TABLES) {
+    try {
+      const { error } = await s.from(t.name).select('*', { count: 'exact', head: true }).limit(1);
+      tables.push({ name: t.name, ok: !error, migration: t.migration, required: t.required, why: t.why, error: error?.message });
+    } catch (e) {
+      tables.push({ name: t.name, ok: false, migration: t.migration, required: t.required, why: t.why, error: e instanceof Error ? e.message : 'unknown' });
+    }
+  }
+  const missingRequired = tables.filter((t) => !t.ok && t.required).map((t) => t.name);
+  const missingOptional = tables.filter((t) => !t.ok && !t.required).map((t) => t.name);
+  return {
+    client: 'service_role',
+    tables,
+    missingRequired,
+    hint:
+      missingRequired.length > 0
+        ? `必建表缺失：${missingRequired.join('、')} —— 必须去 Supabase SQL Editor 执行 supabase/migrations/all_in_one.sql`
+        : missingOptional.length > 0
+          ? `核心表齐全；可选表缺失：${missingOptional.join('、')}（跑一次 all_in_one.sql 即可补上，不跑也能用）`
+          : '所有表齐全，无需迁移',
+  };
+}
+
 async function health(_req: VercelRequest, res: VercelResponse) {
   const s = getServiceSupabase();
   let supabase: { configured: boolean; reachable: boolean; error?: string } = { configured: Boolean(s), reachable: false };
@@ -40,14 +95,22 @@ async function health(_req: VercelRequest, res: VercelResponse) {
     }
   }
   const providers = ['SELLERSPRITE_SECRET_KEY', 'XYDC_SECRET_KEY', 'LINGXING_SECRET_KEY', 'SORFTIME_SECRET_KEY', 'DEEPSEEK_API_KEY'] as const;
+  let database: Awaited<ReturnType<typeof tableStatus>> | null = null;
+  try {
+    database = await tableStatus();
+  } catch (e) {
+    database = null;
+  }
   return json(res, 200, {
     ok: true,
     checkedAt: new Date().toISOString(),
     supabase,
+    database,
     env: {
       APP_JWT_SECRET: describeCheck(env('APP_JWT_SECRET')),
       ADMIN_EMAILS: describeCheck(env('ADMIN_EMAILS'), { count: env('ADMIN_EMAILS').split(',').filter(Boolean).length }),
       SERVICE_ROLE_KEY: describeCheck(env('SUPABASE_SERVICE_ROLE_KEY')),
+      SIGNUP_INVITE_CODE: describeCheck(process.env.SIGNUP_INVITE_CODE),
     },
     providers: Object.fromEntries(providers.map((p) => [p, describeCheck(env(p))])),
     note: '只返回"是否已配置 + 指纹"，不回显任何密钥值（M5 安全加固）',

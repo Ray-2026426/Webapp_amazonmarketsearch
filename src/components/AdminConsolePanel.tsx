@@ -25,6 +25,13 @@ interface HealthPayload {
   error?: string;
   checkedAt?: string;
   supabase?: { configured: boolean; reachable: boolean; error?: string };
+  /** 数据库表自检（回答"要不要跑迁移"）：逐表探测 + 缺失清单 + 该怎么补 */
+  database?: {
+    client: 'service_role' | 'none';
+    tables: { name: string; ok: boolean; migration: string; required: boolean; why: string; error?: string }[];
+    missingRequired: string[];
+    hint: string;
+  } | null;
   env?: Record<string, { configured: boolean; fingerprint?: string; count?: number }>;
   providers?: Record<string, { configured: boolean; fingerprint?: string }>;
   note?: string;
@@ -194,6 +201,25 @@ export function AdminConsolePanel() {
                 </div>
               </div>
             </div>
+            <div className="rounded-xl border border-black/8 bg-white px-3 py-2">
+              <p className="text-[11px] font-semibold text-[#424245]">数据库表（要不要跑迁移，看这里）</p>
+              <p className="text-[11px] text-[#86868b] mt-0.5">{health.database?.hint || '未取到表状态'}</p>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {(health.database?.tables ?? []).map((t) => (
+                  <StatusPill
+                    key={t.name}
+                    ok={t.ok}
+                    label={`${t.name} ${t.ok ? '已建' : t.required ? '缺失（必建）' : '缺失（可选）'} · 迁移 ${t.migration}`}
+                  />
+                ))}
+              </div>
+              {health.database?.tables?.some((t) => !t.ok) && (
+                <p className="text-[10px] text-[#86868b] mt-1.5">
+                  补迁移：Supabase → SQL Editor → 执行仓库里的 <code className="font-mono">supabase/migrations/all_in_one.sql</code>（可重复执行）。
+                </p>
+              )}
+            </div>
+
             <div className="rounded-xl border border-black/8 bg-white px-3 py-2">
               <p className="text-[11px] font-semibold text-[#424245]">数据池 provider（服务端密钥）</p>
               <div className="mt-1 flex flex-wrap gap-2">
