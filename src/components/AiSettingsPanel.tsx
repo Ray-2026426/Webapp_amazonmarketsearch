@@ -42,6 +42,11 @@ import { SystemDiagnosticsPanel } from './SystemDiagnosticsPanel';
 import { AdminConsolePanel } from './AdminConsolePanel';
 import { TeamSettingsPanel } from './TeamSettingsPanel';
 import { getCurrentUser, isAdminSession } from '../utils/auth';
+import {
+  decideAiTransport,
+  providerEndpointFact,
+  providerRequiresCustomUrl,
+} from '../utils/aiEndpoints';
 import { Select } from './ui/Select';
 
 type SettingsTab = 'api' | 'profile' | 'mcp' | 'features' | 'prompts' | 'diagnostics' | 'admin' | 'team';
@@ -259,12 +264,33 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     onClose();
   };
 
-  const defaultApiUrl = cfg.baseUrl;
   const trimmedApiUrl = currentApiUrl.trim().replace(/\/+$/, '');
   const resolvedApiUrl = trimmedApiUrl ? resolveCustomApiUrl(currentApiUrl, provider) : '';
   const urlWillAutoComplete = Boolean(trimmedApiUrl && resolvedApiUrl !== trimmedApiUrl);
   const urlLooksIncomplete = Boolean(trimmedApiUrl && isBareDomainUrl(currentApiUrl));
   const suggestedApiUrl = trimmedApiUrl ? suggestFullApiUrl(currentApiUrl, provider) : '';
+
+  /**
+   * 请求地址的"说真话"区块（用户诉求：默认要对应大模型的地址、可以改、能接第三方中转）。
+   * 三个事实必须同屏可见，否则用户根本不知道自己的请求会打到哪里：
+   * 1. 厂商官方地址；
+   * 2. **本站默认转发实际会打到的地址**（内置 8 个里 7 个是官方，DeepSeek 是第三方中转 openrouter.fans）；
+   * 3. 这次请求实际走哪条通道（同源代理 / 服务端转发 / 浏览器直连）与原因。
+   */
+  const endpointFact = providerEndpointFact(provider);
+  const isCustomProvider = providerRequiresCustomUrl(provider);
+  const defaultIsNotOfficial = !isCustomProvider && endpointFact.proxyTarget !== endpointFact.officialUrl;
+  const transport = decideAiTransport({ customUrl: currentApiUrl });
+  const transportLabel: Record<string, string> = {
+    proxy: '本站同源转发（默认）',
+    relay: '经本站服务端转发',
+    direct: '浏览器直连',
+  };
+  const effectiveAddress = trimmedApiUrl
+    ? urlLooksIncomplete
+      ? resolvedApiUrl || suggestedApiUrl
+      : resolvedApiUrl || trimmedApiUrl
+    : `${endpointFact.proxyTarget}（本站默认转发目标）`;
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
     { id: 'api', label: 'API 与模型', icon: <Cpu className="w-4 h-4" /> },
@@ -401,9 +427,86 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                   <Globe className="w-4 h-4 text-indigo-600" />
                   API 请求地址
                 </label>
+
+                {/* 事实区：官方地址 / 本站默认实际转发目标 / 这次会走哪条通道 —— 同屏可见，不藏在 tooltip 里 */}
+                <div className="rounded-xl border border-black/5 bg-[#f5f5f7] p-3 space-y-1.5">
+                  {isCustomProvider ? (
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                      <span className="text-[#86868b]">这个供应商没有默认地址</span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-semibold">
+                        必须自己填请求地址与模型名
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                        <span className="text-[#86868b]">官方地址</span>
+                        <code className="font-mono text-[#1d1d1f] break-all">{endpointFact.officialUrl}</code>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                        <span className="text-[#86868b]">本站默认转发到</span>
+                        <code className="font-mono text-[#1d1d1f] break-all">{endpointFact.proxyTarget}</code>
+                        {defaultIsNotOfficial && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold">不是官方地址</span>
+                        )}
+                      </div>
+                    </>
+                  )}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                    <span className="text-[#86868b]">本次实际请求</span>
+                    <code className="font-mono text-indigo-700 break-all">{effectiveAddress}</code>
+                    <span className="px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-semibold">
+                      {transportLabel[transport.transport] ?? transport.transport}
+                    </span>
+                  </div>
+                </div>
+
+                {isCustomProvider && (
+                  <div className="p-3 bg-indigo-50/60 border border-indigo-100 rounded-xl space-y-1">
+                    <p className="text-xs text-indigo-900">
+                      填你中转站的 <b>Base URL</b>（例如 <code className="font-mono">https://relay.example.com/v1</code>）与
+                      <b>模型名</b>（按中转站给的名称，如 <code className="font-mono">gpt-4o-mini</code> / <code className="font-mono">deepseek-chat</code>），
+                      再用中转站发的 Key。请求按 <b>OpenAI 兼容</b>（<code className="font-mono">/chat/completions</code>）发送；
+                      如果对方是 Claude 原生格式的中转，需要它自己提供 OpenAI 兼容入口。
+                    </p>
+                    <p className="text-[11px] text-indigo-800">
+                      绝对地址由本站服务端转发（浏览器直连会被跨域拦住），你的 Key 只做一次性转发，不保存不记录。
+                    </p>
+                  </div>
+                )}
+
+                {defaultIsNotOfficial && !trimmedApiUrl && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                    <p className="text-xs text-amber-900">
+                      注意：该供应商本站默认走的是<b>第三方中转</b>
+                      <code className="mx-1 font-mono">{endpointFact.proxyTarget}</code>
+                      ，<b>不是官方地址</b>
+                      <code className="mx-1 font-mono">{endpointFact.officialUrl}</code>。
+                      这是既有配置（不是故障），但你有权知道，也可以改：
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setApiUrls((prev) => ({ ...prev, [provider]: endpointFact.officialUrl }));
+                          setTestResult(null);
+                          toast.success('已改用官方地址（会经本站服务端转发）');
+                        }}
+                        className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-semibold hover:bg-amber-700 transition-colors"
+                      >
+                        改用官方地址
+                      </button>
+                      <span className="text-[11px] text-amber-800 self-center">
+                        或用下面的输入框填你自己的中转地址
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <p className="text-xs text-[#86868b]">
-                  使用中转 API 时必填。留空则使用默认代理地址（
-                  <code className="bg-black/5 px-1.5 py-0.5 rounded text-indigo-600">{defaultApiUrl}</code>）。
+                  留空 = 使用本站默认转发（同源代理，不受浏览器跨域限制）。填第三方中转时，填 <b>Base URL</b> 或完整
+                  <code className="mx-1 bg-black/5 px-1.5 py-0.5 rounded">/v1</code> 地址都行，系统会自动补全到
+                  <code className="mx-1 bg-black/5 px-1.5 py-0.5 rounded">/chat/completions</code>。
                 </p>
                 <input
                   type="text"
@@ -412,9 +515,31 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                     setApiUrls(prev => ({ ...prev, [provider]: e.target.value }));
                     setTestResult(null);
                   }}
-                  placeholder="https://openrouter.fans/v1"
+                  placeholder="https://你的中转域名/v1"
                   className="w-full px-4 py-2.5 bg-[#f5f5f7] border border-black/5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
                 />
+                <div className="flex flex-wrap items-center gap-2">
+                  {trimmedApiUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setApiUrls((prev) => ({ ...prev, [provider]: '' }));
+                        setTestResult(null);
+                        toast.success('已清空：恢复使用本站默认转发');
+                      }}
+                      className="px-3 py-1.5 bg-white border border-black/10 rounded-lg text-xs font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700 transition-colors"
+                    >
+                      恢复默认（清空）
+                    </button>
+                  )}
+                  <span className="text-[11px] text-[#86868b]">{transport.reason}</span>
+                </div>
+                {transport.transport === 'relay' && (
+                  <p className="text-[11px] text-[#86868b]">
+                    你的 API Key 会经本站服务端转发到上面这个地址：<b>不保存、不记录、不写日志</b>，仅用于这一次请求。
+                    若你的中转本身允许浏览器跨域，也可以改走直连（需要你确认对方开启了 CORS）。
+                  </p>
+                )}
                 {urlWillAutoComplete && !urlLooksIncomplete && (
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
                     <p className="text-xs text-blue-800">

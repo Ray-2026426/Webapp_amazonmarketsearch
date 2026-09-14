@@ -48,3 +48,21 @@ export function redactSecrets<T extends Record<string, unknown>>(input: T): T {
   }
   return out as T;
 }
+
+/**
+ * 从**任意文本**里抹掉看起来像密钥的片段（上游返回的报错经常会把 Key 原样回显）。
+ * 与 `redactSecrets` 同一处实现、同一套口径，避免"两处各写一份掩码"。
+ *
+ * 抹掉的对象：
+ * - `Bearer xxx` / `Authorization: xxx` 这类鉴权头；
+ * - 常见 Key 前缀（`sk-`、`sk-ant-`、`AIza`、`github_pat_`、`mcp_`、`eyJ` 开头的 JWT）；
+ * - 长度 ≥ 24 的连续字母数字串（绝大多数真实 Key 都落在这里）。
+ */
+export function redactText(text: unknown): string {
+  let out = String(text ?? '');
+  out = out.replace(/(bearer\s+)[A-Za-z0-9._\-]{8,}/gi, '$1<已隐藏>');
+  out = out.replace(/(authorization["'\s:]+)[A-Za-z0-9._\-]{8,}/gi, '$1<已隐藏>');
+  out = out.replace(/\b(sk-[A-Za-z0-9._\-]{6,}|sk-ant-[A-Za-z0-9._\-]{6,}|AIza[A-Za-z0-9._\-]{10,}|github_pat_[A-Za-z0-9_]{10,}|mcp_[A-Za-z0-9._\-]{6,}|eyJ[A-Za-z0-9._\-]{10,})/g, '<已隐藏>');
+  out = out.replace(/\b[A-Za-z0-9]{24,}\b/g, '<已隐藏>');
+  return out;
+}

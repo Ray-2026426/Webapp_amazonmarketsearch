@@ -1,10 +1,11 @@
 import { buildUserBackgroundSystemPrompt } from './userBackground';
 import { getAuthToken, getCurrentUser, isAdminSession } from './auth';
+import { decideAiTransport } from './aiEndpoints';
 import { getDefaultServerKey, pushServerKeys } from './serverKeys';
 
 // AI Provider Configuration & Unified Call Layer
 
-export type AiProvider = 'gemini' | 'openai' | 'claude' | 'deepseek' | 'qwen' | 'moonshot' | 'zhipu' | 'doubao';
+export type AiProvider = 'gemini' | 'openai' | 'claude' | 'deepseek' | 'qwen' | 'moonshot' | 'zhipu' | 'doubao' | 'custom';
 
 export interface AiProviderConfig {
   id: AiProvider;
@@ -79,6 +80,19 @@ export const AI_PROVIDERS: AiProviderConfig[] = [
     defaultModel: 'doubao-seed-1-6-flash-250615',
     models: ['doubao-seed-1-6-flash-250615', 'doubao-seed-1-6-thinking-250715', 'doubao-1-5-pro-32k-250115', 'doubao-1-5-lite-32k-250115'],
     apiKeyPlaceholder: 'Volcengine Ark API Key',
+  },
+  {
+    /**
+     * 自定义 / 第三方中转（用户诉求："增加一个自定义配置，方便我增加第三方中转 api"）。
+     * 没有默认地址与默认模型：**必须**在设置里填 Base URL 与模型名。
+     * 走 OpenAI 兼容（`/chat/completions`）形态；地址是绝对地址时由本站服务端转发（绕开浏览器跨域）。
+     */
+    id: 'custom',
+    name: '自定义 / 第三方中转',
+    baseUrl: '',
+    defaultModel: '',
+    models: [],
+    apiKeyPlaceholder: '你的中转站 Key',
   },
 ];
 
@@ -501,6 +515,11 @@ export function buildEndpoint(settings: AiSettings, provider: AiProvider): strin
     return resolveCustomApiUrl(customUrl, provider);
   }
 
+  // 自定义供应商没有默认地址：宁可抛出明确错误，也不要拼出一个必然 404 的同源路径
+  if (provider === 'custom') {
+    throw new Error('自定义 / 第三方中转需要先填写「API 请求地址」与「模型名」（设置 → API 与模型）');
+  }
+
   const baseUrl = getProviderConfig(provider).baseUrl.replace(/\/+$/, '');
   if (provider === 'zhipu') {
     return `${baseUrl}/api/paas/v4/chat/completions`;
@@ -528,6 +547,62 @@ function buildRequestHeaders(settings: AiSettings): Record<string, string> {
 }
 
 // \u2500\u2500\u2500 OpenAI-Compatible (OpenAI / DeepSeek / Qwen / Moonshot / Zhipu) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+/**
+ * 发一次 OpenAI 兼容请求，并在必要时改走**本站服务端转发**。
+ *
+ * 为什么：用户在设置里填的第三方中转是绝对地址，浏览器直连会被 CORS 拦死
+ * （这正是内置供应商都走 `/api-proxy/*` 同源代理的原因）。通道由 `decideAiTransport` 判定：
+ * - `proxy` / `direct` → 保持原样，浏览器直接 `fetch`（**零回归**）；
+ * - `relay` → 交给 `POST /api/ai/chat`，由服务端代发（Key 只做一次性转发，不保存不记录）。
+ *
+ * 两种通道都归一化成同一种返回形状，所以上层的重试与错误话术完全共用，不会出现"直连能重试、转发不重试"。
+ */
+async function sendOpenAICompatOnce(
+  endpoint: string,
+  settings: AiSettings,
+  body: Record<string, unknown>,
+  headers: Record<string, string>
+): Promise<{ status: number; ok: boolean; text: string }> {
+  const decision = decideAiTransport({ customUrl: settings.apiUrls?.[settings.provider] });
+
+  if (decision.transport !== 'relay') {
+    const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+    return { status: res.status, ok: res.ok, text: await res.text() };
+  }
+
+  const token = getAuthToken() ?? '';
+  const res = await fetch('/api/ai/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      token,
+      url: endpoint,
+      shape: 'openai',
+      model: settings.model,
+      messages: body.messages,
+      apiKey: settings.apiKey,
+    }),
+  });
+  const raw = await res.text();
+  let parsed: { ok?: boolean; content?: string; error?: string } = {};
+  try {
+    parsed = JSON.parse(raw) as typeof parsed;
+  } catch {
+    /* 非 JSON（例如网关返回 HTML）→ 走下面的失败分支 */
+  }
+
+  if (res.ok && parsed.ok === true && typeof parsed.content === 'string') {
+    // 归一化成 OpenAI 兼容响应，交给同一个解析函数
+    return { status: 200, ok: true, text: JSON.stringify({ choices: [{ message: { content: parsed.content } }] }) };
+  }
+  const message = parsed.error || raw || '服务端转发失败';
+  return {
+    status: res.status && res.status >= 400 ? res.status : 502,
+    ok: false,
+    text: JSON.stringify({ error: { message } }),
+  };
+}
+
 async function callOpenAICompat(
   prompt: string,
   settings: AiSettings,
@@ -555,29 +630,23 @@ async function callOpenAICompat(
   const providerName = cfg.name || 'AI';
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+    const { status, ok, text } = await sendOpenAICompatOnce(endpoint, settings, body, headers);
 
-    if (res.ok) {
-      const text = await res.text();
+    if (ok) {
       return parseOpenAICompatResponse(text, endpoint);
     }
 
-    const text = await res.text();
     let errMsg = text;
     try {
       const errJson = JSON.parse(text);
       errMsg = errJson?.error?.message || errJson?.message || text;
     } catch {}
 
-    if (shouldRetry(res.status, errMsg, attempt, maxAttempts)) {
+    if (shouldRetry(status, errMsg, attempt, maxAttempts)) {
       await sleep(1200 * attempt);
       continue;
     }
-    throw new Error(normalizeAiError(providerName, res.status, errMsg));
+    throw new Error(normalizeAiError(providerName, status, errMsg));
   }
 
   throw new Error(`${providerName} 请求失败，请稍后重试。`);
@@ -619,29 +688,23 @@ async function callOpenAICompatWithImages(
   const providerName = cfg.name || 'AI';
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+    const { status, ok, text } = await sendOpenAICompatOnce(endpoint, settings, body, headers);
 
-    if (res.ok) {
-      const text = await res.text();
+    if (ok) {
       return parseOpenAICompatResponse(text, endpoint);
     }
 
-    const text = await res.text();
     let errMsg = text;
     try {
       const errJson = JSON.parse(text);
       errMsg = errJson?.error?.message || errJson?.message || text;
     } catch {}
 
-    if (shouldRetry(res.status, errMsg, attempt, maxAttempts)) {
+    if (shouldRetry(status, errMsg, attempt, maxAttempts)) {
       await sleep(1200 * attempt);
       continue;
     }
-    throw new Error(normalizeAiError(providerName, res.status, errMsg));
+    throw new Error(normalizeAiError(providerName, status, errMsg));
   }
 
   throw new Error(`${providerName} 视觉分析请求失败，请稍后重试。`);
@@ -663,6 +726,16 @@ export async function* streamText(
   const mergedSystem = mergeSystemPrompt(systemPrompt);
   const cfg = getProviderConfig(settings.provider);
   const endpoint = buildEndpoint(settings, settings.provider);
+
+  /**
+   * 走服务端转发时**不支持流式**（本站的转发接口只做一次性转发，不回 SSE）：
+   * 与其静默失败，不如退化成一次性返回（用户仍能拿到完整回答，只是没有逐字输出）。
+   */
+  if (decideAiTransport({ customUrl: settings.apiUrls?.[settings.provider] }).transport === 'relay') {
+    const text = await generateText(prompt, settings, { systemPrompt });
+    yield text;
+    return;
+  }
 
   const messages: { role: string; content: string }[] = [];
   if (mergedSystem) messages.push({ role: 'system', content: mergedSystem });
