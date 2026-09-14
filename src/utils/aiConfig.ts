@@ -51,8 +51,13 @@ export const AI_PROVIDERS: AiProviderConfig[] = [
     id: 'deepseek',
     name: 'DeepSeek',
     baseUrl: '/api-proxy/deepseek',
-    defaultModel: 'deepseek-chat',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    /**
+     * 默认模型与可选列表按官方**实际支持**的名字给。
+     * 依据：官方接口报错原文「The supported API model names are deepseek-flash, deepseek-v4-pro」
+     * （2026-09 用户实测；旧列表里的 deepseek-chat/deepseek-reasoner 已不被接受，会导致 400）。
+     */
+    defaultModel: 'deepseek-flash',
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
     apiKeyPlaceholder: 'sk-...',
   },
   {
@@ -191,7 +196,7 @@ export function loadAiSettings(): AiSettings | null {
     // \u56de\u9000\u5230 .env.local \u9ed8\u8ba4\u914d\u7f6e\uff0c\u65e0\u9700\u624b\u52a8\u8f93\u5165
     const defaultKey = canUseDefaultAiKey() ? getDefaultServerKey('deepseek') : '';
     const defaultProvider = (import.meta.env.VITE_DEFAULT_AI_PROVIDER ?? 'deepseek') as AiProvider;
-    const defaultModel = (import.meta.env.VITE_DEFAULT_AI_MODEL ?? 'deepseek-chat') as string;
+    const defaultModel = (import.meta.env.VITE_DEFAULT_AI_MODEL ?? 'deepseek-flash') as string;
     // 无密钥时也返回 DeepSeek 默认项，方便你在「AI 设置」里直接填 Key
     return {
       provider: defaultProvider,

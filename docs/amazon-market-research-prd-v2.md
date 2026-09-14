@@ -1416,6 +1416,31 @@ devApiPlugin 生成的 `.[action].ts.<pid>.<uuid>.tmpdir/*.tmp`，Windows 上抛
 
 ---
 
+### 15.17 AI 配置简化 + DeepSeek 默认改回官方（2026-09）
+
+**用户反馈（原话）**：「api设置的太复杂，我需要简单，傻瓜式操作，另外deepseek的默认路径不要是 https://openrouter.fans ，要改成deepseek官方，这些信息可以不用展示出来，信息爆炸了，需要简单，傻瓜式操作，选模型→填key→获取模型，选中模型。」
+
+**三处改动**：
+
+| # | 改动 | 落点 |
+| --- | --- | --- |
+| ① | **DeepSeek 默认改回官方**：`vercel.json` 的 `/api-proxy/deepseek` 转发目标 `openrouter.fans` → `api.deepseek.com`；`vite.config.ts` 的 dev 代理同步改；事实表 `proxyTarget` 也改为官方（`relayedByDefault` 标记随之取消，现在 8 个内置供应商**全部**等于官方地址） | `vercel.json`、`vite.config.ts`、`aiEndpoints.ts` |
+| ② | **模型名修正**：DeepSeek 的 `defaultModel` 由 `deepseek-chat` 改为 **`deepseek-flash`**，可选列表改为 `deepseek-flash` / `deepseek-v4-pro`。依据是官方报错原文「The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed deepseek-V4-flash」（用户实测；旧列表里的 `deepseek-chat`/`deepseek-reasoner` 已不被接受，会直接 400） | `aiConfig.ts` |
+| ③ | **设置页砍成四步**：① 选 AI 供应商 → ② 填 API Key → ③ 获取模型（点一个即选中）→ 当前使用下拉。Key 输入框**移到模型之前**（否则"获取模型"永远处于禁用态，用户会以为坏了）。原先占满屏的「官方地址 / 本站默认转发到 / 本次实际请求」三行事实、长段说明、恢复默认说明、直连开关、手动加模型，**全部收进「高级设置」折叠**（`<details>`），默认不展开 | `AiSettingsPanel.tsx` |
+
+**没有丢掉的诚实性**（只是不再喊）：
+- 「默认地址不是官方」的提示机制**保留**，但只在真的出现偏差时才显示（现在不会出现）；
+- Key 的数据流向说明保留在高级设置里；
+- 「浏览器直连」开关保留（用户截图中 `api.deepseek.com` 实测可跨域直连，这类用户可以选不经服务端）；
+- 「拉不到模型列表」时明确告知可手填，不卡死。
+
+**验证**：`tests/aiEndpoints.test.ts` 扩到 **32 条断言**。新增/改写 4 条关键守卫：① 所有内置供应商的默认目标必须等于官方地址、且**任何供应商都不得再出现 openrouter**；② `vercel.json` 与 `vite.config.ts` 必须与事实表一致（防"改了代码没改转发"）；③ DeepSeek 默认模型必须是官方实际支持的名字、`deepseek-chat`/`deepseek-reasoner` 不得回归；④ 设置页必须是三步顺序（含"Key 必须在获取模型之前"）+ 高级设置必须折叠 + 旧冗长文案不得回归。
+全量：`node tests/runAll.mjs` → **40 套件 / 407 断言 / 0 failed**；`tsc` 0；`vite build` 0。
+
+**⚠️ 需要用户注意的一件现实问题**：如果原来的 DeepSeek Key 是**那个中转站发的**（openrouter.fans），它换成官方地址后**一定用不了**，需要去 `platform.deepseek.com` 拿官方 Key。另外用户截图里上游返回 `Your api key: ****.com is invalid` —— Key 以 `.com` 结尾，说明 Key 框里存的可能是地址而不是 Key，需要核对。
+
+---
+
 ## 17. 国内底座迁移（后置，另行立项）
 
 > 用户已确认（§15.1-23）：现阶段沿用 Vercel + Supabase，先把 App 功能做好；国内迁移（免 VPN）在功能打磨完成后另行立项。

@@ -58,7 +58,7 @@ export default defineConfig(({ mode }) => {
           rewrite: (p: string) => p.replace(/^\/api-proxy\/openai/, ''),
         },
         '/api-proxy/deepseek': {
-          target: 'https://openrouter.fans',
+          target: 'https://api.deepseek.com',
           changeOrigin: true,
           rewrite: (p: string) => p.replace(/^\/api-proxy\/deepseek/, ''),
         },

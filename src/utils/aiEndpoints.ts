@@ -21,10 +21,12 @@ export interface AiEndpointFact {
   officialUrl: string;
   /**
    * **本站默认转发实际会打到的地址**。
-   * 前 7 个供应商等于官方地址；DeepSeek 因为历史原因指向第三方中转 openrouter.fans。
+   * 现在 8 个内置供应商全部等于官方地址（2026-09 用户要求把 DeepSeek 从第三方中转
+   * `openrouter.fans` 改回官方 `api.deepseek.com`）。
    *
    * ⚠️ 改这里的值必须**同时**改 `vercel.json` 的 rewrites 与 `vite.config.ts` 的 dev proxy，
-   * 否则线上与本地会各走各的（本模块只负责"如实描述"，不负责真正改写转发）。
+   * 否则线上与本地会各走各的（本模块只负责"如实描述"，不负责真正改写转发）；
+   * `tests/aiEndpoints.test.ts` 有一条测试专门盯着这两处必须一致。
    */
   proxyTarget: string;
   /** 本站默认走的是不是第三方中转（而不是厂商官方） */
@@ -39,8 +41,7 @@ export const AI_ENDPOINT_FACTS: Record<AiProvider, AiEndpointFact> = {
   claude: { officialUrl: 'https://api.anthropic.com', proxyTarget: 'https://api.anthropic.com' },
   deepseek: {
     officialUrl: 'https://api.deepseek.com',
-    proxyTarget: 'https://openrouter.fans',
-    relayedByDefault: true,
+    proxyTarget: 'https://api.deepseek.com',
   },
   qwen: { officialUrl: 'https://dashscope.aliyuncs.com', proxyTarget: 'https://dashscope.aliyuncs.com' },
   moonshot: { officialUrl: 'https://api.moonshot.cn', proxyTarget: 'https://api.moonshot.cn' },
@@ -62,7 +63,7 @@ export function providerEndpointFact(provider: AiProvider): AiEndpointFact {
   return AI_ENDPOINT_FACTS[provider];
 }
 
-/** 本站默认目标与官方地址不一致的供应商（当前只有 deepseek），界面上要显著提示 */
+/** 本站默认目标与官方地址不一致的供应商（用户已要求全部走官方，当前应为空） */
 export function providersWithNonOfficialDefault(): AiProvider[] {
   return (Object.keys(AI_ENDPOINT_FACTS) as AiProvider[]).filter(
     (p) => AI_ENDPOINT_FACTS[p].relayedByDefault === true

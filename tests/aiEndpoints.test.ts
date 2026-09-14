@@ -89,30 +89,44 @@ test('「自定义 / 第三方中转」必须能配出自己的地址（用户�
   assert(decideAiTransport({ customUrl: '' }).transport === 'proxy', '没填地址时判定为默认通道');
 });
 
-test('如实记录"默认走第三方中转"的供应商 —— 当前是 deepseek，且不是官方地址', () => {
+test('所有内置供应商的默认目标都必须等于官方地址（用户要求：DeepSeek 也走官方）', () => {
   const relayed = providersWithNonOfficialDefault();
-  assert(relayed.includes('deepseek'), 'deepseek 必须被标为默认走中转');
-  const fact = providerEndpointFact('deepseek');
-  assert(fact.relayedByDefault === true, 'deepseek 的 relayedByDefault 必须为 true');
-  assert(fact.proxyTarget !== fact.officialUrl, 'deepseek 的默认目标与官方地址必须不同（否则标记没意义）');
-  assert(fact.proxyTarget.includes('openrouter.fans'), `默认目标应指向 openrouter.fans，实际 ${fact.proxyTarget}`);
-  assert(fact.officialUrl === 'https://api.deepseek.com', `官方地址应为 api.deepseek.com，实际 ${fact.officialUrl}`);
-  // 其余 7 个必须与官方一致，否则界面提示会误导
+  assert(relayed.length === 0, `不应再有"默认走第三方中转"的供应商，实际：${relayed.join(', ')}`);
+
   for (const p of AI_PROVIDERS) {
-    if (p.id === 'deepseek') continue;
+    if (providerRequiresCustomUrl(p.id)) continue;
     const f = providerEndpointFact(p.id);
-    assert(f.proxyTarget === f.officialUrl, `${p.id} 的默认目标应等于官方地址`);
-    assert(!f.relayedByDefault, `${p.id} 不应被标为走中转`);
+    assert(f.proxyTarget === f.officialUrl, `${p.id} 的默认目标应等于官方地址：${f.proxyTarget} vs ${f.officialUrl}`);
+    assert(!f.proxyTarget.includes('openrouter'), `${p.id} 不应再指向 openrouter：${f.proxyTarget}`);
   }
+
+  const ds = providerEndpointFact('deepseek');
+  assert(ds.officialUrl === 'https://api.deepseek.com', `deepseek 官方地址应为 api.deepseek.com，实际 ${ds.officialUrl}`);
+  assert(ds.proxyTarget === 'https://api.deepseek.com', `deepseek 默认目标应改成官方，实际 ${ds.proxyTarget}`);
 });
 
-test('事实表与 vercel.json / vite.config.ts 的转发目标一致（防止改了代码没改转发）', () => {
+test('转发配置与事实表一致，且 DeepSeek 已从 openrouter.fans 改回官方', () => {
   const vercel = read('vercel.json');
-  assert(/api-proxy\/deepseek[\s\S]{0,80}openrouter\.fans/.test(vercel), 'vercel.json 的 deepseek 转发目标应仍是 openrouter.fans');
+  assert(!vercel.includes('openrouter'), 'vercel.json 里不应再出现 openrouter（用户明确要求改官方）');
+  assert(/api-proxy\/deepseek[\s\S]{0,80}api\.deepseek\.com/.test(vercel), 'vercel.json 的 deepseek 转发目标应是 api.deepseek.com');
   assert(/api-proxy\/openai[\s\S]{0,80}api\.openai\.com/.test(vercel), 'vercel.json 的 openai 转发目标应是 api.openai.com');
   assert(/api-proxy\/claude[\s\S]{0,80}api\.anthropic\.com/.test(vercel), 'vercel.json 的 claude 转发目标应是 api.anthropic.com');
+
   const vite = read('vite.config.ts');
-  assert(/api-proxy\/deepseek[\s\S]{0,120}openrouter\.fans/.test(vite), 'vite.config.ts 的 deepseek dev 代理目标应仍是 openrouter.fans');
+  assert(!vite.includes('openrouter'), 'vite.config.ts 的 dev 代理也不应再出现 openrouter');
+  assert(/api-proxy\/deepseek[\s\S]{0,120}api\.deepseek\.com/.test(vite), 'vite.config.ts 的 deepseek dev 代理目标应是 api.deepseek.com');
+});
+
+test('DeepSeek 的默认模型必须是官方实际支持的名字（旧列表会导致 400）', () => {
+  const ds = AI_PROVIDERS.find((p) => p.id === 'deepseek');
+  assert(ds, '应有 deepseek 供应商');
+  // 依据：官方报错原文「The supported API model names are deepseek-flash, deepseek-v4-pro」
+  assert(ds?.defaultModel === 'deepseek-flash', `默认模型应为 deepseek-flash，实际 ${ds?.defaultModel}`);
+  assert(JSON.stringify(ds?.models) === JSON.stringify(['deepseek-flash', 'deepseek-v4-pro']), `可选模型列表不对：${JSON.stringify(ds?.models)}`);
+  for (const dead of ['deepseek-chat', 'deepseek-reasoner']) {
+    assert(!(ds?.models ?? []).includes(dead), `已不被接受的模型名不应出现在列表里：${dead}`);
+    assert(ds?.defaultModel !== dead, `默认模型不能是 ${dead}`);
+  }
 });
 
 console.log('aiEndpoints：通道判定（proxy / relay / direct）');
@@ -225,10 +239,27 @@ test('服务端转发路由必须复用同一份校验（不许两边各写一�
 test('设置页不把绝对地址预填进输入框（避免静默把所有请求变成跨域）', () => {
   const panel = read('src/components/AiSettingsPanel.tsx');
   assert(!/value=\{officialUrl\}/.test(panel), '不得把官方地址直接作为输入框的 value');
-  assert(panel.includes('decideAiTransport'), '设置页应使用通道判定来说明实际会怎么发请求');
+  assert(panel.includes('decideAiTransport'), '设置页应使用通道判定');
   assert(panel.includes('providerRequiresCustomUrl'), '设置页应识别"必须自填地址"的供应商');
-  assert(panel.includes('本站默认转发到'), '必须把本站默认实际转发目标显示出来（deepseek 走中转这件事要可见）');
-  assert(panel.includes('不保存、不记录'), '走服务端转发时要如实说明 Key 的流向');
+  assert(panel.includes('不保存、不记录') || panel.includes('不经过本站服务端'), '要如实说明 Key 的流向');
+});
+
+test('设置页是四步傻瓜式流程，且不再信息爆炸', () => {
+  const panel = read('src/components/AiSettingsPanel.tsx');
+  // 四步按顺序出现
+  const i1 = panel.indexOf('① 选 AI 供应商');
+  const i2 = panel.indexOf('② 填 API Key');
+  const i3 = panel.indexOf('③ 获取模型');
+  assert(i1 > 0 && i2 > i1 && i3 > i2, `三步顺序不对：${i1}/${i2}/${i3}`);
+  // Key 必须在"获取模型"之前（否则按钮永远是禁用状态，用户会以为坏了）
+  assert(panel.indexOf('placeholder={cfg.apiKeyPlaceholder}') < i3, 'Key 输入框必须在「获取模型」之前');
+  // 进阶内容折叠起来
+  assert(panel.includes('<details'), '高级设置应折叠（details/summary）');
+  assert(panel.includes('高级设置（接第三方中转'), '折叠区要有明确标题');
+  // 旧的冗长文案不得回归
+  for (const dead of ['使用中转 API 时必填', '不同模型在速度、成本与能力上不同，请按供应商文档选择']) {
+    assert(!panel.includes(dead), `应已删除的冗长文案又回来了：${dead}`);
+  }
 });
 
 test('运行时真的会走转发：文本与视觉两条 AI 调用路径都经过同一判定', () => {
