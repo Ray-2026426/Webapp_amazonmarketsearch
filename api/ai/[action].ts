@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyToken, json } from '../auth/_shared.js';
 import { redactText } from '../../src/utils/keyMasking';
 import { validateRelayTarget } from '../../src/utils/aiEndpoints';
+import { parseModelsResponse } from '../../src/utils/aiModels';
 
 /**
  * AI 请求的服务端转发（`/api/ai/chat`）。
@@ -163,8 +164,60 @@ async function chat(req: VercelRequest, res: VercelResponse, body: ChatBody) {
   }
 }
 
+/**
+ * 取模型列表（`POST /api/ai/models`）。
+ * 与聊天转发同一套底线：必须登录、目标过 `validateRelayTarget`、Key 不保存不记录、错误脱敏。
+ * 只做 GET，且只回"模型名数组"，不回上游原文。
+ */
+async function models(req: VercelRequest, res: VercelResponse, body: ChatBody & { authStyle?: string; extraHeaders?: Record<string, string> }) {
+  const token = String(body.token || req.headers['x-auth-token'] || '');
+  const auth = await verifyToken(token);
+  if (!auth) return fail(res, 401, '未登录或登录已过期：自定义请求地址需要登录后才能由服务端转发');
+
+  const check = validateRelayTarget(String(body.url || ''));
+  if (!check.ok) {
+    const reason = check.reason;
+    return fail(res, 400, `请求地址被拒绝：${reason}`);
+  }
+
+  const apiKey = String(body.apiKey || '').trim();
+  if (!apiKey) return fail(res, 400, '缺少 API Key');
+
+  const authStyle = String(body.authStyle || 'bearer');
+  const extraHeaders = (body.extraHeaders ?? {}) as Record<string, string>;
+  const headers: Record<string, string> = { ...extraHeaders };
+  let target = check.url;
+  if (authStyle === 'bearer') headers.Authorization = `Bearer ${apiKey}`;
+  else if (authStyle === 'x-api-key') headers['x-api-key'] = apiKey;
+  else if (authStyle === 'query') {
+    target = `${target}${target.includes('?') ? '&' : '?'}key=${encodeURIComponent(apiKey)}`;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const upstream = await fetch(target, { method: 'GET', headers, signal: controller.signal });
+    const text = await upstream.text();
+    if (text.length > MAX_RESPONSE_BYTES) return fail(res, 502, `上游返回内容过大（${text.length} 字节）`);
+
+    const parsed = parseModelsResponse(upstream.status, text);
+    if (!parsed.ok) {
+      // parseModelsResponse 的提示里可能带上游原文 → 统一脱敏
+      return fail(res, upstream.status >= 400 ? upstream.status : 502, parsed.error);
+    }
+    return json(res, 200, { ok: true, models: parsed.models });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/abort/i.test(msg)) return fail(res, 504, '取模型列表超时（30s）');
+    return fail(res, 502, `取模型列表失败：${msg}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const handlers: Record<string, (req: VercelRequest, res: VercelResponse, body: ChatBody) => Promise<void>> = {
   chat,
+  models: models as (req: VercelRequest, res: VercelResponse, body: ChatBody) => Promise<void>,
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

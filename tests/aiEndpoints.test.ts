@@ -21,6 +21,12 @@ import {
   validateRelayTarget,
 } from '../src/utils/aiEndpoints';
 import { AI_PROVIDERS } from '../src/utils/aiConfig';
+import {
+  modelsAuthHeaders,
+  modelsUrlWithKey,
+  parseModelsResponse,
+  planModelsRequest,
+} from '../src/utils/aiModels';
 import { parseRelayUpstream } from '../api/ai/[action]';
 
 let passed = 0;
@@ -278,5 +284,111 @@ test('空返回与非 JSON 都能给出人话', () => {
   assert(!r.ok && r.error.includes('JSON'), `应提示不是 JSON：${r.error}`);
 });
 
+console.log('aiModels：获取模型列表（请求计划 + 各单位返回形状）');
+
+test('模型列表路径与鉴权方式逐家正确（这是"点一下列不出来"的高发点）', () => {
+  // OpenAI 兼容：/v1/models + Bearer
+  const openai = planModelsRequest({ provider: 'openai' });
+  assert(openai.url === '/api-proxy/openai/v1/models', `openai 路径不对：${openai.url}`);
+  assert(openai.authStyle === 'bearer', 'openai 应用 Bearer');
+  assert(openai.transport === 'proxy', '内置供应商默认走同源代理');
+
+  // 智谱：路径不同
+  const zhipu = planModelsRequest({ provider: 'zhipu' });
+  assert(zhipu.url.endsWith('/api/paas/v4/models'), `智谱路径不对：${zhipu.url}`);
+
+  // 豆包：v3 段在 base 里
+  const doubao = planModelsRequest({ provider: 'doubao' });
+  assert(doubao.url.endsWith('/api/v3/models'), `豆包路径不对：${doubao.url}`);
+
+  // Claude：x-api-key + anthropic-version
+  const claude = planModelsRequest({ provider: 'claude' });
+  assert(claude.authStyle === 'x-api-key', 'Claude 应用 x-api-key');
+  assert(claude.extraHeaders['anthropic-version'], 'Claude 必须带 anthropic-version');
+
+  // Gemini：Key 在 query
+  const gemini = planModelsRequest({ provider: 'gemini' });
+  assert(gemini.authStyle === 'query', 'Gemini 的 Key 应在 query');
+  assert(gemini.url.includes('/v1beta/models'), `Gemini 路径不对：${gemini.url}`);
+});
+
+test('Key 按各自方式落到正确位置', () => {
+  const bearer = modelsAuthHeaders(planModelsRequest({ provider: 'openai' }), 'sk-abc');
+  assert(bearer.Authorization === 'Bearer sk-abc', 'Bearer 方式不对');
+  const xkey = modelsAuthHeaders(planModelsRequest({ provider: 'claude' }), 'sk-ant-abc');
+  assert(xkey['x-api-key'] === 'sk-ant-abc', 'x-api-key 方式不对');
+  assert(xkey['anthropic-version'], 'Claude 的额外头不能丢');
+  const g = modelsUrlWithKey(planModelsRequest({ provider: 'gemini' }), 'AIza123');
+  assert(g.includes('key=AIza123'), `Gemini 的 Key 应拼进 query：${g}`);
+  // 非 query 方式不应改 URL
+  assert(modelsUrlWithKey(planModelsRequest({ provider: 'openai' }), 'sk-abc').includes('key=') === false, 'Bearer 方式不应改 URL');
+});
+
+test('填了自定义地址 → 取模型也走服务端转发（否则被 CORS 拦）', () => {
+  const plan = planModelsRequest({ provider: 'custom', customBaseUrl: 'https://relay.example.com/v1' });
+  assert(plan.transport === 'relay', `应判定为 relay，实际 ${plan.transport}`);
+  assert(plan.url.startsWith('https://relay.example.com/v1'), `地址不对：${plan.url}`);
+  assert(plan.note.includes('不保存'), '要如实说明 Key 的流向');
+});
+
+test('自定义供应商没填地址 → 明确让人先填，而不是拼一个坏地址', () => {
+  const plan = planModelsRequest({ provider: 'custom' });
+  assert(plan.url === '', '不应给出地址');
+  assert(plan.note.includes('请先填写'), `应提示先填地址：${plan.note}`);
+});
+
+test('解析：OpenAI 兼容 / Gemini / 纯数组 / 中转包装 四种形状都能认', () => {
+  const openai = parseModelsResponse(200, JSON.stringify({ data: [{ id: 'gpt-4o-mini' }, { id: 'gpt-4o' }] }));
+  assert(openai.ok && openai.models.length === 2, `OpenAI 形状没认出来：${openai.error}`);
+
+  const gemini = parseModelsResponse(200, JSON.stringify({ models: [{ name: 'models/gemini-2.0-flash' }] }));
+  assert(gemini.ok && gemini.models[0] === 'gemini-2.0-flash', `Gemini 应去掉 models/ 前缀：${gemini.models[0]}`);
+
+  const plain = parseModelsResponse(200, JSON.stringify(['a-model', 'b-model']));
+  assert(plain.ok && plain.models.length === 2, '纯数组没认出来');
+
+  const wrapped = parseModelsResponse(200, JSON.stringify({ data: { models: [{ id: 'x' }] } }));
+  assert(wrapped.ok && wrapped.models[0] === 'x', '中转包装形状没认出来');
+});
+
+test('解析：去重 + 排序 + 各类失败都给能照着改的中文', () => {
+  const dup = parseModelsResponse(200, JSON.stringify({ data: [{ id: 'b' }, { id: 'a' }, { id: 'b' }] }));
+  assert(dup.models.length === 2 && dup.models[0] === 'a', '应去重并排序');
+
+  const html = parseModelsResponse(200, '<!DOCTYPE html><html>welcome</html>');
+  assert(!html.ok && html.error.includes('/v1'), `首页当地址应给建议：${html.error}`);
+
+  const notJson = parseModelsResponse(502, 'Bad Gateway');
+  assert(!notJson.ok && notJson.error.includes('JSON'), '非 JSON 应说明');
+
+  const empty = parseModelsResponse(200, '');
+  assert(!empty.ok && empty.error.includes('空'), '空返回应说明');
+
+  const noList = parseModelsResponse(200, JSON.stringify({ foo: 'bar' }));
+  assert(!noList.ok && noList.error.includes('手动填写'), '无模型列表应提示可手填');
+
+  const err = parseModelsResponse(401, JSON.stringify({ error: { message: 'invalid api key' } }));
+  assert(!err.ok && err.error.includes('401'), '上游错误应带上状态');
+});
+
+console.log('aiModels：源码级守卫');
+
+test('界面有「获取模型」按钮，且与聊天共用同一通道判定', () => {
+  const panel = read('src/components/AiSettingsPanel.tsx');
+  assert(panel.includes('获取模型'), '必须有「获取模型」按钮');
+  assert(panel.includes('fetchAvailableModels'), '按钮应调用 fetchAvailableModels');
+  assert(panel.includes('planModelsRequest'), '应显示这次取模型会怎么发');
+  assert(!panel.includes("fetch('https://api.openai.com"), '界面不得绕过通道判定直连官方站点');
+
+  const cfg = read('src/utils/aiConfig.ts');
+  assert(cfg.includes("fetch('/api/ai/models'"), '转发通道应调用 /api/ai/models');
+
+  const route = read('api/ai/[action].ts');
+  assert(route.includes('parseModelsResponse'), '服务端解析必须复用同一份实现');
+  assert(/models,\s*\n?\s*chat|chat,\s*\n?\s*models/.test(route.replace(/\s+/g, ' ')) || route.includes('models:'), 'models action 必须注册');
+  assert(route.includes('validateRelayTarget'), '取模型列表同样要过 SSRF 校验');
+});
+
 console.log(`\nresult: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
+

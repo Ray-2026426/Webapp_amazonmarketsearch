@@ -1389,6 +1389,33 @@ devApiPlugin 生成的 `.[action].ts.<pid>.<uuid>.tmpdir/*.tmp`，Windows 上抛
 
 ---
 
+### 15.16 「获取模型」—— 填完 Key 点一下列出可用模型（2026-09）
+
+**用户诉求**：「当我填完key,我希望可以点击获取模型，然后我可以选择模型，类似于 CC SWITCH 中的设置。」
+
+**要解决的真问题**：模型名是用户最容易填错的东西（各家命名不同、中转站还常改）。但"列出模型"这个接口和聊天接口**不是一套规矩**，且**浏览器直连同样会被 CORS 拦**：
+
+| 供应商 | 取模型列表的路径 | Key 放哪 |
+| --- | --- | --- |
+| OpenAI / DeepSeek / Qwen / Moonshot / 豆包 / 自定义中转 | `GET {base}/v1/models`（豆包 `/api/v3/models`） | `Authorization: Bearer` |
+| 智谱 | `GET {base}/api/paas/v4/models` | `Authorization: Bearer` |
+| Claude | `GET {base}/v1/models` | `x-api-key` + `anthropic-version` |
+| Gemini | `GET {base}/v1beta/models` | **query `?key=`** |
+
+**实现**：
+- 新增 `src/utils/aiModels.ts`（纯逻辑，可测）：`planModelsRequest`（算出这次请求长什么样：路径 / 鉴权方式 / 通道 / 一句人话说明）、`modelsAuthHeaders`、`modelsUrlWithKey`、`parseModelsResponse`（**前端与服务端共用同一份解析**）。
+- `api/ai/[action].ts` 新增 `models` action：与聊天转发同一套底线（必须登录、目标过 `validateRelayTarget`、只做 GET、Key 不保存不记录、错误脱敏、响应上限、30s 超时）。
+- `aiConfig.fetchAvailableModels()`：**复用与聊天相同的通道判定** —— 内置供应商走同源代理；填了绝对地址则经 `/api/ai/models` 由服务端代取。
+- 设置页：模型选择框下方新增「**获取模型**」按钮（未填 Key 时禁用，并说明原因）；拉回来的模型渲染成标签，**点一个即选中**并自动写入「已获取 / 自定义模型」下拉，另有「全部加入可选列表」；失败时给出能照着改的中文，并明确告知"手填模型名照样能用"。
+
+**解析兼容四种返回形状**：OpenAI 兼容 `{data:[{id}]}`、Gemini `{models:[{name:'models/...'}]}`（自动去掉 `models/` 前缀）、纯数组、中转站常见包装 `{data:{models:[...]}}`；结果去重并排序。
+
+**验证**：`tests/aiEndpoints.test.ts` 扩到 **27 条断言**（新增 7 条：逐家路径与鉴权方式、Key 落位、自定义地址下判定为 relay、自定义供应商空地址时明确提示、四种返回形状、去重排序与五类失败提示、源码守卫）；全量 `node tests/runAll.mjs` → **40 套件 / 402 断言 / 0 failed**；`tsc` 0；`vite build` 0。并对**运行中的服务**端到端验证 `/api/ai/models`：未登录 401；`127.0.0.1` / `169.254.169.254` / `10.1.2.3` / `[::1]` / 内网短名 `nas` 全部 400 且带明确原因；合法地址真的去取、失败信息里没有 Key。
+
+**诚实边界**：中转站的模型列表接口不保证存在（很多自建中转不实现 `/models`）——所以"拉不到"是正常情况，界面必须允许手填且不卡死；这两点已写进界面文案与验收清单。
+
+---
+
 ## 17. 国内底座迁移（后置，另行立项）
 
 > 用户已确认（§15.1-23）：现阶段沿用 Vercel + Supabase，先把 App 功能做好；国内迁移（免 VPN）在功能打磨完成后另行立项。

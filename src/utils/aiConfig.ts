@@ -1,6 +1,12 @@
 import { buildUserBackgroundSystemPrompt } from './userBackground';
 import { getAuthToken, getCurrentUser, isAdminSession } from './auth';
 import { decideAiTransport } from './aiEndpoints';
+import {
+  modelsAuthHeaders,
+  modelsUrlWithKey,
+  parseModelsResponse,
+  planModelsRequest,
+} from './aiModels';
 import { getDefaultServerKey, pushServerKeys } from './serverKeys';
 
 // AI Provider Configuration & Unified Call Layer
@@ -708,6 +714,69 @@ async function callOpenAICompatWithImages(
   }
 
   throw new Error(`${providerName} 视觉分析请求失败，请稍后重试。`);
+}
+
+// ─── 获取模型列表（用户诉求：填完 Key 点一下，列出这个 Key 能用的模型再选） ──────────
+/**
+ * 用当前设置里的 Key 去取**可用模型列表**。
+ *
+ * 通道与聊天请求保持一致（`planModelsRequest` 给出）：
+ * - 内置供应商且没填自定义地址 → 走同源代理路径（浏览器直连，不受 CORS 限制）；
+ * - 填了绝对地址 → 交给 `POST /api/ai/models` 由服务端代取（浏览器官网直连会被 CORS 拦）。
+ * 两种通道的解析都用同一个纯函数 `parseModelsResponse`，不会出现"直连能解析、转发解析不了"。
+ */
+export async function fetchAvailableModels(
+  settings: AiSettings
+): Promise<{ ok: boolean; models: string[]; error: string }> {
+  const plan = planModelsRequest({
+    provider: settings.provider,
+    customBaseUrl: settings.apiUrls?.[settings.provider],
+  });
+
+  if (!plan.url) return { ok: false, models: [], error: plan.note || '请先填写请求地址' };
+
+  if (plan.transport === 'relay') {
+    try {
+      const res = await fetch('/api/ai/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: getAuthToken() ?? '',
+          url: plan.url,
+          authStyle: plan.authStyle,
+          extraHeaders: plan.extraHeaders,
+          apiKey: settings.apiKey,
+        }),
+      });
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text) as { ok?: boolean; models?: string[]; error?: string };
+        if (data.ok && Array.isArray(data.models)) return { ok: true, models: data.models, error: '' };
+        return { ok: false, models: [], error: data.error || `取模型列表失败（HTTP ${res.status}）` };
+      } catch {
+        return { ok: false, models: [], error: `取模型列表失败（HTTP ${res.status}）：${text.slice(0, 200)}` };
+      }
+    } catch (e) {
+      return { ok: false, models: [], error: e instanceof Error ? e.message : '取模型列表失败' };
+    }
+  }
+
+  const url = modelsUrlWithKey(plan, settings.apiKey);
+  const headers = modelsAuthHeaders(plan, settings.apiKey);
+  try {
+    const res = await fetch(url, { method: 'GET', headers });
+    const text = await res.text();
+    return parseModelsResponse(res.status, text);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      models: [],
+      error: /Failed to fetch|NetworkError/i.test(msg)
+        ? '取模型列表被浏览器拦住了（跨域）：请改用「自定义 / 第三方中转」并让它经本站服务端转发'
+        : `取模型列表失败：${msg}`,
+    };
+  }
 }
 
 // ─── Streaming (OpenAI-compatible only, for chatbot) ──────────────────────────

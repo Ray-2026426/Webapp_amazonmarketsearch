@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText, Plus, Globe, CloudDownload, ToggleLeft, UserRound, ShieldCheck, Users } from 'lucide-react';
+import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText, Plus, Globe, CloudDownload, ToggleLeft, UserRound, ShieldCheck, Users, RefreshCw, Loader2 } from 'lucide-react';
 import {
   AI_PROVIDERS,
   AiProvider,
@@ -11,8 +11,10 @@ import {
   isBareDomainUrl,
   suggestFullApiUrl,
   generateText,
+  fetchAvailableModels,
   sanitizeAiApiUrls,
 } from '../utils/aiConfig';
+import { planModelsRequest } from '../utils/aiModels';
 import {
   loadMcpSettings,
   saveMcpSettings,
@@ -81,6 +83,10 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   const [newCustomModelName, setNewCustomModelName] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
+  /** 「获取模型」：正在拉取 / 拉到的模型 / 失败原因（三者都在 hook 区，避免 hook 顺序问题） */
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [modelsError, setModelsError] = useState('');
 
   const [mcpProviders, setMcpProviders] = useState<McpProviderEntry[]>(() => {
     const loaded = loadMcpSettings().providers;
@@ -150,6 +156,40 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     }));
     if (model === name) {
       setModel(cfg.defaultModel);
+    }
+  };
+
+  /**
+   * 「获取模型」：用当前 Key 去问供应商有哪些可用模型，拉回来直接选。
+   * 通道由 `planModelsRequest` 决定（内置供应商走同源代理；填了绝对地址则经本站服务端转发，
+   * 否则浏览器直连会被跨域拦住）。切供应商/切地址时清空上次结果，避免张冠李戴。
+   */
+  const handleFetchModels = async () => {
+    const key = apiKey.trim();
+    if (!key) {
+      toast.error('请先填写 API Key');
+      return;
+    }
+    setFetchingModels(true);
+    setModelsError('');
+    setFetchedModels([]);
+    try {
+      const res = await fetchAvailableModels({
+        provider,
+        apiKey: key,
+        model,
+        apiUrls,
+        customModels,
+      });
+      if (!res.ok) {
+        setModelsError(res.error);
+        toast.error('没能取到模型列表，可手动填写模型名');
+        return;
+      }
+      setFetchedModels(res.models);
+      toast.success(`取到 ${res.models.length} 个可用模型，点一个即选中`);
+    } finally {
+      setFetchingModels(false);
     }
   };
 
@@ -280,6 +320,8 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   const endpointFact = providerEndpointFact(provider);
   const isCustomProvider = providerRequiresCustomUrl(provider);
   const defaultIsNotOfficial = !isCustomProvider && endpointFact.proxyTarget !== endpointFact.officialUrl;
+  /** 取模型列表这次请求会怎么发（同源代理 / 服务端转发），用于给用户一句人话说明 */
+  const modelPlan = planModelsRequest({ provider, customBaseUrl: currentApiUrl });
   const transport = decideAiTransport({ customUrl: currentApiUrl });
   const transportLabel: Record<string, string> = {
     proxy: '本站同源转发（默认）',
@@ -375,7 +417,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                   groups={
                     currentCustomModels.length > 0
                       ? [{
-                          label: '自定义模型',
+                          label: '已获取 / 自定义模型',
                           options: currentCustomModels.map((m) => ({ value: m, label: m })),
                         }]
                       : undefined
@@ -384,6 +426,79 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                   className="w-full"
                   aria-label="模型"
                 />
+
+                {/* 获取模型：填完 Key 点一下，让供应商告诉我们这个 Key 能用哪些模型，然后直接选 */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleFetchModels}
+                    disabled={fetchingModels || !apiKey.trim()}
+                    title={!apiKey.trim() ? '请先填写 API Key' : '用这个 Key 去问供应商有哪些可用模型'}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {fetchingModels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                    {fetchingModels ? '获取中…' : '获取模型'}
+                  </button>
+                  <span className="text-[11px] text-[#86868b]">
+                    {!apiKey.trim()
+                      ? '先填 API Key，再点「获取模型」'
+                      : modelPlan.note || '用当前 Key 拉取可用模型列表'}
+                  </span>
+                </div>
+
+                {modelsError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl">
+                    <p className="text-xs text-rose-800 break-all">{modelsError}</p>
+                    <p className="text-[11px] text-rose-700 mt-1">
+                      拉到列表不是必须的：也可以直接在上面手填模型名（按供应商文档）。
+                    </p>
+                  </div>
+                )}
+
+                {fetchedModels.length > 0 && (
+                  <div className="p-3 bg-[#f5f5f7] rounded-xl border border-black/5 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-[#1d1d1f]">
+                        可用模型（{fetchedModels.length} 个，点一个即选中）
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const merged = Array.from(new Set([...currentCustomModels, ...fetchedModels]));
+                          setCustomModels((prev) => ({ ...prev, [provider]: merged }));
+                          toast.success(`已把 ${fetchedModels.length} 个模型加入可选列表`);
+                        }}
+                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                      >
+                        全部加入可选列表
+                      </button>
+                    </div>
+                    <div className="max-h-52 overflow-y-auto flex flex-wrap gap-1.5">
+                      {fetchedModels.map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => {
+                            setModel(m);
+                            setCustomModels((prev) => ({
+                              ...prev,
+                              [provider]: Array.from(new Set([...(prev[provider] ?? []), m])),
+                            }));
+                            setTestResult(null);
+                            toast.success(`已选择模型：${m}`);
+                          }}
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                            model === m
+                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              : 'bg-white text-[#1d1d1f] border-black/10 hover:border-indigo-300 hover:bg-indigo-50'
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-2 p-3 bg-[#f5f5f7] rounded-xl border border-black/5">
                   <div className="flex items-center gap-2">
