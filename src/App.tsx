@@ -1473,23 +1473,55 @@ export default function App() {
             <FolderKanban className="w-5 h-5" />
             <span>项目中心</span>
           </button>
-          {/* M1：全局独立工具（原样照搬老版，不进任何项目）。见 PRD §5.1 / §5.3 */}
-          <button
-            onClick={() => setActiveView('profit')}
-            title="独立工具 · 原样保留老版利润计算器，不进入任何项目"
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'profit' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <Calculator className="w-5 h-5" />
-            <span>利润计算器</span>
-          </button>
-          <button
-            onClick={() => setActiveView('market')}
-            title="独立工具 · 老版市场大盘（全市场），原样保留、不做改变"
-            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl font-medium transition-colors ${activeView === 'market' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
-          >
-            <BarChart3 className="w-5 h-5" />
-            <span>市场大盘 · 全市场</span>
-          </button>
+          {/*
+            用户明确要求（2026-09）：把老版几个模块挂回侧栏，放在「项目中心」下面，按此顺序：
+            市场大盘 → 竞品明细 → 用户洞察 → 关键词分析 → 利润计算器。
+            注意：这与线框图第 1 屏"关键词 / VOC / 竞对相关模块降为明细层、不入顶级导航"**冲突**，
+            属用户指示的临时回退，已记入 docs/ui-conformance-audit.md 与 PRD §15.18。
+            术语：此处按项目正式术语用「竞品明细」（禁用词表见 tests/terminology.test.ts）。
+          */}
+          <div className="pl-2 pt-1 mt-1 ml-3 space-y-0.5 border-l border-black/5">
+            <button
+              onClick={() => setActiveView('market')}
+              title="老版市场大盘（全市场）· 原样保留"
+              className={`w-full flex items-center space-x-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeView === 'market' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>市场大盘</span>
+            </button>
+            <button
+              onClick={() => setActiveView('competitors')}
+              title="老版竞品明细模块 · 原样保留"
+              className={`w-full flex items-center space-x-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeView === 'competitors' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            >
+              <Crosshair className="w-4 h-4" />
+              <span>竞品明细</span>
+            </button>
+            <button
+              onClick={() => setActiveView('insights')}
+              title="老版用户洞察 / 评论 VOC · 原样保留"
+              className={`w-full flex items-center space-x-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeView === 'insights' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            >
+              <Users className="w-4 h-4" />
+              <span>用户洞察</span>
+            </button>
+            <button
+              onClick={() => setActiveView('keywords')}
+              title="老版关键词分析 · 原样保留"
+              className={`w-full flex items-center space-x-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeView === 'keywords' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span>关键词分析</span>
+            </button>
+            <button
+              onClick={() => setActiveView('profit')}
+              title="独立工具 · 原样保留老版利润计算器"
+              className={`w-full flex items-center space-x-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeView === 'profit' ? 'bg-indigo-50 text-indigo-700' : 'text-[#86868b] hover:bg-[#f5f5f7] hover:text-[#1d1d1f]'}`}
+            >
+              <Calculator className="w-4 h-4" />
+              <span>利润计算器</span>
+            </button>
+          </div>
 </nav>
         <div className="p-4 border-t border-black/5 space-y-2">
           {isRegisteredUser && (
