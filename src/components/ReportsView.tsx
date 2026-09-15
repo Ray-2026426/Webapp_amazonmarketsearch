@@ -111,7 +111,7 @@ export function ReportsView({
         <Card className="py-12 text-center">
           <FileText className="w-6 h-6 text-[#c7c7cc] mx-auto mb-2" />
           <p className="text-sm text-[#aeaeb2]">暂无报告</p>
-          <p className="text-xs text-[#c7c7cc] mt-1">生成报告后会自动归档到这里</p>
+          <p className="text-xs text-[#c7c7cc] mt-1">用五看工具生成的报告会自动汇总到这里</p>
         </Card>
       ) : (
         sorted.map((r) => (

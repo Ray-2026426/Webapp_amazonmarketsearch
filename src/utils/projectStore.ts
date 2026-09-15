@@ -298,19 +298,13 @@ export function applyLookProgressUpdate(
   return { fiveLookProgress, status };
 }
 
-export async function archiveProject(
-  userId: string,
-  projectId: string
-): Promise<ResearchProject | null> {
-  return updateProject(userId, projectId, { status: 'archived' });
-}
-
-export async function restoreProject(
-  userId: string,
-  projectId: string
-): Promise<ResearchProject | null> {
-  return updateProject(userId, projectId, { status: 'draft' });
-}
+/**
+ * 归档 / 恢复项目 —— **已于 2026-09 按用户要求移除**（见 PRD §15.20）。
+ *
+ * 为什么删而不是留着不用：它和"服务少量深度项目、不做项目组合管理"的产品原则冲突，
+ * 代价是多一个状态、两个按钮、一个筛选项，还让归档项目默认从列表消失（用户会以为项目丢了）。
+ * 历史遗留的 `status: 'archived'` 数据**不会丢**：界面已不再按它过滤，那些项目会重新出现在列表里。
+ */
 
 export async function duplicateProject(
   userId: string,
@@ -366,7 +360,8 @@ export async function deleteProject(userId: string, projectId: string): Promise<
 export interface ProjectSearchQuery {
   keyword?: string;
   marketplace?: string;
-  status?: ResearchProject['status'] | 'active' | 'archived';
+  /** 归档已移除（PRD §15.20）：`active` 不再等于"排除已归档"，因为归档概念没有了 */
+  status?: ResearchProject['status'];
   ownerId?: string;
 }
 
@@ -380,13 +375,7 @@ export async function searchProjects(
     if (query.marketplace && p.marketplace !== query.marketplace) return false;
     if (query.ownerId && p.ownerId !== query.ownerId) return false;
     if (query.status) {
-      if (query.status === 'active' && p.status === 'archived') return false;
-      if (query.status === 'archived' && p.status !== 'archived') return false;
-      if (
-        query.status !== 'active' &&
-        query.status !== 'archived' &&
-        p.status !== query.status
-      ) {
+      if (p.status !== query.status) {
         return false;
       }
     }

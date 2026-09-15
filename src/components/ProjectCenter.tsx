@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   Plus,
   Search,
-  Archive,
-  ArchiveRestore,
   Copy,
   Trash2,
   FolderOpen,
@@ -32,13 +30,11 @@ import type { MarketContext } from '../utils/marketLook';
 import type { UserContext } from '../utils/userLook';
 import type { CompetitorContext } from '../utils/competitorLook';
 import {
-  archiveProject,
   createProject,
   deleteProject,
   duplicateProject,
   loadProjects,
   persistProjects,
-  restoreProject,
 } from '../utils/projectStore';
 import {
   FIVE_LOOK_LABELS,
@@ -123,7 +119,6 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState('');
   const [marketplace, setMarketplace] = useState('');
-  const [status, setStatus] = useState('active');
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ResearchProject | null>(null);
   const [hasAutoSynced, setHasAutoSynced] = useState(false);
@@ -213,11 +208,17 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
   }, [handleSync]);
 
   const filtered = useMemo(() => {
-    return searchProjectsSync(projects, { keyword, marketplace, status });
-  }, [projects, keyword, marketplace, status]);
+    return searchProjectsSync(projects, { keyword, marketplace });
+  }, [projects, keyword, marketplace]);
 
   const incompleteLooks = useMemo(() => {
-    const active = projects.filter((p) => p.status !== 'archived');
+    /**
+     * 2026-09 用户决定：**去掉"归档"功能**（理由见 PRD §15.20）——
+     * 它和"服务少量深度项目、不做项目组合管理"的产品原则冲突，代价是多一个状态/两个按钮/一个筛选项，
+     * 还让归档的项目默认从列表消失（用户会以为项目丢了）。所以要删就删干净：
+     * 这里不再过滤 archived，历史遗留的已归档项目会**重新出现在活跃列表里**（数据不丢）。
+     */
+    const active = projects;
     const counts: Record<FiveLookId, number> = { market: 0, user: 0, competitor: 0, self: 0, opportunity: 0 };
     for (const p of active) {
       for (const look of FIVE_LOOKS) {
@@ -279,16 +280,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
           options={[{ value: '', label: '全部站点' }, ...MARKETPLACES.map((m) => ({ value: m.code, label: m.label }))]}
           placeholder="全部站点"
         />
-        <Select
-          value={status}
-          onChange={setStatus}
-          options={[
-            { value: 'active', label: '活跃项目' },
-            { value: 'archived', label: '已归档' },
-            { value: 'all', label: '全部' },
-          ]}
-          placeholder="状态"
-        />
+        {/* 状态筛选已按用户要求移除（归档功能删掉了，剩下的状态筛选价值很低，徒增选择成本） */}
       </div>
 
       {/* 列表 */}
@@ -321,7 +313,6 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
               username={username}
               onOpen={() => onOpenProject(p)}
               onDuplicate={() => handleDuplicate(p)}
-              onArchive={() => handleArchive(p)}
               onDelete={() => setDeleteTarget(p)}
             />
           ))}
@@ -329,7 +320,7 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
       )}
 
       {/* 底部：未完成统计（工作型信息，非营销 Hero） */}
-      {!loading && projects.filter((p) => p.status !== 'archived').length > 0 && (
+      {!loading && projects.length > 0 && (
         <Card className="mt-6 p-5">
           <p className="text-sm font-semibold text-[#1d1d1f] mb-3">五看完成度总览（活跃项目）</p>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -396,30 +387,16 @@ export function ProjectCenter({ userId, username, marketContext, userContext, co
       toast.error('复制失败');
     }
   }
-
-  async function handleArchive(p: ResearchProject) {
-    const archived = p.status === 'archived';
-    const next = archived ? await restoreProject(userId, p.id) : await archiveProject(userId, p.id);
-    if (next) {
-      toast.success(archived ? '已恢复为活跃项目' : '已归档');
-      await refresh();
-      await queueCloudSync();
-    } else {
-      toast.error('操作失败');
-    }
-  }
 }
-
 /** 纯内存搜索，保持列表交互即时；IndexedDB 在 loadProjects 时已完成过滤排序 */
 function searchProjectsSync(
   projects: ResearchProject[],
-  q: { keyword: string; marketplace: string; status: string }
+  q: { keyword: string; marketplace: string }
 ): ResearchProject[] {
   const kw = q.keyword.trim().toLowerCase();
   return projects.filter((p) => {
     if (q.marketplace && p.marketplace !== q.marketplace) return false;
-    if (q.status === 'active' && p.status === 'archived') return false;
-    if (q.status === 'archived' && p.status !== 'archived') return false;
+    // 归档已移除：不再按 archived 过滤（历史遗留的已归档项目也照常出现在列表里）
     if (kw) {
       const haystack = [
         p.name,
@@ -443,17 +420,14 @@ function ProjectCard({
   username,
   onOpen,
   onDuplicate,
-  onArchive,
   onDelete,
 }: {
   project: ResearchProject;
   username: string;
   onOpen: () => void;
   onDuplicate: () => void;
-  onArchive: () => void;
   onDelete: () => void;
 }) {
-  const isArchived = project.status === 'archived';
   const ownerLabel = project.ownerId ? username : '—';
 
   return (
@@ -468,11 +442,9 @@ function ProjectCard({
           <span
             className={cn(
               'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold border',
-              isArchived
-                ? 'bg-[#f5f5f7] text-[#86868b] border-black/5'
-                : project.status === 'ready_for_review'
-                  ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
-                  : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+              project.status === 'ready_for_review'
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-100'
             )}
           >
             {STATUS_LABELS[project.status]}
@@ -523,9 +495,6 @@ function ProjectCard({
         </button>
         <IconButton title="复制" onClick={onDuplicate}>
           <Copy className="w-3.5 h-3.5" />
-        </IconButton>
-        <IconButton title={isArchived ? '恢复' : '归档'} onClick={onArchive}>
-          {isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
         </IconButton>
         <IconButton title="删除" danger onClick={onDelete}>
           <Trash2 className="w-3.5 h-3.5" />

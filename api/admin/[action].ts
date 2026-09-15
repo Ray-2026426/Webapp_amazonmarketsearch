@@ -83,6 +83,35 @@ async function tableStatus(): Promise<{
   };
 }
 
+/**
+ * Supabase 出错的统一出口。
+ *
+ * 2026-09 修：以前一律 `json(res, 500, {error})` —— 用户看到的就是"HTTP 500，管理员后台都不能用"。
+ * 但**缺表不是服务器崩了**，而是"该跑迁移了"，两者必须分开：
+ *   · 缺表（PostgREST 42P01 / "does not exist"）→ 200 + needsMigration + 可照做的指引；
+ *   · 其他（权限、Key 无效、网络）→ 500 + 原始信息（面板会把原文显示出来）。
+ */
+function isMissingTable(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === '42P01') return true;
+  return /does not exist|Could not find the table|relation .* does not exist|schema cache/i.test(error.message ?? '');
+}
+
+function dbError(res: VercelResponse, where: string, error: { code?: string; message?: string } | null) {
+  const message = error?.message || '未知数据库错误';
+  if (isMissingTable(error)) {
+    return json(res, 200, {
+      ok: true,
+      needsMigration: true,
+      where,
+      missingTable: /"([a-z_]+)"/.exec(message)?.[1] || '',
+      error: message,
+      hint: '数据库表还没建：去 Supabase → SQL Editor 执行 supabase/migrations/all_in_one.sql（可重复执行，不会破坏已有数据）。跑完刷新本页即可。',
+    });
+  }
+  return json(res, 500, { ok: false, error: message, where });
+}
+
 async function health(_req: VercelRequest, res: VercelResponse) {
   const s = getServiceSupabase();
   let supabase: { configured: boolean; reachable: boolean; error?: string } = { configured: Boolean(s), reachable: false };
@@ -158,7 +187,7 @@ async function config(req: VercelRequest, res: VercelResponse, auth: AdminAuth, 
     if (!value) return json(res, 400, { ok: false, error: '值不能为空（清空请用 op=clear）' });
     if (!s) return json(res, 200, { ok: true, cloudDisabled: true, note: '云端未配置：请直接设置环境变量' });
     const { error } = await s.from('app_config').upsert({ key: `key:${key}`, value });
-    if (error) return json(res, 500, { ok: false, error: error.message });
+    if (error) return dbError(res, "config", error);
     await audit(auth, 'admin_config', `key:${key}`, { configured: true, fingerprint: maskKey(value) });
     return json(res, 200, { ok: true, key, fingerprint: maskKey(value) });
   }
@@ -167,7 +196,7 @@ async function config(req: VercelRequest, res: VercelResponse, auth: AdminAuth, 
     const key = String(body.key || '').trim();
     if (!s) return json(res, 200, { ok: true, cloudDisabled: true });
     const { error } = await s.from('app_config').delete().eq('key', `key:${key}`);
-    if (error) return json(res, 500, { ok: false, error: error.message });
+    if (error) return dbError(res, "config#2", error);
     await audit(auth, 'admin_config', `key:${key}`, { cleared: true });
     return json(res, 200, { ok: true, cleared: key });
   }
@@ -195,7 +224,7 @@ async function usage(req: VercelRequest, res: VercelResponse, _auth: AdminAuth, 
     .lte('created_at', toIso)
     .order('created_at', { ascending: false })
     .limit(5000);
-  if (error) return json(res, 500, { ok: false, error: error.message });
+  if (error) return dbError(res, "usage", error);
   const events: UsageEvent[] = (data ?? []).map((r: Record<string, unknown>) => ({
     id: String(r.id ?? ''),
     workspaceId: String(r.workspace_id ?? 'default'),
@@ -224,7 +253,7 @@ async function users(_req: VercelRequest, res: VercelResponse, auth: AdminAuth, 
 
   if (op === 'list') {
     const { data, error } = await s.auth.admin.listUsers({ page: 1, perPage: 200 });
-    if (error) return json(res, 500, { ok: false, error: error.message });
+    if (error) return dbError(res, "users", error);
     const rows = (data?.users ?? []).map((u) => ({
       id: u.id,
       email: u.email ?? '',
@@ -242,7 +271,7 @@ async function users(_req: VercelRequest, res: VercelResponse, auth: AdminAuth, 
     if (!userId) return json(res, 400, { ok: false, error: '缺少 userId' });
     if (userId === auth.userId) return json(res, 400, { ok: false, error: '不能禁用自己（避免把自己锁在外面）' });
     const { error } = await s.auth.admin.updateUserById(userId, op === 'ban' ? { ban_duration: '87600h' } : { ban_duration: 'none' });
-    if (error) return json(res, 500, { ok: false, error: error.message });
+    if (error) return dbError(res, "users#2", error);
     await audit(auth, op === 'ban' ? 'admin_user_ban' : 'admin_user_unban', userId, {});
     return json(res, 200, { ok: true, userId, banned: op === 'ban' });
   }
@@ -251,7 +280,7 @@ async function users(_req: VercelRequest, res: VercelResponse, auth: AdminAuth, 
     const email = String(body.email || '').trim();
     if (!email) return json(res, 400, { ok: false, error: '缺少 email' });
     const { error } = await s.auth.admin.generateLink({ type: 'recovery', email });
-    if (error) return json(res, 500, { ok: false, error: error.message });
+    if (error) return dbError(res, "users#3", error);
     await audit(auth, 'admin_user_reset', email, {});
     // 安全：不回传链接（链接等于临时凭证），只告诉管理员"已生成并发送"
     return json(res, 200, { ok: true, email, note: '已触发找回密码流程；出于安全考虑不回传重置链接' });
@@ -269,7 +298,7 @@ async function auditLog(_req: VercelRequest, res: VercelResponse, _auth: AdminAu
   if (body.action) q = q.eq('action', String(body.action));
   if (body.actor) q = q.eq('actor_user_id', String(body.actor));
   const { data, error } = await q;
-  if (error) return json(res, 500, { ok: false, error: error.message });
+  if (error) return dbError(res, "auditLog", error);
   return json(res, 200, { ok: true, events: data ?? [] });
 }
 
@@ -284,14 +313,14 @@ async function projects(_req: VercelRequest, res: VercelResponse, auth: AdminAut
       .select('id, name, owner_id, status, updated_at, created_at')
       .order('updated_at', { ascending: false })
       .limit(200);
-    if (error) return json(res, 500, { ok: false, error: error.message });
+    if (error) return dbError(res, "projects", error);
     return json(res, 200, { ok: true, projects: data ?? [] });
   }
   if (op === 'delete') {
     const id = String(body.projectId || '').trim();
     if (!id) return json(res, 400, { ok: false, error: '缺少 projectId' });
     const { error } = await s.from('projects').delete().eq('id', id);
-    if (error) return json(res, 500, { ok: false, error: error.message });
+    if (error) return dbError(res, "projects#2", error);
     await audit(auth, 'admin_project_delete', id, {});
     return json(res, 200, { ok: true, deleted: id });
   }

@@ -57,6 +57,29 @@ const TABS: { id: AdminTab; label: string }[] = [
   { id: 'projects', label: '项目与报告' },
 ];
 
+/**
+ * 缺表提示（模块级暂存 + 取走即清）：服务端把"缺表"与"真错误"分开了 ——
+ * 缺表返回 200 + needsMigration + 指引，这里把它交给界面展示成一条**友好提示**而不是报错。
+ */
+export interface MigrationNotice {
+  hint: string;
+  missingTable: string;
+  where: string;
+}
+let pendingMigrationNotice: MigrationNotice | null = null;
+export function takeMigrationNotice(): MigrationNotice | null {
+  const n = pendingMigrationNotice;
+  pendingMigrationNotice = null;
+  return n;
+}
+
+/**
+ * 调管理员接口。
+ *
+ * 2026-09 修：以前只显示 `HTTP 500` —— 用户拿着这句话没法定位。
+ * 现在把**原始响应**留着：非 JSON（例如 Vercel 的函数崩溃页 FUNCTION_INVOCATION_FAILED）、
+ * 空响应、5xx 都会把前 300 字原样带出来，并提示去哪里看日志。
+ */
 async function adminCall<T>(action: string, body: Record<string, unknown> = {}): Promise<T> {
   const token = getAuthToken();
   const res = await fetch(`/api/admin/${action}`, {
@@ -64,8 +87,33 @@ async function adminCall<T>(action: string, body: Record<string, unknown> = {}):
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token, ...body }),
   });
-  const payload = (await res.json().catch(() => ({}))) as T & { ok?: boolean; error?: string };
-  if (!res.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${res.status}`);
+
+  const raw = await res.text();
+  let payload: (T & { ok?: boolean; error?: string }) | null = null;
+  try {
+    payload = JSON.parse(raw) as T & { ok?: boolean; error?: string };
+  } catch {
+    payload = null;
+  }
+
+  if (!res.ok || payload?.ok === false) {
+    if (payload?.error) throw new Error(payload.error);
+    const snippet = raw.replace(/\s+/g, ' ').trim().slice(0, 300);
+    throw new Error(
+      `HTTP ${res.status}（${action}）` +
+        (snippet ? `：${snippet}` : '：响应为空') +
+        '｜排查：这次请求是服务端函数抛错，去 Vercel → Deployments → 最新那次 → Functions 日志看堆栈'
+    );
+  }
+  if (!payload) {
+    throw new Error(`HTTP ${res.status}（${action}）：响应不是 JSON，无法解析`);
+  }
+
+  const maybe = payload as unknown as { needsMigration?: boolean; hint?: string; missingTable?: string; where?: string };
+  pendingMigrationNotice = maybe.needsMigration
+    ? { hint: maybe.hint ?? '', missingTable: maybe.missingTable ?? '', where: maybe.where ?? action }
+    : null;
+
   return payload;
 }
 
@@ -91,6 +139,8 @@ export function AdminConsolePanel() {
   const [tab, setTab] = useState<AdminTab>('health');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  /** 缺表时的友好提示（不是错误，是"该跑迁移了"）：hint + 缺哪张表 */
+  const [migrationNotice, setMigrationNotice] = useState<{ hint: string; missingTable: string; where: string } | null>(null);
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [usage, setUsage] = useState<{ summary: UsageSummary; describe: string; cloudDisabled?: boolean } | null>(null);
   const [users, setUsers] = useState<AdminUserRow[]>([]);
@@ -115,6 +165,8 @@ export function AdminConsolePanel() {
       } catch (e) {
         setError(e instanceof Error ? e.message : '加载失败');
       } finally {
+        // 缺表提示与错误分开显示：缺表时不是"坏了"，是"该跑迁移了"
+        setMigrationNotice(takeMigrationNotice());
         setBusy(false);
       }
     },
@@ -165,6 +217,19 @@ export function AdminConsolePanel() {
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} 刷新
         </button>
       </div>
+
+      {/* 缺表 = 该跑迁移了（不是错误，所以用琥珀色提示而不是红色报错） */}
+      {migrationNotice && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-900 space-y-1">
+          <p className="font-semibold">数据库还没迁移（不是故障，跑一次就好）</p>
+          {migrationNotice.missingTable && (
+            <p>
+              缺的表：<code className="font-mono">{migrationNotice.missingTable}</code>
+            </p>
+          )}
+          <p>{migrationNotice.hint}</p>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">

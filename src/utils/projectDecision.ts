@@ -116,7 +116,7 @@ export function summarizeProjectDecision(input: {
         status: 'no_opportunity',
         headline: '无机会',
         reasons,
-        nextAction: '换细分/换需求方向，或把这个品类的结论归档（写清卡在哪一环即可复用）',
+        nextAction: '换细分/换需求方向，或把结论记录在项目里（写清卡在哪一环即可复用）',
       };
     }
     reasons.push(conclusion.reason);
