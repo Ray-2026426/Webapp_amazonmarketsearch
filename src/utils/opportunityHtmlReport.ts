@@ -68,9 +68,11 @@ import {
   type SegmentScheme,
 } from './segmentSynthesis';
 import { buildComparisonTable, describeCoverage, LISTING_FIELDS, type ComparisonRow, type CoverageReport } from './listingFields';
-import { buildOurCapability, computeFitScore, hardConstraintsFromSelfAssessment } from './ourCapability';
+import { buildOurCapability, buildFitAnswers, computeFitScore, hardConstraintsFromSelfAssessment } from './ourCapability';
 import { toAnswersForFit } from './categoryQuiz';
-import { computeCompleteness, loadCapabilityLibrary } from './capabilityLibrary';
+import { loadCapabilityLibrary } from './capabilityLibrary';
+import { resolveCapabilities } from './capabilityDerivation';
+import { computeBackgroundCompleteness, loadUserBackgroundById } from './userBackground';
 import {
   countEvidenceByLook,
   EVIDENCE_LOOK_LABELS,
@@ -1519,9 +1521,14 @@ async function collectReportData(userId: string, project: ResearchProject): Prom
       : null;
 
   // 6) 适配度（与看自己同一条确定性口径）
+  const background = loadUserBackgroundById(userId);
+  const capabilityEntries = resolveCapabilities(background, loadCapabilityLibrary(userId));
   const fitRaw = computeFitScore({
-    answers: selfLook.quiz ? toAnswersForFit(selfLook.quiz) : {},
-    backgroundCompleteness: computeCompleteness(loadCapabilityLibrary(userId)).completeness,
+    answers: buildFitAnswers({
+      decisionAnswers: selfLook.quiz ? toAnswersForFit(selfLook.quiz) : {},
+      capabilityEntries,
+    }),
+    backgroundCompleteness: computeBackgroundCompleteness(background).fraction,
   });
 
   return {

@@ -1,32 +1,47 @@
-// M3⑤ · 背景库（六维度四态）+ 品类选择题（确定性种子题 + AI 增补）测试。
+// M3⑤ V3 · 能力库（推导 + 人工覆盖）+ 「看自己」3 个拍板问题测试。
+//
+// 本轮（V3）把"20 项四态手填 + 5-8 道品类题"换成"背景信息推导 + 3 个拍板问题"，
+// 本套件守住的是**没有降低强度的部分**：能力项词表、覆盖标记、硬约束候选、
+// 3 个问题的确定性与选项口径、多选语义、答案→决策边界项映射、AI 增补的非破坏性、答题进度与硬约束。
 import assert from 'node:assert/strict';
 
 import {
   CAPABILITY_ITEMS,
+  CAPABILITY_ITEM_KEYS,
   CAPABILITY_DIMENSION_ORDER,
-  computeCompleteness,
-  describeCompleteness,
-  weakestDimension,
   capabilityHardConstraints,
-  setCapabilityEntry,
+  clearCapabilityOverride,
   defaultCapabilityLibrary,
+  loadCapabilityLibrary,
+  manualOverrideCount,
+  setCapabilityEntry,
   type CapabilityLibrary,
 } from '../src/utils/capabilityLibrary';
 import {
-  buildSeedQuestions,
+  DECISION_QUESTIONS,
+  boundaryItemsFromQuiz,
+  buildDecisionQuestions,
   computeQuizProgress,
+  defaultQuizData,
   ensureSeedQuestions,
+  entryConditionsFromQuiz,
+  marginFloorFromQuiz,
   mergeCategoryQuestions,
   normalizeAiQuestions,
+  mostConservative,
+  refreshDecisionQuestions,
   setAnswer,
+  setAnswerMulti,
+  setAnswerNote,
+  stopLossAnswerText,
   toOurCapabilityFromQuiz,
   toAnswersForFit,
-  defaultQuizData,
+  toggleMultiAnswer,
   type QuizData,
+  type QuizQuestion,
 } from '../src/utils/categoryQuiz';
-import { decideWinningPath, buildSatisfactionMatrix } from '../src/utils/competitorAnalysis';
-import type { UnmetNeedCandidate } from '../src/utils/userLook';
-import type { Product } from '../src/utils/parser';
+import { SELF_DECISION_QUESTION_COUNT } from '../src/utils/selfAssessment';
+import type { UserBackgroundProfile } from '../src/utils/userBackground';
 
 let passed = 0;
 let failed = 0;
@@ -43,99 +58,65 @@ function test(name: string, fn: () => void) {
   }
 }
 
-let seq = 0;
-function need(over: Partial<UnmetNeedCandidate>): UnmetNeedCandidate {
-  seq += 1;
-  return {
-    id: `n${seq}`,
-    targetUser: '',
-    scenario: '',
-    jobToBeDone: '',
-    needStatement: 'need',
-    currentAlternative: '',
-    evidenceStrength: 'medium',
-    ...over,
-  };
-}
-
-function product(asin: string): Product {
-  seq += 1;
-  return {
-    asin,
-    sku: '',
-    brand: 'B',
-    title: 'Plain Pillow',
-    image: '',
-    monthlySales: 10,
-    monthlyRevenue: 1000,
-    price: 30,
-    rating: 4,
-    reviewCount: 10,
-    reviewGrowth: 0,
-    sellerCount: 1,
-    weight: 0,
-    volume: 0,
-    launchDate: '',
-    daysSinceLaunch: 100,
-    buyBoxType: '',
-    sellerLocation: '',
-    fbaFee: 0,
-    subBsr: 0,
-    subCategory: '',
-  };
+/** 最小背景信息：只给推导需要的字段（测试里显式写清"哪条输入推出哪条结论"） */
+function background(over: Partial<UserBackgroundProfile['fields']> = {}): UserBackgroundProfile {
+  return { fields: { ...over }, notes: {}, legacyNotes: '', updatedAt: '' };
 }
 
 console.log('capability library');
 
-test('六维度全量保留，条目 key 不重复', () => {
+test('能力项词表：六维度齐全，key 不重复，条目覆盖推导所需的全部维度', () => {
   const dims = new Set(CAPABILITY_ITEMS.map((i) => i.dimension));
   assert.deepEqual([...dims].sort(), [...CAPABILITY_DIMENSION_ORDER].sort());
   const keys = CAPABILITY_ITEMS.map((i) => i.key);
   assert.equal(new Set(keys).size, keys.length);
-  assert.ok(CAPABILITY_ITEMS.length >= 15, '六维度要有足够项目可填');
+  assert.ok(CAPABILITY_ITEMS.length >= 20, '能力项要足够覆盖背景信息里的能力输入');
   for (const d of CAPABILITY_DIMENSION_ORDER) {
     assert.ok(CAPABILITY_ITEMS.some((i) => i.dimension === d), `${d} 维度必须有项目`);
   }
-});
-
-test('完整度：已明确才算填好；"待确认"与未填都算未完成，并列出待补清单', () => {
-  let lib: CapabilityLibrary = defaultCapabilityLibrary();
-  assert.equal(computeCompleteness(lib).completeness, 0);
-  assert.equal(computeCompleteness(lib).emptyItems.length, CAPABILITY_ITEMS.length);
-
-  lib = setCapabilityEntry(lib, 'startup_capital', 'have');
-  lib = setCapabilityEntry(lib, 'moq', 'partial');
-  lib = setCapabilityEntry(lib, 'certification', 'unknown');
-  const r = computeCompleteness(lib);
-  assert.equal(r.filled, 2, '待确认不算已明确');
-  assert.equal(r.unknown, 1);
-  assert.ok(r.completeness > 0 && r.completeness < 0.2);
-  assert.ok(r.emptyItems.some((i) => i.key === 'certification'), '待确认要出现在待补清单里');
-  assert.equal(r.byDimension.funding.filled, 1);
-  assert.equal(r.byDimension.supply.filled, 1);
-});
-
-test('完整度：六维度里最拖后腿的要说出来；完整度高低对应不同话术', () => {
-  let lib: CapabilityLibrary = defaultCapabilityLibrary();
-  for (const i of CAPABILITY_ITEMS) {
-    if (i.dimension === 'compliance') continue;
-    lib = setCapabilityEntry(lib, i.key, 'have');
+  for (const key of ['product_def', 'rnd', 'ads', 'after_sales']) {
+    assert.ok(CAPABILITY_ITEM_KEYS.includes(key), `V3 应有能力项 ${key}`);
   }
-  const r = computeCompleteness(lib);
-  const complianceTotal = r.byDimension.compliance.total;
-  const expected = Math.round(((CAPABILITY_ITEMS.length - complianceTotal) / CAPABILITY_ITEMS.length) * 1000) / 1000;
-  assert.equal(r.completeness, expected);
-  assert.ok(r.completeness < 1);
-  const weak = weakestDimension(r)!;
-  assert.equal(weak.dimension, 'compliance');
-  assert.ok(describeCompleteness(r).includes('已足够可信'), `完整度 ${r.completeness} 应给"够用"话术`);
+});
 
-  // 只填一半时给"影响可信度"话术
-  let half: CapabilityLibrary = defaultCapabilityLibrary();
-  for (const i of CAPABILITY_ITEMS.slice(0, Math.floor(CAPABILITY_ITEMS.length / 2))) half = setCapabilityEntry(half, i.key, 'have');
-  const hr = computeCompleteness(half);
-  assert.ok(describeCompleteness(hr).includes('影响适配度可信度'), `完整度 ${hr.completeness} 应提示影响可信度`);
-  assert.ok(describeCompleteness(computeCompleteness(defaultCapabilityLibrary())).includes('还没填'));
+test('逐条覆盖：显式标记 manual；取消覆盖即回到推导；"待确认"不算覆盖', () => {
+  let lib: CapabilityLibrary = defaultCapabilityLibrary();
+  assert.equal(manualOverrideCount(lib), 0);
+  lib = setCapabilityEntry(lib, 'ads', 'lack', '团队没人投广告');
+  assert.equal(lib.entries.ads.status, 'lack');
+  assert.equal(lib.entries.ads.source, 'manual', '覆盖必须显式标记 source=manual');
+  assert.equal(manualOverrideCount(lib), 1);
+  lib = setCapabilityEntry(lib, 'ads', 'unknown');
+  assert.equal(lib.entries.ads, undefined, '覆盖成"待确认"等于取消覆盖');
+  lib = setCapabilityEntry(lib, 'ads', 'have');
+  lib = clearCapabilityOverride(lib, 'ads');
+  assert.equal(lib.entries.ads, undefined, '取消覆盖后回到"由背景信息推导"');
+});
+
+test('读取持久化：非法状态丢弃；unknown 视为没覆盖（不猜用户意图）', () => {
+  const store = new Map<string, string>();
+  (globalThis as unknown as { localStorage: Storage }).localStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+    clear: () => store.clear(),
+    key: () => null,
+    length: 0,
+  } as unknown as Storage;
+  store.set(
+    'kairo_capability_library:u1',
+    JSON.stringify({
+      entries: {
+        ads: { status: 'lack', note: 'n' },
+        moq: { status: 'bogus' },
+        ops: { status: 'unknown' },
+      },
+      updatedAt: '',
+    })
+  );
+  const lib = loadCapabilityLibrary('u1');
+  assert.deepEqual(Object.keys(lib.entries), ['ads']);
+  assert.equal(lib.entries.ads.source, 'manual');
 });
 
 test('硬约束：财务红线/合规类"不具备" → 列出；能力类缺失不算硬约束', () => {
@@ -151,48 +132,132 @@ test('硬约束：财务红线/合规类"不具备" → 列出；能力类缺失
   assert.ok(!hard.some((h) => h.includes('运营能力')), '能力类缺失是缺口，不是硬约束否决');
 });
 
-console.log('category quiz');
+console.log('decision questions（3 个拍板问题）');
 
-const NEED_A = need({ id: 'need-a', category: '功能需求', needStatement: 'adjustable height' });
-const NEED_B = need({ id: 'need-b', category: '体感需求', needStatement: 'thin flat' });
-
-test('种子题：只问本项目真的有据可依的题，且每题带依据与"为什么不"', () => {
-  const matrices = ['B0A1', 'B0A2'].map((a) => buildSatisfactionMatrix(a, product(a), [], [NEED_A, NEED_B]));
-  const decision = decideWinningPath({
-    needs: [NEED_A, NEED_B],
-    competitors: [{ asin: 'B0A1' }, { asin: 'B0A2' }],
-    matrices,
-    ours: {},
-  });
-  const seeds = buildSeedQuestions({ needs: [NEED_A, NEED_B], decision, competitorCount: 2 });
-  assert.ok(seeds.length >= 4 && seeds.length <= 8, `题量应在 5-8 附近：${seeds.length}`);
-  for (const q of seeds) {
+test('恰好 3 个问题，全部是决策边界题，id/标签稳定（改动即打红）', () => {
+  assert.equal(DECISION_QUESTIONS.length, SELF_DECISION_QUESTION_COUNT);
+  assert.equal(SELF_DECISION_QUESTION_COUNT, 3);
+  assert.deepEqual(
+    DECISION_QUESTIONS.map((q) => q.id),
+    ['decision:margin_floor', 'decision:stop_loss', 'decision:entry_conditions']
+  );
+  assert.deepEqual(
+    DECISION_QUESTIONS.map((q) => q.label),
+    ['最低毛利率', '止损条件', '必须满足的进入条件']
+  );
+  const qs = buildDecisionQuestions({ background: background() });
+  assert.equal(qs.length, 3);
+  for (const q of qs) {
+    assert.equal(q.isBoundary, true, `${q.id} 必须是决策边界题（答不具备 → 不可直接进入）`);
+    assert.equal(q.origin, 'seed');
     assert.ok(q.question.length > 5);
-    assert.ok(q.basis.length > 5, `${q.id} 必须有出题依据`);
-    assert.ok(q.options.length >= 2 && q.options.length <= 5);
-    for (const o of q.options) assert.ok(o.why.length > 0, `${q.id} 每个选项都要有"为什么不"`);
+    assert.ok(q.basis.length > 20, `${q.id} 必须有"为什么问"的依据`);
+    // 单选 3-6 项；多选（进入条件）最多 8 项（6 个条件 + 互斥的"还没定"）
+    assert.ok(q.options.length >= 3 && q.options.length <= 8, `${q.id} 选项数 ${q.options.length} 不合理`);
+    for (const o of q.options) assert.ok(o.why.length > 10, `${q.id} 每个选项都要有"为什么不"`);
   }
-  // 交叉清单里 ourStatus=unknown 的需求应当出题
-  assert.ok(seeds.some((q) => q.id === 'seed:need:need-a'));
-  // 边界题必须标出来（硬约束来源）
-  assert.ok(seeds.some((q) => q.isBoundary === true));
+  assert.equal(qs.find((q) => q.id === 'decision:entry_conditions')!.multiple, true, 'Q3 必须可多选');
 });
 
-test('种子题：没有问题/没有竞对时不会编出空题', () => {
-  const seeds = buildSeedQuestions({ needs: [], competitorCount: 0 });
-  assert.ok(seeds.every((q) => q.basis.length > 0));
-  assert.ok(!seeds.some((q) => q.id.startsWith('seed:need:')));
-  assert.ok(!seeds.some((q) => q.id === 'seed:differentiation'));
+test('Q1：最低毛利率选项带数值口径；"还没定" → 不具备（触发硬约束）', () => {
+  const q = buildDecisionQuestions({ background: background() }).find((x) => x.id === 'decision:margin_floor')!;
+  const floors = q.options.map((o) => o.floorPercent).filter((n) => typeof n === 'number');
+  assert.deepEqual(floors, [0.4, 0.3, 0.2, 0.15]);
+  const notSet = q.options.find((o) => o.status === 'lack')!;
+  assert.ok(notSet.label.includes('还没定'));
+
+  const quiz = setAnswer(ensureSeedQuestions(defaultQuizData(), [q]), q.id, q.options.indexOf(notSet));
+  assert.equal(marginFloorFromQuiz(quiz), undefined, '选"还没定"时不能猜一个红线出来');
+  assert.equal(computeQuizProgress(quiz).hardBlocks.length, 1);
+
+  const ok = setAnswer(ensureSeedQuestions(defaultQuizData(), [q]), q.id, 0);
+  assert.equal(marginFloorFromQuiz(ok), 0.4, '选了 ≥40% 就把红线确定性带下去（喂给"人优我廉"）');
+  assert.equal(computeQuizProgress(ok).hardBlocks.length, 0);
 });
 
-test('种子题：背景库有硬约束时追加一题让用户明确', () => {
-  let lib: CapabilityLibrary = defaultCapabilityLibrary();
-  lib = setCapabilityEntry(lib, 'certification', 'lack');
-  const seeds = buildSeedQuestions({ needs: [NEED_A], library: lib });
-  assert.ok(seeds.some((q) => q.id === 'seed:library_boundary'));
+test('Q3：每个"进入条件"选项的满足情况由背景信息推导（不是 AI，也不是猜）', () => {
+  const q = buildDecisionQuestions({
+    background: background({ certifications: ['NONE'], moqRange: 'gt3000', leadTimeRange: 'd15_30' }),
+  }).find((x) => x.id === 'decision:entry_conditions')!;
+  const byKey = (k: string) => q.options.find((o) => o.conditionKey === k)!;
+  assert.equal(byKey('cert_ready').status, 'lack', '背景里认证=暂无 → 认证齐备这一条不具备');
+  assert.ok(byKey('cert_ready').why.includes('依据你的背景信息'));
+  assert.equal(byKey('moq_in_budget').status, 'lack', 'MOQ >3000 → 预算内不成立');
+  assert.equal(byKey('deliver_60d').status, 'have', '交期 15-30 天 → 60 天内可交付');
+  assert.equal(byKey('no_patent_risk').status, 'unknown', '专利风险背景信息判断不了 → unknown（不是 lack）');
+  assert.equal(q.options.find((o) => o.exclusive)!.status, 'lack');
 });
 
-test('AI 增补归一化：非法状态/选项不足的题被丢弃，id 带 ai 前缀', () => {
+test('Q3 多选：最保守结论；选"还没定"清掉其它条件；未答不算已答', () => {
+  const q = buildDecisionQuestions({ background: background({ certifications: ['NONE'] }) }).find(
+    (x) => x.id === 'decision:entry_conditions'
+  )!;
+  let quiz = ensureSeedQuestions(defaultQuizData(), [q]);
+  assert.equal(computeQuizProgress(quiz).answered, 0);
+  const certIdx = q.options.findIndex((o) => o.conditionKey === 'cert_ready');
+  const deliverIdx = q.options.findIndex((o) => o.conditionKey === 'deliver_60d');
+  quiz = setAnswerMulti(quiz, q.id, [deliverIdx, certIdx]);
+  assert.equal(mostConservative(['have', 'lack']), 'lack', '取最保守');
+  assert.equal(computeQuizProgress(quiz).hardBlocks.length, 1, '选中"不具备"的进入条件 ⇒ 硬约束');
+  const exclusiveIdx = q.options.findIndex((o) => o.exclusive);
+  quiz = toggleMultiAnswer(quiz, q.id, exclusiveIdx);
+  assert.deepEqual(quiz.answers.find((a) => a.questionId === q.id)!.optionIndexes, [exclusiveIdx]);
+  quiz = toggleMultiAnswer(quiz, q.id, deliverIdx);
+  assert.deepEqual(
+    quiz.answers.find((a) => a.questionId === q.id)!.optionIndexes,
+    [deliverIdx],
+    '选普通条件时清掉互斥的"还没定"'
+  );
+});
+
+test('答案 → 决策边界项：3 项、都在 boundary 类、未答=待确认、备注带选项原文', () => {
+  const qs = buildDecisionQuestions({ background: background() });
+  let quiz = ensureSeedQuestions(defaultQuizData(), qs);
+  const items0 = boundaryItemsFromQuiz(quiz);
+  assert.equal(items0.length, 3);
+  assert.deepEqual(
+    items0.map((i) => i.id),
+    ['boundary:margin_floor', 'boundary:stop_loss', 'boundary:entry_conditions']
+  );
+  for (const i of items0) {
+    assert.equal(i.category, 'boundary');
+    assert.equal(i.status, 'unknown');
+  }
+  const stop = qs.find((q) => q.id === 'decision:stop_loss')!;
+  quiz = setAnswer(quiz, stop.id, 0);
+  quiz = setAnswerNote(quiz, stop.id, '亏损 $5,000 或 60 天');
+  const stopItem = boundaryItemsFromQuiz(quiz).find((i) => i.id === 'boundary:stop_loss')!;
+  assert.equal(stopItem.status, 'have');
+  assert.ok(stopItem.note!.includes('双条件'));
+  assert.ok(stopItem.note!.includes('亏损 $5,000 或 60 天'));
+  assert.equal(stopLossAnswerText(quiz)!.includes('60 天'), true);
+});
+
+test('刷新题目：背景信息变了 → 选项满足情况跟着变，但用户的答案不会丢', () => {
+  const before = buildDecisionQuestions({ background: background({ certifications: ['NONE'] }) });
+  let quiz = ensureSeedQuestions(defaultQuizData(), before);
+  const q3 = before.find((q) => q.id === 'decision:entry_conditions')!;
+  const certIdx = q3.options.findIndex((o) => o.conditionKey === 'cert_ready');
+  quiz = setAnswerMulti(quiz, q3.id, [certIdx]);
+  assert.equal(computeQuizProgress(quiz).hardBlocks.length, 1);
+
+  // 背景信息补上了 CE/FCC → 同一个选项应变成"已具备"，硬约束随之解除
+  const after = buildDecisionQuestions({
+    background: background({ certifications: ['CE', 'FCC'], marketplaces: ['US'] }),
+  });
+  quiz = refreshDecisionQuestions(quiz, after);
+  const refreshed = quiz.questions.find((q) => q.id === 'decision:entry_conditions')!;
+  assert.equal(refreshed.options.find((o) => o.conditionKey === 'cert_ready')!.status, 'have');
+  assert.deepEqual(
+    quiz.answers.find((a) => a.questionId === q3.id)!.optionIndexes,
+    [certIdx],
+    '答案（按下标）必须保留'
+  );
+  assert.equal(computeQuizProgress(quiz).hardBlocks.length, 0);
+  assert.equal(entryConditionsFromQuiz(quiz).includes('cert_ready'), true);
+});
+
+test('AI 增补归一化：非法状态/选项不足的题被丢弃，id 带 ai 前缀（逃生通道仍在）', () => {
   const ai = normalizeAiQuestions([
     { question: 'Q1', category: 'supply', options: [{ label: 'A', status: 'have', why: 'w' }, { label: 'B', status: 'lack', why: 'w' }] },
     { question: 'Q2', options: [{ label: 'A', status: 'bogus', why: 'w' }, { label: 'B', status: 'have', why: 'w' }] },
@@ -203,71 +268,90 @@ test('AI 增补归一化：非法状态/选项不足的题被丢弃，id 带 ai 
   assert.equal(ai[0].origin, 'ai');
 });
 
-test('合并非破坏性：种子题不覆盖同名题，新增 AI 题，用户回答永不丢失', () => {
-  const base: QuizData = { questions: [{ id: 'seed:x', category: 'capability', question: 'Q', basis: 'b', options: [{ label: 'A', status: 'have', why: 'w' }, { label: 'B', status: 'lack', why: 'w' }], origin: 'seed' }], answers: [{ questionId: 'seed:x', optionIndex: 0 }], updatedAt: '' };
+test('AI 增补的非破坏性：不覆盖同名题、不覆盖拍板题，用户回答永不丢失', () => {
+  const base: QuizData = {
+    questions: [
+      { id: 'ai:1', category: 'capability', question: 'Q', basis: 'b', options: [{ label: 'A', status: 'have', why: 'w' }, { label: 'B', status: 'lack', why: 'w' }], origin: 'ai' },
+      { id: 'decision:margin_floor', category: 'finance', question: '红线', basis: 'b', options: [{ label: 'A', status: 'have', why: 'w' }, { label: 'B', status: 'lack', why: 'w' }], origin: 'seed', isBoundary: true },
+    ],
+    answers: [{ questionId: 'ai:1', optionIndex: 0 }],
+    updatedAt: '',
+  };
   const merged = mergeCategoryQuestions(base, [
-    { id: 'seed:x', category: 'capability', question: '重复题', basis: 'b', options: [], origin: 'seed' },
-    { id: 'ai:1', category: 'supply', question: '新题', basis: 'b', options: [{ label: 'A', status: 'have', why: 'w' }, { label: 'B', status: 'lack', why: 'w' }], origin: 'ai' },
+    { id: 'ai:1', category: 'capability', question: '重复题', basis: 'b', options: [], origin: 'ai' },
+    { id: 'ai:2', category: 'supply', question: '新题', basis: 'b', options: [{ label: 'A', status: 'have', why: 'w' }, { label: 'B', status: 'lack', why: 'w' }], origin: 'ai' },
   ]);
   assert.equal(merged.added, 1);
   assert.equal(merged.skipped, 1);
-  assert.equal(merged.next.questions.find((q) => q.id === 'seed:x')!.question, 'Q', '已有题不被覆盖');
-  assert.deepEqual(merged.next.answers, [{ questionId: 'seed:x', optionIndex: 0 }], '回答保留');
+  assert.equal(merged.next.questions.find((q) => q.id === 'ai:1')!.question, 'Q', '已有题不被覆盖');
+  assert.deepEqual(merged.next.answers, [{ questionId: 'ai:1', optionIndex: 0 }], '回答保留');
+  const refreshed = refreshDecisionQuestions(merged.next, buildDecisionQuestions({ background: background() }));
+  assert.equal(refreshed.questions.some((q) => q.id === 'ai:2'), true);
+  assert.equal(refreshed.answers.length, 1);
 });
 
 test('ensureSeedQuestions：重复调用不会重复添加（幂等）', () => {
-  const seeds = buildSeedQuestions({ needs: [NEED_A], competitorCount: 1 });
+  const seeds = buildDecisionQuestions({ background: background() });
   const once = ensureSeedQuestions(defaultQuizData(), seeds);
-  const twice = ensureSeedQuestions(once, buildSeedQuestions({ needs: [NEED_A], competitorCount: 1 }));
+  const twice = ensureSeedQuestions(once, buildDecisionQuestions({ background: background() }));
   assert.equal(twice.questions.length, once.questions.length);
 });
 
-test('答题进度 + 硬约束：边界题答"不具备"→ hardBlocks；未答列出', () => {
-  const seeds = buildSeedQuestions({ needs: [NEED_A], competitorCount: 2 });
-  let data = ensureSeedQuestions(defaultQuizData(), seeds);
-  const boundary = data.questions.find((q) => q.isBoundary)!;
-  const lackIdx = boundary.options.findIndex((o) => o.status === 'lack');
-  data = setAnswer(data, boundary.id, lackIdx);
+test('答题进度 + 硬约束：3 道边界题答"不具备"→ hardBlocks；未答列出', () => {
+  const qs = buildDecisionQuestions({ background: background() });
+  let data = ensureSeedQuestions(defaultQuizData(), qs);
+  const margin = qs.find((q) => q.id === 'decision:margin_floor')!;
+  const lackIdx = margin.options.findIndex((o) => o.status === 'lack');
+  data = setAnswer(data, margin.id, lackIdx);
   const p = computeQuizProgress(data);
-  assert.equal(p.total, data.questions.length);
+  assert.equal(p.total, 3);
   assert.equal(p.answered, 1);
   assert.equal(p.hardBlocks.length, 1);
-  assert.equal(p.hardBlocks[0].id, boundary.id);
-  assert.equal(p.unanswered.length, p.total - 1);
+  assert.equal(p.hardBlocks[0].id, margin.id);
+  assert.equal(p.unanswered.length, 2);
 });
 
-test('答题 → 自身能力：需求题映射到 byNeedId，取更保守结论；待确认不覆盖已知', () => {
-  const seeds = buildSeedQuestions({ needs: [NEED_A, NEED_B], competitorCount: 2 });
-  let data = ensureSeedQuestions(defaultQuizData(), seeds);
-  const needQ = data.questions.find((q) => (q.needIds ?? []).includes('need-a'))!;
-  const haveIdx = needQ.options.findIndex((o) => o.status === 'have');
-  data = setAnswer(data, needQ.id, haveIdx);
-  const cap = toOurCapabilityFromQuiz(data);
-  assert.equal(cap.byNeedId['need-a'], 'have');
-
-  // 同一需求再有一道"部分具备"的题 → 取更保守（partial）
-  const extra = {
-    id: 'ai:need-a-2',
-    category: 'capability' as const,
+test('AI 增补题 → 自身能力：需求题映射到 byNeedId，取更保守结论', () => {
+  const first: QuizQuestion = {
+    id: 'ai:need-a',
+    category: 'capability',
     question: 'x',
     basis: 'b',
     needIds: ['need-a'],
-    options: [{ label: 'A', status: 'partial' as const, why: 'w' }, { label: 'B', status: 'have' as const, why: 'w' }],
-    origin: 'ai' as const,
+    options: [{ label: 'A', status: 'have', why: 'w' }, { label: 'B', status: 'partial', why: 'w' }],
+    origin: 'ai',
   };
-  data = ensureSeedQuestions(data, [extra]);
-  data = setAnswer(data, extra.id, 0);
-  assert.equal(toOurCapabilityFromQuiz(data).byNeedId['need-a'], 'partial');
+  let data = ensureSeedQuestions(defaultQuizData(), [first]);
+  data = setAnswer(data, 'ai:need-a', 0);
+  assert.equal(toOurCapabilityFromQuiz(data).byNeedId['need-a'], 'have');
+
+  const second: QuizQuestion = {
+    id: 'ai:need-a-2',
+    category: 'capability',
+    question: 'x2',
+    basis: 'b',
+    needIds: ['need-a'],
+    options: [{ label: 'A', status: 'partial', why: 'w' }, { label: 'B', status: 'have', why: 'w' }],
+    origin: 'ai',
+  };
+  data = ensureSeedQuestions(data, [second]);
+  data = setAnswer(data, second.id, 0);
+  assert.equal(toOurCapabilityFromQuiz(data).byNeedId['need-a'], 'partial', '同一需求取更保守结论');
 });
 
-test('答题 → 适配度答案表：只含已答的题', () => {
-  const seeds = buildSeedQuestions({ needs: [NEED_A], competitorCount: 1 });
-  let data = ensureSeedQuestions(defaultQuizData(), seeds);
-  const q = data.questions[0];
-  data = setAnswer(data, q.id, 0);
+test('答题 → 适配度答案表：只含已答的题；多选取最保守', () => {
+  const qs = buildDecisionQuestions({ background: background({ certifications: ['NONE'] }) });
+  let data = ensureSeedQuestions(defaultQuizData(), qs);
+  const q1 = qs[0];
+  data = setAnswer(data, q1.id, 0);
   const answers = toAnswersForFit(data);
   assert.equal(Object.keys(answers).length, 1);
-  assert.ok(answers[q.id]);
+  assert.equal(answers[q1.id], 'have');
+
+  const q3 = qs.find((q) => q.id === 'decision:entry_conditions')!;
+  const certIdx = q3.options.findIndex((o) => o.conditionKey === 'cert_ready');
+  data = setAnswerMulti(data, q3.id, [certIdx, q3.options.findIndex((o) => o.conditionKey === 'deliver_60d')]);
+  assert.equal(toAnswersForFit(data)[q3.id], 'lack', '多选取最保守');
 });
 
 console.log(`\nresult: ${passed} passed, ${failed} failed`);

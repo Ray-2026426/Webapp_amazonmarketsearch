@@ -207,5 +207,36 @@ test('文档口径已更新：⏳3 标为已修', () => {
   }
 });
 
+console.log('二级页契约：被改写过的页必须声明偏离（防"界面撒谎"）');
+
+test('只有 ⑪⑫ 声明了 deviation，其余页仍是线框图原文', () => {
+  const deviating = L3_PAGES.filter((p) => typeof p.deviation === 'string' && p.deviation.trim().length > 0).map((p) => p.id);
+  assert(
+    JSON.stringify([...deviating].sort()) === JSON.stringify(['11', '12']),
+    `已知被用户指示改写的只有 ⑪⑫；实际声明偏离的是：${deviating.join(', ') || '(无)'}。` +
+      '若你改写了别的页，必须在 l3Pages.ts 里给它加 deviation，否则页壳会继续声称那是"线框图原文"。'
+  );
+  for (const p of L3_PAGES) {
+    for (const key of ['problem', 'entry', 'backTo', 'depends'] as const) {
+      assert(p[key].trim().length > 0, `${p.badge} 的 ${key} 不能为空`);
+    }
+  }
+});
+
+test('偏离说明要说清"线框图原文是什么、谁要求改的"，不能只写一句"已调整"', () => {
+  for (const p of L3_PAGES.filter((x) => x.deviation)) {
+    assert(p.deviation!.includes('线框图'), `${p.badge} 的偏离说明要提到线框图原文是什么`);
+    assert(/用户|指示|要求/.test(p.deviation!), `${p.badge} 的偏离说明要交代是谁要求的`);
+    assert(p.deviation!.length >= 40, `${p.badge} 的偏离说明太短，等于没说`);
+  }
+});
+
+test('页壳会随 deviation 切换标签（不能继续写"线框图原文"）', () => {
+  const sheet = read('src/components/L3Sheet.tsx');
+  assert(sheet.includes('page.deviation'), '页壳必须判断是否偏离');
+  assert(sheet.includes('已按用户指示调整'), '偏离时要换一个诚实的标签');
+  assert(sheet.includes('线框图对这一页的要求（原文）'), '未偏离时仍显示原文标签');
+});
+
 console.log(`\nresult: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

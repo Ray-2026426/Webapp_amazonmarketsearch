@@ -5,9 +5,11 @@ import {
   buildOurCapability,
   hardConstraintsFromSelfAssessment,
   computeFitScore,
+  buildFitAnswers,
   buildHardConstraintVerdict,
 } from '../src/utils/ourCapability';
 import type { SelfAssessmentItem, SelfStatus } from '../src/utils/selfAssessment';
+import type { DerivedCapability } from '../src/utils/capabilityDerivation';
 
 let passed = 0;
 let failed = 0;
@@ -153,6 +155,54 @@ test('硬约束结论：同一句话来自三个来源时只留一条；不同�
   });
   assert.equal(different.notes.length, 2, '不同表述要都保留（用户需要看到全部依据）');
   assert.equal(new Set(different.notes).size, different.notes.length);
+});
+
+test('V3：旧版 42 项迁移过来的决策边界记录继续否决（改版不放行）', () => {
+  const v = buildHardConstraintVerdict({
+    items: [],
+    legacyNotes: ['决策边界「最高投入」不具备（旧版 42 项记录）'],
+  });
+  assert.equal(v.blocked, true);
+  assert.equal(v.notes.length, 1);
+  assert.ok(v.notes[0].includes('最高投入'));
+  // 与拍板问题的结论去重
+  const dup = buildHardConstraintVerdict({
+    items: [item({ category: 'boundary', label: '止损条件', status: 'lack' })],
+    legacyNotes: ['决策边界「止损条件」不具备（旧版 42 项记录）'],
+  });
+  assert.equal(dup.notes.length, 2, '措辞不同都要保留，用户要看到全部依据');
+});
+
+test('V3：适配度输入 = 拍板问题答案 + 背景信息推导出的能力结论（两个来源都算）', () => {
+  const derived: DerivedCapability[] = [
+    { key: 'ads', label: '广告能力', dimension: 'category_team', status: 'lack', source: 'derived', ruleId: 'r', reason: 'x' },
+    { key: 'moq', label: 'MOQ', dimension: 'supply', status: 'have', source: 'derived', ruleId: 'r', reason: 'x' },
+    { key: 'patent', label: '专利风险', dimension: 'compliance', status: 'unknown', source: 'derived', ruleId: 'r', reason: 'x' },
+  ];
+  const answers = buildFitAnswers({ decisionAnswers: { 'decision:stop_loss': 'partial' }, capabilityEntries: derived });
+  assert.deepEqual(answers, { 'q:decision:stop_loss': 'partial', 'cap:ads': 'lack', 'cap:moq': 'have', 'cap:patent': 'unknown' });
+  const r = computeFitScore({ answers, backgroundCompleteness: 1 });
+  assert.equal(r.answered, 3, '待确认（判断不了）不进分母');
+  assert.equal(r.excluded, 1);
+  assert.equal(r.fitScore, 50, '(0.5 + 0 + 1) / 3 = 0.5');
+});
+
+test('V3：能力概况来自背景信息推导（不是让用户手点 20 项）', () => {
+  const derived: DerivedCapability[] = [
+    { key: 'ads', label: '广告能力', dimension: 'category_team', status: 'lack', source: 'derived', ruleId: 'r', reason: '背景信息「广告投放」= 无' },
+    { key: 'moq', label: 'MOQ', dimension: 'supply', status: 'have', source: 'manual', ruleId: 'r', reason: '用户逐条覆盖' },
+    { key: 'patent', label: '专利风险', dimension: 'compliance', status: 'unknown', source: 'derived', ruleId: 'r', reason: '判断不了' },
+  ];
+  const c = buildOurCapability({ items: [], capabilityEntries: derived });
+  assert.ok(c.notes.some((n) => n.includes('由背景信息推导') && n.includes('已具备 1 项') && n.includes('不具备 1 项')));
+  assert.ok(c.notes.some((n) => n.includes('用户逐条覆盖 1 项')));
+  assert.ok(c.notes.some((n) => n.includes('判断不了 1 项不计入')));
+  // 背景信息全是"判断不了"时，诚实地说明推断不出能力（不假装能接住）
+  const empty = buildOurCapability({
+    items: [],
+    capabilityEntries: derived.map((d) => ({ ...d, status: 'unknown' as SelfStatus })),
+  });
+  assert.ok(empty.notes.some((n) => n.includes('能力结论全部是"判断不了"')));
 });
 
 console.log(`\nresult: ${passed} passed, ${failed} failed`);

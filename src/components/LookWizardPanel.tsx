@@ -21,6 +21,9 @@ import {
   SELF_STATUS_LABELS,
 } from '../utils/selfAssessment';
 import { updateLookProgress } from '../utils/projectStore';
+import { loadCapabilityLibrary } from '../utils/capabilityLibrary';
+import { deriveCapabilitiesForPrompt, resolveCapabilities } from '../utils/capabilityDerivation';
+import { loadUserBackgroundById } from '../utils/userBackground';
 import {
   captureAndSaveSnapshot,
   captureSnapshot,
@@ -256,7 +259,14 @@ export function LookWizardPanel({
         let extra: Record<string, unknown> | undefined;
         if (look === 'self') {
           const sa = await loadSelfAssessment(userId, project.id);
-          extra = { answers: buildSelfAnswers(sa, SELF_CATEGORY_LABELS, SELF_STATUS_LABELS) };
+          // V3：3 个拍板问题的答案 + 背景信息推导出的能力结论（同一份确定性口径，AI 不得改写）
+          const derived = resolveCapabilities(loadUserBackgroundById(userId), loadCapabilityLibrary(userId));
+          extra = {
+            answers: {
+              ...buildSelfAnswers(sa, SELF_CATEGORY_LABELS, SELF_STATUS_LABELS),
+              自身能力: deriveCapabilitiesForPrompt(derived).replace(/\n+/g, '；'),
+            },
+          };
         }
         const res = await runLookAnalysis(look, { ...(extra ?? {}), scope: { userId, projectId: project.id } });
         if (!res.ok || !res.data) {

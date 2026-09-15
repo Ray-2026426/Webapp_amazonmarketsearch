@@ -11,7 +11,7 @@
 //   3) 绝不因 AI 返回 0 条而删除任何人工已确认的卡（由调用方的合并规则保证，见 mergeGeneratedCards）。
 
 import { generateText, loadAiSettings } from './aiConfig';
-import { buildUserBackgroundSystemPrompt } from './userBackground';
+import { buildUserBackgroundSystemPrompt, loadUserBackgroundById, computeBackgroundCompleteness } from './userBackground';
 import { tryParseJson } from './lookAi';
 import { loadUserLook } from './userLook';
 import { loadMarketLook } from './marketLook';
@@ -26,9 +26,10 @@ import { mergeControlPointsPreservingEdits } from './controlPointEditing';
 import { suggestConclusion } from './opportunityConclusion';
 import { loadMarketSegmentContext } from './opportunityContext';
 import { buildSatisfactionMatrix, buildPainMatrix } from './competitorAnalysis';
-import { buildOurCapability, computeFitScore } from './ourCapability';
+import { buildOurCapability, buildFitAnswers, computeFitScore } from './ourCapability';
 import { toAnswersForFit } from './categoryQuiz';
-import { computeCompleteness, loadCapabilityLibrary } from './capabilityLibrary';
+import { loadCapabilityLibrary } from './capabilityLibrary';
+import { deriveCapabilitiesForPrompt, resolveCapabilities, resolveCapabilityLibrary } from './capabilityDerivation';
 import type { OpportunityCard, ResearchProject } from '../types/researchProject';
 import type { OpportunityConclusion } from '../types/opportunity';
 import { CONFIDENCE_LABELS } from '../types/opportunity';
@@ -54,6 +55,8 @@ async function buildFourLookContext(userId: string, projectId: string): Promise<
   fitScore: number;
   fitAnswered: number;
   hardConstraint: { blocked: boolean; notes: string[] } | null;
+  /** 背景信息推导 + 人工覆盖后的能力库（供机会卡"前置资源缺口"对照，V3） */
+  capabilityLibrary: ReturnType<typeof resolveCapabilityLibrary>;
   segmentOpportunity: number | undefined;
   hasTargetSegment: boolean;
   competitorCount: number;
@@ -106,15 +109,22 @@ async function buildFourLookContext(userId: string, projectId: string): Promise<
   }
 
   lines.push('【看自己 · 适配与硬约束】');
+  const background = loadUserBackgroundById(userId);
+  const capabilityEntries = resolveCapabilities(background, loadCapabilityLibrary(userId));
   const capability = buildOurCapability({
     items: self.items,
+    capabilityEntries,
     byNeedId: comp.ourCapabilityByNeedId ?? {},
     financials: comp.ourCapabilityFinancials,
   });
   const answersForFit = self.quiz ? toAnswersForFit(self.quiz) : {};
-  const backgroundCompleteness = computeCompleteness(loadCapabilityLibrary(userId)).completeness;
-  const fit = computeFitScore({ answers: answersForFit, backgroundCompleteness });
+  const backgroundCompleteness = computeBackgroundCompleteness(background).fraction;
+  const fit = computeFitScore({
+    answers: buildFitAnswers({ decisionAnswers: answersForFit, capabilityEntries }),
+    backgroundCompleteness,
+  });
   lines.push(`适配度 ${fit.fitScore}/100（${fit.answered} 道相关题；${fit.note}）`);
+  lines.push(deriveCapabilitiesForPrompt(capabilityEntries));
   // 硬约束以"项目里已存好的结论"为准（M3 写入），没有再回退到自评推导
   const hardConstraint = self.hardConstraintVerdict ?? { blocked: capability.hardConstraintBlocked, notes: capability.hardConstraintNotes ?? [] };
   lines.push(`硬约束：${hardConstraint.blocked ? `已否决（${(hardConstraint.notes ?? []).join('；')}）` : '未触发'}`);
@@ -135,6 +145,7 @@ async function buildFourLookContext(userId: string, projectId: string): Promise<
     fitScore: fit.fitScore,
     fitAnswered: fit.answered,
     hardConstraint,
+    capabilityLibrary: resolveCapabilityLibrary(background, loadCapabilityLibrary(userId)),
     segmentOpportunity: segCtx.targetOpportunity,
     hasTargetSegment: segCtx.targets.length > 0,
     competitorCount: columns.length,
@@ -269,6 +280,8 @@ ${ctx.text}`;
               profit: cleaned.profitAssumption ?? null,
               risks: cleaned.risks,
               previousControlPoints: previousPoints,
+              // V3：前置资源缺口对照"背景信息推导出的能力库"（缺的标红，不假装都有）
+              library: ctx.capabilityLibrary,
             });
 
       cards.push({

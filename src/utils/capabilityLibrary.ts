@@ -1,11 +1,13 @@
-// M3⑤ · 账号级「背景库」（PRD §6.4-1）。
+// M3⑤ · 账号级能力库（PRD §6.4-1）。**V3 起：这里的条目是"推导 + 人工覆盖"的解析结果，不再是一张手填的四态表。**
 //
-// 设计要点（针对两个缺陷："42 题太重" 与 "适配度=完成度"）：
-// 1. 六维度全量保留，但**每项都是四态 + 备注**（已具备/部分具备/不具备/待确认），不强迫一次填完；
-// 2. 只做"渐进完善"：随时能补，完整度随时可见，缺项只影响**可信度**，不阻塞流程；
-// 3. 完整度（填了多少）与适配度（答得多好）**彻底分离**：这里只算完整度。
+// 演变（用户诉求："有了背景信息，还要我确认 20 项四态，很奇怪"）：
+// - V2：20 个能力项，每项手点"已具备/部分具备/不具备/待确认"（相当于又一张 20 题的卷子）；
+// - V3：20+ 项由**背景信息确定性推导**（见 capabilityDerivation.ts），用户只需要在需要时**逐条覆盖**；
+//   本文件只负责：① 能力项词表（下游用它做前置资源缺口/硬约束）；② 覆盖的存取；
+//   ③ 硬约束候选（财务红线 / 合规 / MOQ 里"不具备"的项 → 关联机会不能"直接进入"）。
 //
 // 存储：账号级（跨项目复用），按 userId 存 localStorage（与 userBackground 同构，便于后续一起迁移）。
+// 完整度不再在这里算：背景信息完整度在 userBackground.computeBackgroundCompleteness（口径唯一）。
 
 import { SELF_STATUS_LABELS, type SelfStatus } from './selfAssessment';
 
@@ -35,7 +37,11 @@ export const CAPABILITY_DIMENSION_LABELS: Record<CapabilityDimension, string> = 
   risk: '风险偏好',
 };
 
-/** 每维度的项目清单（§6.4 原文口径；保持精简，避免又变成"42 题太重"） */
+/**
+ * 能力项词表（§6.4 六维度口径）。
+ * V3 新增 `product_def` / `rnd` / `ads` / `after_sales`：背景信息里本来就有这四项能力输入，
+ * 不给它们词汇就只能挂在"团队"这个黑盒里，前置资源缺口会说不清缺什么。
+ */
 export const CAPABILITY_ITEMS: { dimension: CapabilityDimension; key: string; label: string; hint?: string }[] = [
   { dimension: 'funding', key: 'startup_capital', label: '启动资金', hint: '能投入这个品类的现金规模' },
   { dimension: 'funding', key: 'ad_budget', label: '广告预算', hint: '验证期每月的广告投入上限' },
@@ -45,8 +51,12 @@ export const CAPABILITY_ITEMS: { dimension: CapabilityDimension; key: string; la
   { dimension: 'supply', key: 'payment_terms', label: '账期', hint: '是否有账期支持现金流' },
   { dimension: 'supply', key: 'lead_time', label: '交付周期', hint: '从下单到可发货的天数' },
   { dimension: 'category_team', key: 'category_exp', label: '类目经验', hint: '是否做过这个类目' },
-  { dimension: 'category_team', key: 'ops', label: '运营能力', hint: '是否能自己操盘 Listing/广告' },
+  { dimension: 'category_team', key: 'product_def', label: '产品定义', hint: '能不能把需求翻译成产品方案' },
+  { dimension: 'category_team', key: 'rnd', label: '研发设计', hint: '能不能做结构/功能实现' },
   { dimension: 'category_team', key: 'design', label: '设计能力', hint: '是否能做图/A+/视觉差异化' },
+  { dimension: 'category_team', key: 'ads', label: '广告能力', hint: '能不能自己投广告并控 ACOS' },
+  { dimension: 'category_team', key: 'ops', label: '运营能力', hint: '是否能自己操盘 Listing/广告' },
+  { dimension: 'category_team', key: 'after_sales', label: '售后能力', hint: '差评/退货/客服是否有人接' },
   { dimension: 'compliance', key: 'certification', label: '认证', hint: '目标站点要求的认证是否齐备' },
   { dimension: 'compliance', key: 'trademark', label: '商标', hint: '是否已注册商标/能否授权' },
   { dimension: 'compliance', key: 'patent', label: '专利风险', hint: '目标卖点是否可能踩专利' },
@@ -59,13 +69,24 @@ export const CAPABILITY_ITEMS: { dimension: CapabilityDimension; key: string; la
   { dimension: 'risk', key: 'inventory_risk', label: '库存风险承受', hint: '能否承受一批货压手里' },
 ];
 
+export const CAPABILITY_ITEM_KEYS: string[] = CAPABILITY_ITEMS.map((i) => i.key);
+
 export interface CapabilityEntry {
   status: SelfStatus;
   note?: string;
+  /**
+   * 结论来源：`manual` = 用户逐条覆盖（必须显式标记；**AI 不得改写**）；
+   * `derived` = 由背景信息推导（解析结果里会带上）。
+   */
+  source?: 'manual' | 'derived';
+  /** 推导规则编号（可复核） */
+  ruleId?: string;
+  /** 这条是怎么推出来的 / 被覆盖成了什么 */
+  reason?: string;
 }
 
 export interface CapabilityLibrary {
-  /** key → 四态 + 备注；缺 key 视为未填（不是"不具备"） */
+  /** key → 结论；这里的 entries 是**解析结果**（推导 + 覆盖），缺 key 视为"背景信息判断不了" */
   entries: Record<string, CapabilityEntry>;
   updatedAt: string;
 }
@@ -73,7 +94,7 @@ export interface CapabilityLibrary {
 export const ENTRY_STATUSES: SelfStatus[] = ['have', 'partial', 'lack', 'unknown'];
 
 export function defaultCapabilityLibrary(): CapabilityLibrary {
-  return { entries: {}, updatedAt: new Date().toISOString() };
+  return { entries: {}, updatedAt: '' };
 }
 
 const KEY_PREFIX = 'kairo_capability_library:';
@@ -82,6 +103,10 @@ function storageKey(userId: string): string {
   return `${KEY_PREFIX}${userId || 'anonymous'}`;
 }
 
+/**
+ * 读取持久化的**人工覆盖**（V2 时代手填的条目不丢：它们会被当成用户显式覆盖保留下来）。
+ * 状态非法的条目丢弃（不猜用户意图）。
+ */
 export function loadCapabilityLibrary(userId: string): CapabilityLibrary {
   try {
     const raw = localStorage.getItem(storageKey(userId));
@@ -90,13 +115,19 @@ export function loadCapabilityLibrary(userId: string): CapabilityLibrary {
     if (!parsed || typeof parsed !== 'object' || typeof parsed.entries !== 'object' || parsed.entries === null) {
       return defaultCapabilityLibrary();
     }
-    // 归一化：状态非法的条目丢弃（不猜用户意图）
     const entries: Record<string, CapabilityEntry> = {};
     for (const [k, v] of Object.entries(parsed.entries as Record<string, CapabilityEntry>)) {
       if (!v || !ENTRY_STATUSES.includes(v.status)) continue;
-      entries[k] = { status: v.status, note: typeof v.note === 'string' ? v.note : undefined };
+      if (v.status === 'unknown') continue; // "待确认"不是覆盖，等于没覆盖
+      entries[k] = {
+        status: v.status,
+        note: typeof v.note === 'string' ? v.note : undefined,
+        source: 'manual',
+        ruleId: v.ruleId,
+        reason: v.reason,
+      };
     }
-    return { entries, updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString() };
+    return { entries, updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : '' };
   } catch {
     return defaultCapabilityLibrary();
   }
@@ -106,91 +137,35 @@ export function saveCapabilityLibrary(userId: string, lib: CapabilityLibrary): v
   try {
     localStorage.setItem(storageKey(userId), JSON.stringify({ ...lib, updatedAt: new Date().toISOString() }));
   } catch {
-    /* 存不进去就算了：背景库不是关键路径，不能因此挡住分析 */
+    /* 存不进去就算了：能力覆盖不是关键路径，不能因此挡住分析 */
   }
 }
 
+/** 逐条覆盖（显式标记 manual；传 'unknown' 等价于取消覆盖） */
 export function setCapabilityEntry(
   lib: CapabilityLibrary,
   key: string,
   status: SelfStatus,
   note?: string
 ): CapabilityLibrary {
-  return { ...lib, entries: { ...lib.entries, [key]: { status, note } }, updatedAt: new Date().toISOString() };
-}
-
-export interface CompletenessReport {
-  /** 已明确（have/partial/lack）的条目数 */
-  filled: number;
-  /** "待确认"的条目数（不算填好） */
-  unknown: number;
-  total: number;
-  /** 0-1：filled / total。**这是完整度，不是适配度** */
-  completeness: number;
-  byDimension: Record<CapabilityDimension, { filled: number; total: number }>;
-  /** 还没填的条目（告诉用户"补这些能提升可信度"） */
-  emptyItems: { key: string; label: string; dimension: CapabilityDimension }[];
-}
-
-/**
- * 完整度（确定性）：
- * - have/partial/lack 都算"已明确"；
- * - unknown（待确认）算**未完成**——它降低可信度而不是提供信息；
- * - 没填的条目同样算未完成，并在 emptyItems 里列出来（渐进完善的入口）。
- */
-export function computeCompleteness(lib: CapabilityLibrary | undefined): CompletenessReport {
-  const entries = lib?.entries ?? {};
-  const byDimension = {} as Record<CapabilityDimension, { filled: number; total: number }>;
-  for (const d of CAPABILITY_DIMENSION_ORDER) byDimension[d] = { filled: 0, total: 0 };
-
-  let filled = 0;
-  let unknown = 0;
-  const emptyItems: CompletenessReport['emptyItems'] = [];
-
-  for (const item of CAPABILITY_ITEMS) {
-    byDimension[item.dimension].total += 1;
-    const e = entries[item.key];
-    if (!e) {
-      emptyItems.push({ key: item.key, label: item.label, dimension: item.dimension });
-      continue;
-    }
-    if (e.status === 'unknown') {
-      unknown += 1;
-      emptyItems.push({ key: item.key, label: item.label, dimension: item.dimension });
-      continue;
-    }
-    filled += 1;
-    byDimension[item.dimension].filled += 1;
+  const entries = { ...lib.entries };
+  if (status === 'unknown') {
+    delete entries[key];
+  } else {
+    entries[key] = { status, note, source: 'manual', reason: `用户逐条覆盖为「${SELF_STATUS_LABELS[status]}」` };
   }
-
-  const total = CAPABILITY_ITEMS.length;
-  return {
-    filled,
-    unknown,
-    total,
-    completeness: total > 0 ? Math.round((filled / total) * 1000) / 1000 : 0,
-    byDimension,
-    emptyItems,
-  };
+  return { ...lib, entries, updatedAt: new Date().toISOString() };
 }
 
-/** 完整度人话（进项目时提示用；明确说清"影响的是可信度，不阻塞流程"） */
-export function describeCompleteness(report: CompletenessReport): string {
-  const pct = Math.round(report.completeness * 100);
-  if (report.filled === 0) return `背景库完整度 ${pct}%：还没填（会降低适配度可信度，但不阻塞分析）`;
-  if (report.completeness >= 0.8) return `背景库完整度 ${pct}%：已足够可信`;
-  return `背景库完整度 ${pct}%（已明确 ${report.filled}/${report.total}${report.unknown > 0 ? `，待确认 ${report.unknown}` : ''}）：将影响适配度可信度，可随时补`;
+/** 取消某一条的人工覆盖，回到"由背景信息推导" */
+export function clearCapabilityOverride(lib: CapabilityLibrary, key: string): CapabilityLibrary {
+  const entries = { ...lib.entries };
+  delete entries[key];
+  return { ...lib, entries, updatedAt: new Date().toISOString() };
 }
 
-/** 六维度里"最拖后腿"的维度（补齐优先级建议） */
-export function weakestDimension(report: CompletenessReport): { dimension: CapabilityDimension; empty: number } | null {
-  let worst: { dimension: CapabilityDimension; empty: number } | null = null;
-  for (const d of CAPABILITY_DIMENSION_ORDER) {
-    const empty = report.byDimension[d].total - report.byDimension[d].filled;
-    if (empty <= 0) continue;
-    if (!worst || empty > worst.empty) worst = { dimension: d, empty };
-  }
-  return worst;
+export function manualOverrideCount(lib: CapabilityLibrary | undefined): number {
+  return Object.values(lib?.entries ?? {}).filter((e) => e.source === 'manual').length;
 }
 
 /** 硬约束候选：财务红线与合规资质里"不具备"的项（供赢的路径/机会卡红条引用） */
@@ -203,6 +178,21 @@ export function capabilityHardConstraints(lib: CapabilityLibrary | undefined): s
     const isBoundary = item.dimension === 'finance' || item.dimension === 'compliance' || item.key === 'moq';
     if (isBoundary && e.status === 'lack') {
       out.push(`${CAPABILITY_DIMENSION_LABELS[item.dimension]}「${item.label}」不具备${e.note ? `（${e.note}）` : ''}`);
+    }
+  }
+  return out;
+}
+
+/** 警戒（不是否决）：同一条边界上"部分具备"的项（例：认证只有 CE，美国站可能要 FCC） */
+export function capabilityBoundaryWarnings(lib: CapabilityLibrary | undefined): string[] {
+  const entries = lib?.entries ?? {};
+  const out: string[] = [];
+  for (const item of CAPABILITY_ITEMS) {
+    const e = entries[item.key];
+    if (!e) continue;
+    const isBoundary = item.dimension === 'finance' || item.dimension === 'compliance' || item.key === 'moq';
+    if (isBoundary && e.status === 'partial') {
+      out.push(`${CAPABILITY_DIMENSION_LABELS[item.dimension]}「${item.label}」仅部分具备${e.note ? `（${e.note}）` : ''}`);
     }
   }
   return out;

@@ -41,6 +41,9 @@ import type { ResearchProject } from '../types/researchProject';
 import type { HistoryRecord, Product, Review } from '../utils/parser';
 import type { SelfStatus } from '../utils/selfAssessment';
 import { DRILLDOWN_ENTRIES } from '../utils/competitorDrilldown';
+import { loadCapabilityLibrary } from '../utils/capabilityLibrary';
+import { resolveCapabilities } from '../utils/capabilityDerivation';
+import { loadUserBackgroundById } from '../utils/userBackground';
 
 /**
  * M3 · 看竞对深度分析（PRD §6.3）。
@@ -163,9 +166,10 @@ export function CompetitorDeepDive({
       const satisfaction = columns.map((a) => buildSatisfactionMatrix(a, products.find((p) => p.asin === a), reviews, needs, look.listingDetails?.[a]));
       const personas = columns.map((a) => buildCompetitorPersona(a, reviews, needs));
 
-      // 5) 我们的能力（看自己自评 + 人工/品类题覆盖）
+      // 5) 我们的能力（3 个拍板问题的决策边界项 + 背景信息推导出的能力结论 + 人工/品类题覆盖）
       const capability = buildOurCapability({
         items: self.items,
+        capabilityEntries: resolveCapabilities(loadUserBackgroundById(userId), loadCapabilityLibrary(userId)),
         byNeedId: look.ourCapabilityByNeedId ?? {},
         financials: look.ourCapabilityFinancials,
       });

@@ -104,12 +104,19 @@ export function L3Sheet({
         </div>
       </div>
 
-      {/* 页面契约（线框图 note 原文）：让"做出来了"和"承诺了什么"在同一屏里可核对 */}
+      {/* 页面契约：让"做出来了"和"承诺了什么"在同一屏里可核对。
+          有 deviation 的页（用户指示改过设计）不能再说"线框图原文" —— 否则就是界面在撒谎。 */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-4">
         <div className="rounded-[20px] border border-indigo-100 bg-indigo-50/50 px-4 py-3">
           <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-800 mb-2">
-            <HelpCircle className="w-3.5 h-3.5" /> 线框图对这一页的要求（原文）
+            <HelpCircle className="w-3.5 h-3.5" />
+            {page.deviation ? '本页要求（已按用户指示调整，非线框图原文）' : '线框图对这一页的要求（原文）'}
           </p>
+          {page.deviation && (
+            <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mb-2 leading-relaxed">
+              {page.deviation}
+            </p>
+          )}
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
             {INFO_ITEMS.map(({ key, label }) => (
               <div key={key}>

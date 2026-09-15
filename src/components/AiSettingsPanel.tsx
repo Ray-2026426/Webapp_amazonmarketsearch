@@ -25,9 +25,6 @@ import {
   createLingXingProvider,
   createSorftimeProvider,
   createCustomProvider,
-  DEFAULT_SELLERSPRITE_MCP_URL,
-  DEFAULT_XYDC_MCP_URL,
-  DEFAULT_SORFTIME_MCP_URL,
   type McpProviderEntry,
   type AppFeatureFlags,
 } from '../utils/mcpConfig';
@@ -35,6 +32,14 @@ import {
   loadUserBackground,
   saveUserBackground,
   EMPTY_USER_BACKGROUND,
+  BACKGROUND_GROUPS,
+  applyBackgroundMultiChange,
+  computeBackgroundCompleteness,
+  describeBackgroundCompleteness,
+  getBackgroundFieldValue,
+  getBackgroundMultiValue,
+  setBackgroundFieldValue,
+  weakestBackgroundGroup,
   type UserBackgroundProfile,
 } from '../utils/userBackground';
 import { testMcpProvider } from '../utils/sellerspriteApi';
@@ -49,7 +54,7 @@ import {
   providerEndpointFact,
   providerRequiresCustomUrl,
 } from '../utils/aiEndpoints';
-import { Select } from './ui/Select';
+import { Select, MultiSelectChips } from './ui/Select';
 
 type SettingsTab = 'api' | 'profile' | 'mcp' | 'features' | 'prompts' | 'diagnostics' | 'admin' | 'team';
 
@@ -338,6 +343,10 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
       ? resolvedApiUrl || suggestedApiUrl
       : resolvedApiUrl || trimmedApiUrl
     : `${endpointFact.proxyTarget}（本站默认转发目标）`;
+
+  /** 背景信息完整度（确定性纯函数；只影响"可信度"，不进入任何评分公式，权重固定 25/25/25/15/10） */
+  const bgReport = computeBackgroundCompleteness(userBackground);
+  const bgWeak = weakestBackgroundGroup(bgReport);
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
     { id: 'api', label: 'API 与模型', icon: <Cpu className="w-4 h-4" /> },
@@ -700,51 +709,80 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
           {tab === 'profile' && (
             <div className="space-y-4 overflow-y-auto">
               <div className="rounded-2xl bg-indigo-50 border border-indigo-100 px-4 py-3 text-sm text-indigo-900 leading-relaxed">
-                填写你是谁、做什么品、关心什么。之后用户洞察、关键词、报告等 AI 能力会自动参考这些信息，输出更贴你的业务场景。信息只保存在本机浏览器。
+                这里填的是「谁在做判断」：以选择题为主（自由文本只有 3 个），每一组都写明它影响五看里的哪个判断。
+                填得越全，「看自己」里要你回答的问题就越少、适配度也越可信；留空不阻塞分析。信息只保存在本机浏览器。
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {([
-                  ['displayName', '怎么称呼你', '例如：老李 / Ray'],
-                  ['role', '岗位角色', '例如：项目经理 / 运营负责人'],
-                  ['company', '公司或团队', '例如：XX跨境电商 / OG项目组'],
-                  ['brands', '负责品牌', '例如：BrandA、BrandB'],
-                  ['categories', '常做品类', '例如：厨房收纳、宠物用品'],
-                  ['marketplaces', '主做站点', '例如：US、UK、DE'],
-                  ['experience', '经验简述', '例如：亚马逊 5 年，偏开发选品'],
-                ] as [keyof UserBackgroundProfile, string, string][]).map(([field, label, ph]) => (
-                  <div key={field} className="space-y-1">
-                    <label className="text-xs font-semibold text-[#86868b]">{label}</label>
-                    <input
-                      type="text"
-                      value={userBackground[field]}
-                      onChange={(e) => setUserBackground((prev) => ({ ...prev, [field]: e.target.value }))}
-                      placeholder={ph}
-                      className="w-full px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                    />
+
+              {/* 完整度（确定性；只影响可信度，不影响任何打分权重） */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    bgReport.fraction >= 0.8 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                  }`}
+                >
+                  背景信息完整度 {bgReport.filled}/{bgReport.total}
+                </span>
+                <span className="text-[11px] text-[#86868b] leading-relaxed">{describeBackgroundCompleteness(bgReport)}</span>
+              </div>
+              {bgWeak && (
+                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-relaxed">
+                  建议先补 <b>{bgWeak.title}</b>（还差 {bgWeak.empty} 项）—— 这一组对你当前的判断影响最大。
+                </p>
+              )}
+
+              {BACKGROUND_GROUPS.map((g) => (
+                <div key={g.id} className="rounded-2xl border border-black/8 bg-white p-4 space-y-3">
+                  <div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-[#1d1d1f]">{g.title}</p>
+                      <span className="text-[10px] text-[#86868b]">
+                        {bgReport.byGroup[g.id].filled}/{bgReport.byGroup[g.id].total} 已填
+                      </span>
+                    </div>
+                    {/* 一句话：这一组影响五看里的哪一个判断 */}
+                    <p className="text-[11px] text-indigo-700/80 mt-0.5 leading-relaxed">{g.affects}</p>
                   </div>
-                ))}
-              </div>
-              {([
-                ['goals', '近期目标', '例如：本季度找到 2 个可测款；老品改版提升转化'],
-                ['constraints', '约束条件', '例如：MOQ 要低、优先现有供应链、广告预算有限'],
-                ['analysisStyle', '希望 AI 怎么说', '例如：结论先行、少套话、给可执行动作清单'],
-                ['extraNotes', '其他补充', '任何希望 AI 记住的业务偏好或禁区'],
-              ] as [keyof UserBackgroundProfile, string, string][]).map(([field, label, ph]) => (
-                <div key={field} className="space-y-1">
-                  <label className="text-xs font-semibold text-[#86868b]">{label}</label>
-                  <textarea
-                    value={userBackground[field]}
-                    onChange={(e) => setUserBackground((prev) => ({ ...prev, [field]: e.target.value }))}
-                    placeholder={ph}
-                    rows={2}
-                    className="w-full px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-y min-h-[64px]"
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {g.fields.map((f) => (
+                      <div key={f.key} className={f.kind === 'multi' ? 'space-y-1 sm:col-span-2' : 'space-y-1'}>
+                        <label className="text-xs font-semibold text-[#86868b]">
+                          {f.label}
+                          {f.hint && <span className="ml-1 font-normal text-[10px] text-[#aeaeb2]">{f.hint}</span>}
+                        </label>
+                        {f.kind === 'select' ? (
+                          <Select
+                            value={String(getBackgroundFieldValue(userBackground, f.key) ?? '')}
+                            onChange={(v) => setUserBackground((prev) => setBackgroundFieldValue(prev, f.key, v))}
+                            options={[{ value: '', label: '未填（可留空）' }, ...(f.options ?? [])]}
+                            className="w-full"
+                            triggerClassName="w-full"
+                            aria-label={f.label}
+                          />
+                        ) : f.kind === 'multi' ? (
+                          <MultiSelectChips
+                            options={f.options ?? []}
+                            value={getBackgroundMultiValue(userBackground, f.key)}
+                            onChange={(next) => setUserBackground((prev) => applyBackgroundMultiChange(prev, f.key, next))}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={String(getBackgroundFieldValue(userBackground, f.key) ?? '')}
+                            onChange={(e) => setUserBackground((prev) => setBackgroundFieldValue(prev, f.key, e.target.value))}
+                            placeholder={f.placeholder}
+                            className="w-full px-3 py-2 bg-[#f5f5f7] border border-black/5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
+
               <button
                 type="button"
                 onClick={() => {
-                  setUserBackground({ ...EMPTY_USER_BACKGROUND });
+                  setUserBackground({ ...EMPTY_USER_BACKGROUND, fields: {}, notes: {}, legacyNotes: '' });
                   toast.info('已清空表单，点「应用设置」后才会真正清除');
                 }}
                 className="text-xs text-[#86868b] hover:text-rose-600"
@@ -755,216 +793,137 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
           )}
 
           {tab === 'mcp' && (
-            <div className="space-y-5 overflow-y-auto">
-              <div className="rounded-2xl bg-violet-50 border border-violet-100 px-4 py-3 text-sm text-violet-900 leading-relaxed">
-                可配置多家 MCP：领星、卖家精灵、西柚洞察、Sorftime。管理员会自动预填密钥；业务抓取仍以卖家精灵为主。密钥只保存在本机浏览器。
-              </div>
+            <div className="space-y-4 overflow-y-auto">
+              {/* 2026-09 用户要求：MCP 配置简化、傻瓜化、没必要出现的文字都删掉。
+                  精简原则：① 全局说明只留一句；② 每个数据源压缩成一行（名称 + 启用 + 检查）；
+                  ③ 地址这类"默认不用管"的东西收进「高级」；④ 删掉所有营销式提示。 */}
+              <p className="text-xs text-[#86868b] leading-relaxed">
+                密钥由平台在服务端管理（管理员后台 → 配置中心）。这里只看状态，浏览器不保存任何密钥。
+              </p>
 
-              {mcpProviders.map((p, idx) => {
-                const testState = mcpTestResults[p.id];
-                const isTesting = testingProviderId === p.id;
-                const kindLabel =
-                  p.kind === 'sellersprite' ? '卖家精灵'
-                  : p.kind === 'xydc' ? '西柚洞察'
-                  : p.kind === 'lingxing' ? '领星'
-                  : p.kind === 'sorftime' ? 'Sorftime'
-                  : '自定义';
-                const usesAppProxy = p.kind === 'sellersprite' || p.kind === 'xydc' || p.kind === 'lingxing' || p.kind === 'sorftime';
-                return (
-                  <div
-                    key={p.id}
-                    className="rounded-2xl border border-black/10 bg-[#fafafa] p-4 space-y-3"
-                  >
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <span className="text-xs font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-lg shrink-0">
+              <div className="space-y-2">
+                {mcpProviders.map((p) => {
+                  const testState = mcpTestResults[p.id];
+                  const isTesting = testingProviderId === p.id;
+                  const kindLabel =
+                    p.kind === 'sellersprite' ? '卖家精灵'
+                    : p.kind === 'xydc' ? '西柚洞察'
+                    : p.kind === 'lingxing' ? '领星'
+                    : p.kind === 'sorftime' ? 'Sorftime'
+                    : '自定义';
+                  return (
+                    <div key={p.id} className="rounded-2xl border border-black/10 bg-white px-4 py-3 space-y-2">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span className="text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded-lg shrink-0">
                           {kindLabel}
                         </span>
                         <input
                           value={p.name}
                           onChange={(e) => updateProvider(p.id, { name: e.target.value })}
-                          className="flex-1 min-w-[120px] px-2 py-1.5 bg-white border border-black/5 rounded-lg text-sm font-semibold"
+                          className="flex-1 min-w-[8rem] px-2 py-1 bg-transparent border border-transparent hover:border-black/10 focus:border-indigo-300 rounded-lg text-sm font-medium text-[#1d1d1f] focus:outline-none"
                           placeholder="名称"
                         />
-                      </div>
-                      <label className="flex items-center gap-1.5 text-xs text-[#86868b] shrink-0">
-                        <input
-                          type="checkbox"
-                          checked={p.enabled}
-                          onChange={(e) => updateProvider(p.id, { enabled: e.target.checked })}
-                        />
-                        启用
-                      </label>
-                      {p.kind === 'custom' && (
+                        <label className="flex items-center gap-1.5 text-xs text-[#86868b] shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={p.enabled}
+                            onChange={(e) => updateProvider(p.id, { enabled: e.target.checked })}
+                          />
+                          启用
+                        </label>
                         <button
                           type="button"
-                          onClick={() => setMcpProviders((prev) => prev.filter((x) => x.id !== p.id))}
-                          className="text-xs text-rose-600 hover:underline"
+                          onClick={() => handleTestMcpProvider(p)}
+                          disabled={isTesting}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap ${
+                            testState === 'ok'
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : testState === 'fail'
+                                ? 'border-rose-200 bg-rose-50 text-rose-700'
+                                : 'border-black/10 bg-white text-[#424245] hover:border-indigo-300 hover:text-indigo-700'
+                          }`}
                         >
-                          删除
+                          {isTesting ? (
+                            <span className="animate-spin">⟳</span>
+                          ) : testState === 'ok' ? (
+                            <Check className="w-3.5 h-3.5" />
+                          ) : testState === 'fail' ? (
+                            <AlertCircle className="w-3.5 h-3.5" />
+                          ) : null}
+                          {isTesting ? '检查中…' : testState === 'ok' ? '可用' : testState === 'fail' ? '不可用' : '检查'}
                         </button>
-                      )}
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[#86868b] flex items-center gap-1">
-                        <Key className="w-3.5 h-3.5" />
-                        {p.kind === 'xydc' ? 'MCP Token（Bearer）'
-                          : p.kind === 'lingxing' ? 'X-Mcp-Key'
-                          : p.kind === 'sorftime' ? 'Sorftime Key'
-                          : '密钥 / Secret Key'}
-                      </label>
-                      {/* 用户决策 A：密钥只在服务端保存与使用，浏览器不再接收密钥输入 */}
-                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2">
-                        <p className="text-[11px] text-indigo-800">
-                          密钥由平台在服务端管理：请让管理员到「设置 → 管理员后台 → 配置中心」配置；
-                          浏览器不再保存任何密钥，取数一律通过服务端数据池。
-                        </p>
-                        {p.secretKey ? (
+                        {p.kind === 'custom' && (
                           <button
                             type="button"
-                            onClick={() => updateProvider(p.id, { secretKey: '' })}
-                            className="mt-1.5 rounded-lg border border-rose-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:border-rose-400"
+                            onClick={() => setMcpProviders((prev) => prev.filter((x) => x.id !== p.id))}
+                            className="text-xs text-rose-600 hover:underline shrink-0"
                           >
-                            清除本机残留的旧密钥（{p.secretKey.length} 位）
+                            删除
                           </button>
-                        ) : null}
+                        )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleTestMcpProvider(p)}
-                        disabled={isTesting}
-                        className="px-3 py-2 bg-white border border-black/10 rounded-xl text-sm font-medium hover:bg-[#f5f5f7] disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
-                      >
-                        {isTesting ? (
-                          <span className="animate-spin">⟳</span>
-                        ) : testState === 'ok' ? (
-                          <Check className="w-4 h-4 text-emerald-500" />
-                        ) : testState === 'fail' ? (
-                          <AlertCircle className="w-4 h-4 text-rose-500" />
-                        ) : null}
-                        {isTesting ? '检查中…' : '检查服务端数据池状态'}
-                      </button>
-                    </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[#86868b] flex items-center gap-1">
-                        <Globe className="w-3.5 h-3.5" /> MCP 地址
-                        {usesAppProxy ? '（建议留空）' : '（必填）'}
-                      </label>
-                      <input
-                        type="text"
-                        value={p.mcpUrl}
-                        onChange={(e) => updateProvider(p.id, { mcpUrl: e.target.value })}
-                        placeholder={
-                          usesAppProxy
-                            ? '留空 = 走应用内安全代理'
-                            : 'https://your-mcp.example.com/mcp'
-                        }
-                        className="w-full px-3 py-2 bg-white border border-black/5 rounded-xl text-sm font-mono"
-                      />
-                      {p.kind === 'sellersprite' && (
-                        <p className="text-[11px] text-[#86868b] leading-relaxed">
-                          不要填 <code className="bg-black/5 px-1 rounded">{DEFAULT_SELLERSPRITE_MCP_URL}</code>
-                          ，否则浏览器会跨域报错。只有自建中转时才填自定义地址。
-                        </p>
-                      )}
-                      {p.kind === 'xydc' && (
-                        <p className="text-[11px] text-[#86868b] leading-relaxed">
-                          不要填 <code className="bg-black/5 px-1 rounded">{DEFAULT_XYDC_MCP_URL}</code>
-                          ，官方地址已由应用代理。Token 填上面一栏即可（不用带 Bearer 前缀）。
-                        </p>
-                      )}
-                      {p.kind === 'sorftime' && (
-                        <p className="text-[11px] text-[#86868b] leading-relaxed">
-                          不要填 <code className="bg-black/5 px-1 rounded">{DEFAULT_SORFTIME_MCP_URL}</code>
-                          ，Key 填上面一栏；应用会自动拼到请求参数。
-                        </p>
-                      )}
-                      {p.kind === 'custom' && (
-                        <p className="text-[11px] text-[#86868b] leading-relaxed">
-                          其他 MCP 需支持浏览器跨域，或填你自己的同源代理路径（如 /api-proxy/xxx）。
-                        </p>
-                      )}
-                      {(p.kind === 'sellersprite' || p.kind === 'xydc' || p.kind === 'lingxing' || p.kind === 'sorftime') &&
-                        (/mcp\.sellersprite\.com/i.test(p.mcpUrl) || /mcp\.xydc\.com/i.test(p.mcpUrl) || /openmcp\.lingxing\.com/i.test(p.mcpUrl) || /mcp\.sorftime\.com/i.test(p.mcpUrl)) && (
+                      {p.secretKey ? (
                         <button
                           type="button"
-                          className="text-xs text-amber-800 underline"
-                          onClick={() => updateProvider(p.id, { mcpUrl: '' })}
+                          onClick={() => updateProvider(p.id, { secretKey: '' })}
+                          className="rounded-lg border border-rose-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:border-rose-400"
                         >
-                          一键清空官方地址（推荐）
+                          清除本机残留的旧密钥（{p.secretKey.length} 位）
                         </button>
-                      )}
+                      ) : null}
+
+                      <details className="rounded-xl bg-[#f5f5f7] px-3 py-2">
+                        <summary className="text-[11px] text-[#424245] cursor-pointer select-none">
+                          高级：自定义 MCP 地址（默认留空即可）
+                        </summary>
+                        <div className="pt-2 space-y-1.5">
+                          <input
+                            type="text"
+                            value={p.mcpUrl}
+                            onChange={(e) => updateProvider(p.id, { mcpUrl: e.target.value })}
+                            placeholder="留空 = 走应用内安全代理"
+                            className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          <p className="text-[11px] text-[#86868b] leading-relaxed">
+                            只有自建中转（或需要走自己的同源代理路径，如 <code className="font-mono">/api-proxy/xxx</code>）时才填；
+                            填官方地址会让浏览器跨域报错。
+                          </p>
+                        </div>
+                      </details>
                     </div>
+                  );
+                })}
+              </div>
 
-                    {idx === 0 && p.kind === 'sellersprite' && (
-                      <p className="text-[11px] text-violet-700/80">
-                        提示：用户洞察、关键词、竞品明细的在线抓取，都会优先用启用中的卖家精灵。
-                      </p>
-                    )}
-                    {p.kind === 'xydc' && (
-                      <p className="text-[11px] text-orange-700/80">
-                        提示：西柚洞察适合流量结构、广告节奏、关键词打法分析；当前业务抓取仍以卖家精灵为主。
-                      </p>
-                    )}
-                    {p.kind === 'lingxing' && (
-                      <p className="text-[11px] text-sky-700/80">
-                        提示：领星适合店铺/关键词等 ERP 侧数据；鉴权头为 X-Mcp-Key。
-                      </p>
-                    )}
-                    {p.kind === 'sorftime' && (
-                      <p className="text-[11px] text-emerald-700/80">
-                        提示：Sorftime 适合 Listing / 品类 / 关键词深度调研；当前应用内抓取仍以卖家精灵为主。
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-
-              <div className="flex flex-wrap gap-2">
-                {!mcpProviders.some((p) => p.kind === 'lingxing') && (
-                  <button
-                    type="button"
-                    onClick={() => setMcpProviders((prev) => [...prev, createLingXingProvider()])}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-sky-200 text-sky-700 text-sm font-medium hover:bg-sky-50"
-                  >
-                    <Plus className="w-4 h-4" /> 添加领星
-                  </button>
-                )}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-[#86868b]">
+                <span>添加数据源：</span>
                 {!mcpProviders.some((p) => p.kind === 'sellersprite') && (
-                  <button
-                    type="button"
-                    onClick={() => setMcpProviders((prev) => [...prev, createSellerSpriteProvider()])}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-violet-200 text-violet-700 text-sm font-medium hover:bg-violet-50"
-                  >
-                    <Plus className="w-4 h-4" /> 添加卖家精灵
+                  <button type="button" onClick={() => setMcpProviders((prev) => [...prev, createSellerSpriteProvider()])} className="px-2 py-1 rounded-lg border border-violet-200 text-violet-700 font-medium hover:bg-violet-50">
+                    卖家精灵
                   </button>
                 )}
                 {!mcpProviders.some((p) => p.kind === 'xydc') && (
-                  <button
-                    type="button"
-                    onClick={() => setMcpProviders((prev) => [...prev, createXydcProvider()])}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-orange-200 text-orange-700 text-sm font-medium hover:bg-orange-50"
-                  >
-                    <Plus className="w-4 h-4" /> 添加西柚洞察
+                  <button type="button" onClick={() => setMcpProviders((prev) => [...prev, createXydcProvider()])} className="px-2 py-1 rounded-lg border border-orange-200 text-orange-700 font-medium hover:bg-orange-50">
+                    西柚洞察
+                  </button>
+                )}
+                {!mcpProviders.some((p) => p.kind === 'lingxing') && (
+                  <button type="button" onClick={() => setMcpProviders((prev) => [...prev, createLingXingProvider()])} className="px-2 py-1 rounded-lg border border-sky-200 text-sky-700 font-medium hover:bg-sky-50">
+                    领星
                   </button>
                 )}
                 {!mcpProviders.some((p) => p.kind === 'sorftime') && (
-                  <button
-                    type="button"
-                    onClick={() => setMcpProviders((prev) => [...prev, createSorftimeProvider()])}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-medium hover:bg-emerald-50"
-                  >
-                    <Plus className="w-4 h-4" /> 添加 Sorftime
+                  <button type="button" onClick={() => setMcpProviders((prev) => [...prev, createSorftimeProvider()])} className="px-2 py-1 rounded-lg border border-emerald-200 text-emerald-700 font-medium hover:bg-emerald-50">
+                    Sorftime
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => setMcpProviders((prev) => [...prev, createCustomProvider({ name: `自定义 MCP ${prev.filter((x) => x.kind === 'custom').length + 1}` })])}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-black/10 text-sm font-medium text-[#1d1d1f] hover:bg-[#f5f5f7]"
+                  className="px-2 py-1 rounded-lg border border-black/10 text-[#1d1d1f] font-medium hover:bg-[#f5f5f7]"
                 >
-                  <Plus className="w-4 h-4" /> 添加其他 MCP
+                  其他 MCP
                 </button>
               </div>
             </div>

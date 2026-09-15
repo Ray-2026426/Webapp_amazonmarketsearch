@@ -7,10 +7,9 @@ import {
   saveSelfAssessment,
   computeSelfProgress,
   SELF_CATEGORY_LABELS,
-  SELF_CATEGORY_ORDER,
+  SELF_DECISION_QUESTION_COUNT,
   SELF_STATUS_LABELS,
   type SelfAssessment,
-  type SelfStatus,
 } from '../utils/selfAssessment';
 import { updateLookProgress } from '../utils/projectStore';
 import type { ResearchProject } from '../types/researchProject';
@@ -18,20 +17,24 @@ import { LookAiBar } from './LookAiBar';
 import { mergeSelfAi, buildSelfAnswers } from '../utils/lookAiApply';
 import { addEvidence } from '../utils/evidence';
 import { SelfReadinessPanel } from './SelfReadinessPanel';
+import { loadCapabilityLibrary } from '../utils/capabilityLibrary';
+import { deriveCapabilitiesForPrompt, resolveCapabilities } from '../utils/capabilityDerivation';
+import { loadUserBackgroundById } from '../utils/userBackground';
 import type { L3Id } from '../utils/l3Pages';
 import type { L3BodyRender } from './L3Sheet';
 
-const STATUS_ORDER: SelfStatus[] = ['have', 'partial', 'lack', 'unknown'];
-
-const STATUS_PILL: Record<SelfStatus, string> = {
-  have: 'bg-emerald-600 text-white border-emerald-600',
-  partial: 'bg-amber-500 text-white border-amber-500',
-  lack: 'bg-rose-500 text-white border-rose-500',
-  unknown: 'bg-white text-[#86868b] border-black/8',
-};
-
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
+/**
+ * M3⑤ · 看自己 V3（PRD §6.4）。
+ *
+ * **42 项四态网格已删除**：能力/资源/经验/约束由「设置 → 背景信息」确定性推导（可逐条覆盖，见
+ * SelfReadinessPanel 的 ⑪ 区块），用户在这里只需要回答 **3 个拍板问题**（最低毛利率 / 止损条件 /
+ * 必须满足的进入条件），再加上适配度与硬约束结论。
+ *
+ * 保留的东西（不许破坏）：AI 只起草不评分的 LookAiBar、SaveBadge 落盘状态、五看进度回写、
+ * 「看自己」侧的二级页⑪⑫（仍是同一份实现，variant='sheet'）。
+ */
 export function SelfAssessmentView({
   userId,
   project,
@@ -93,22 +96,31 @@ export function SelfAssessmentView({
     [persist]
   );
 
-  const setItem = (itemId: string, patch: { status?: SelfStatus; note?: string }) => {
-    if (!assessment) return;
-    const items = assessment.items.map((it) => (it.id === itemId ? { ...it, ...patch } : it));
-    scheduleSave({ ...assessment, items });
-  };
+  /**
+   * 面板（SelfReadinessPanel）是「看自己」数据的写方：它写回后同步到本视图，
+   * 头部"已答 x/3"、AI 输入与五看进度都跟着更新。用 useCallback 稳定身份，避免面板反复重订阅。
+   */
+  const handleAssessmentSaved = useCallback(
+    (next: SelfAssessment) => {
+      setAssessment(next);
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      saveTimer.current = window.setTimeout(() => {
+        void persist(next);
+      }, 500);
+    },
+    [persist]
+  );
 
-  /** M1：AI 起草回填 —— 只填 aiDraft，绝不改动人工自评项（逻辑与一键向导共用） */
+  /** M1：AI 起草回填 —— 只填 aiDraft，绝不改动决策边界项与能力结论（逻辑与一键向导共用） */
   const applyAi = (out: Record<string, unknown>) => {
-    const { next, filled, skipped } = mergeSelfAi(assessment, out);
+    const { next, filled, skipped } = mergeSelfAi(assessment!, out);
     scheduleSave(next);
     void addEvidence(userId, project.id, {
       look: 'self',
       type: 'assessment',
       sourceRef: `self:${new Date().toISOString().slice(0, 10)}`,
-      summary: `自评已答 ${assessment.items.filter((i) => i.status !== 'unknown').length}/${
-        assessment.items.length
+      summary: `拍板问题已答 ${assessment!.items.filter((i) => i.status !== 'unknown').length}/${
+        assessment!.items.length || SELF_DECISION_QUESTION_COUNT
       } 项 + AI 适配度结论`,
     });
     return { filled, skipped };
@@ -117,12 +129,15 @@ export function SelfAssessmentView({
   if (!assessment) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-[#aeaeb2]">
-        <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载自评…
+        <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载看自己…
       </div>
     );
   }
 
   const answered = assessment.items.filter((i) => i.status !== 'unknown').length;
+  const total = assessment.items.length || SELF_DECISION_QUESTION_COUNT;
+  // 给 AI 的自身能力口径：3 个拍板问题的答案 + 背景信息推导（确定性）结论
+  const derived = resolveCapabilities(loadUserBackgroundById(userId), loadCapabilityLibrary(userId));
 
   return (
     <div className="space-y-4">
@@ -133,38 +148,48 @@ export function SelfAssessmentView({
             <ClipboardList className="w-5 h-5 text-indigo-600" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-[#1d1d1f]">看自己 · 结构化自评</h3>
+            <h3 className="text-lg font-semibold text-[#1d1d1f]">看自己 · 背景信息 + 3 个拍板问题</h3>
             <p className="text-sm text-[#86868b] mt-0.5 max-w-xl">
-              判断团队是否具备解决未满足需求的目标、能力与资源；结果将用于机会卡的「自身适配度」。
+              能力/资源/经验/约束由「设置 → 背景信息」自动推导（可逐条覆盖）；这里只回答背景信息答不了、但决定拍板的 3 个问题。
+              结论用于机会卡的「自身适配度」与硬约束判定。
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs text-[#86868b]">已评 {answered}/{assessment.items.length}</span>
+          <span className="text-xs text-[#86868b]">
+            已答 {answered}/{total}
+          </span>
           <SaveBadge state={saveState} />
         </div>
       </div>
 
-      {/* M3⑤：账号背景库（六维度）+ 品类选择题 + 适配度（完成度与适配度分离）
+      {/* 背景信息摘要 + 能力推导 + 3 个拍板问题 + 适配度与硬约束
           ⏳3：⑪⑫ 的二级页入口与正文注册由面板自己处理 */}
       <SelfReadinessPanel
         userId={userId}
         project={project}
         onOpenL3={onOpenL3}
         onRegisterL3Bodies={onRegisterL3Bodies}
+        onAssessmentSaved={handleAssessmentSaved}
       />
 
       <LookAiBar
         look="self"
         userId={userId}
         projectId={project.id}
-        extra={{ answers: buildSelfAnswers(assessment, SELF_CATEGORY_LABELS, SELF_STATUS_LABELS) }}
-        disabled={answered === 0}
+        extra={{
+          // 3 个拍板问题的答案 + 背景信息推导出的能力结论（同一份确定性口径，AI 只解释不改）
+          answers: {
+            ...buildSelfAnswers(assessment, SELF_CATEGORY_LABELS, SELF_STATUS_LABELS),
+            自身能力: deriveCapabilitiesForPrompt(derived).replace(/\n+/g, '；'),
+          },
+        }}
+        disabled={false}
         onApply={applyAi}
         hint={
           answered === 0
-            ? '请先在上面至少标注一项自评（已具备 / 部分具备 / 不具备），AI 才能判断自身适配度。'
-            : `AI 会结合已作答的 ${answered} 项与账号背景，生成适配度判断、优势、缺口与硬约束（只填空，不改你已评的项）。`
+            ? `还没回答拍板问题：AI 会先按背景信息推导出的能力结论起草判断；回答 ${SELF_DECISION_QUESTION_COUNT} 个问题后，硬约束与适配度才算完整。`
+            : `AI 会结合 ${answered} 项拍板答案、背景信息推导出的能力结论与账号背景，生成适配度判断、优势、缺口与硬约束（只填空，不改你答过的项与推导结论）。`
         }
       />
 
@@ -173,7 +198,7 @@ export function SelfAssessmentView({
           <div className="p-5 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-[#1d1d1f]">AI 起草 · 自身适配结论</p>
-              <span className="text-[11px] text-[#86868b]">仅起草，不修改你的自评项</span>
+              <span className="text-[11px] text-[#86868b]">仅起草，不修改你的答案与推导结论</span>
             </div>
             {assessment.aiDraft.conclusion && (
               <p className="text-sm text-[#424245] leading-relaxed">{assessment.aiDraft.conclusion}</p>
@@ -206,55 +231,6 @@ export function SelfAssessmentView({
           </div>
         </Card>
       )}
-
-      {SELF_CATEGORY_ORDER.map((cat) => {
-        const items = assessment.items.filter((i) => i.category === cat);
-        const done = items.filter((i) => i.status !== 'unknown').length;
-        return (
-          <Card key={cat}>
-            <div className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-semibold text-[#1d1d1f]">{SELF_CATEGORY_LABELS[cat]}</p>
-                <span className="text-[11px] text-[#aeaeb2]">{done}/{items.length}</span>
-              </div>
-              <div className="divide-y divide-black/5">
-                {items.map((item) => (
-                  <div key={item.id} className="py-2.5 first:pt-0 last:pb-0">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm text-[#424245] min-w-0">{item.label}</span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {STATUS_ORDER.map((s) => (
-                          <button
-                            key={s}
-                            type="button"
-                            onClick={() => setItem(item.id, { status: s })}
-                            className={cn(
-                              'px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all active:scale-[0.96]',
-                              item.status === s
-                                ? STATUS_PILL[s]
-                                : 'bg-white text-[#aeaeb2] border-black/5 hover:text-[#424245] hover:border-black/10'
-                            )}
-                          >
-                            {SELF_STATUS_LABELS[s]}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    {item.status !== 'unknown' && (
-                      <input
-                        value={item.note ?? ''}
-                        onChange={(e) => setItem(item.id, { note: e.target.value })}
-                        placeholder="备注 / 证据（选填）"
-                        className="mt-2 w-full px-3 py-2 rounded-xl border border-black/8 bg-gradient-to-b from-white to-[#f8f9fb] text-xs text-[#1d1d1f] placeholder:text-[#aeaeb2] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 transition-all"
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
-        );
-      })}
     </div>
   );
 }

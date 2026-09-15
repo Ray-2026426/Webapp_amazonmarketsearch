@@ -7,6 +7,7 @@
 
 import { SELF_CATEGORY_LABELS, type SelfAssessmentItem, type SelfStatus } from './selfAssessment';
 import type { OurCapability } from './competitorAnalysis';
+import type { DerivedCapability } from './capabilityDerivation';
 
 export interface OurCapabilityDraft extends OurCapability {
   /** 派生说明（告诉用户这个结论是怎么来的，可复核） */
@@ -38,8 +39,10 @@ export function hardConstraintsFromSelfAssessment(items: SelfAssessmentItem[] | 
 }
 
 export interface BuildOurCapabilityInput {
-  /** 看自己的结构化自评项 */
+  /** 看自己的结构化自评项（V3：= 3 个拍板问题推导出的决策边界项） */
   items?: SelfAssessmentItem[];
+  /** 由背景信息推导 / 用户覆盖后的能力结论（V3 新增；只有它才能说清"能力概况"） */
+  capabilityEntries?: DerivedCapability[];
   /** 品类选择题/人工指定的"每条需求我们行不行"（覆盖自评的域级结论） */
   byNeedId?: Record<string, SelfStatus>;
   /** 域级能力（人工指定时优先于自评推导） */
@@ -69,12 +72,31 @@ export function buildOurCapability(input: BuildOurCapabilityInput): OurCapabilit
     notes.push(
       `自身能力概况（自评）：已具备 ${derived.have || 0} 项 / 部分具备 ${derived.partial || 0} 项 / 不具备 ${derived.lack || 0} 项（共 ${total} 项有明确状态）`
     );
-  } else {
-    notes.push('看自己里还没有"能力/资源/经验"的明确自评：按需求的自身能力只能靠品类选择题或人工指定');
+  }
+
+  // V3：背景信息推导出的能力结论（比"自评"更全，也不再需要用户手点 20 项）
+  const entries = Array.isArray(input.capabilityEntries) ? input.capabilityEntries : [];
+  const counted = entries.filter((e) => e.status !== 'unknown');
+  if (counted.length > 0) {
+    const c = { have: 0, partial: 0, lack: 0 } as Record<string, number>;
+    for (const e of counted) c[e.status] += 1;
+    const manual = entries.filter((e) => e.source === 'manual').length;
+    notes.push(
+      `自身能力概况（由背景信息推导，确定性）：已具备 ${c.have} 项 / 部分具备 ${c.partial} 项 / 不具备 ${c.lack} 项` +
+        `（共 ${entries.length} 项${manual > 0 ? `，其中用户逐条覆盖 ${manual} 项` : ''}，判断不了 ${
+          entries.length - counted.length
+        } 项不计入）`
+    );
+  } else if (total === 0) {
+    notes.push(
+      entries.length > 0
+        ? '背景信息还没填，能力结论全部是"判断不了"：按需求的自身能力只能靠品类选择题或人工指定'
+        : '看自己里还没有"能力/资源/经验"的明确自评：按需求的自身能力只能靠品类选择题或人工指定'
+    );
   }
 
   const unknownCount = items.filter((i) => i.status === 'unknown').length;
-  if (unknownCount > 0) notes.push(`有 ${unknownCount} 项自评还是"待确认"，会降低适配度可信度`);
+  if (unknownCount > 0) notes.push(`有 ${unknownCount} 项自评还是"待确认"（V3：= 未答的拍板问题），会降低适配度可信度`);
   if (blocked) notes.push(`硬约束否决已触发：${hardNotes.join('；')}`);
   else if (hardNotes.length > 0) notes.push(`警戒：${hardNotes.join('；')}`);
 
@@ -99,7 +121,8 @@ export function buildOurCapability(input: BuildOurCapabilityInput): OurCapabilit
 
 /**
  * M3⑤ · 硬约束结论（存到项目数据里，供 M4「看机会」的机会卡顶部红条与进入方式判定直接读取）。
- * 三个来源合并去重：看自己自评的决策边界 / 账号背景库（财务红线、合规、MOQ）/ 品类选择题。
+ * 四个来源合并去重：3 个拍板问题的决策边界项 / 账号背景信息（合规、MOQ、财务红线）/
+ * AI 增补题里决策边界答"不具备" / 旧版 42 项迁移过来的决策边界记录。
  * 只要有任意一条为真 → blocked=true（最高"验证后进入"，不可"直接进入"）。
  */
 export interface HardConstraintVerdict {
@@ -110,16 +133,47 @@ export interface HardConstraintVerdict {
 
 export function buildHardConstraintVerdict(input: {
   items?: SelfAssessmentItem[];
-  /** 背景库推导出的硬约束（capabilityLibrary.capabilityHardConstraints） */
+  /** 背景信息推导出的硬约束（capabilityDerivation → capabilityLibrary.capabilityHardConstraints） */
   libraryNotes?: string[];
-  /** 品类选择题里决策边界答"不具备"的说明（categoryQuiz.toOurCapabilityFromQuiz 的 quizHardNotes） */
+  /** 拍板问题 / AI 增补题里决策边界答"不具备"的说明（categoryQuiz.toOurCapabilityFromQuiz 的 quizHardNotes） */
   quizNotes?: string[];
+  /** 旧版 42 项迁移保留的决策边界记录（selfAssessment.legacyBoundaryNotes）——不能因为改版就静默放行 */
+  legacyNotes?: string[];
   now?: string;
 }): HardConstraintVerdict {
   const fromSelf = hardConstraintsFromSelfAssessment(input.items).notes;
-  const notes = [...new Set([...(input.quizNotes ?? []), ...fromSelf, ...(input.libraryNotes ?? [])].map((n) => String(n || '').trim()).filter(Boolean))];
-  const blocked = hardConstraintsFromSelfAssessment(input.items).blocked || (input.libraryNotes ?? []).length > 0 || (input.quizNotes ?? []).length > 0;
+  const legacy = (input.legacyNotes ?? []).map((n) => String(n || '').trim()).filter(Boolean);
+  const notes = [
+    ...new Set([...(input.quizNotes ?? []), ...fromSelf, ...(input.libraryNotes ?? []), ...legacy].map((n) => String(n || '').trim()).filter(Boolean)),
+  ];
+  const blocked =
+    hardConstraintsFromSelfAssessment(input.items).blocked ||
+    (input.libraryNotes ?? []).length > 0 ||
+    (input.quizNotes ?? []).length > 0 ||
+    legacy.length > 0;
   return { blocked, notes, updatedAt: input.now ?? new Date().toISOString() };
+}
+
+/**
+ * 适配度的答案表（V3）：把**两个来源**合并成 适配度公式 的输入。
+ * - 3 个拍板问题的答案（每题按最保守状态）；
+ * - 背景信息推导出的能力结论（不含 unknown：判断不了的不进分母）。
+ * 这样"背景信息"是真的被用起来了，而不是只当乘数。
+ */
+export function buildFitAnswers(input: {
+  /** 拍板问题答案（questionId → 状态） */
+  decisionAnswers?: Record<string, SelfStatus>;
+  /** 背景信息推导 / 覆盖后的能力结论 */
+  capabilityEntries?: DerivedCapability[];
+}): Record<string, SelfStatus> {
+  const out: Record<string, SelfStatus> = {};
+  for (const [id, status] of Object.entries(input.decisionAnswers ?? {})) {
+    out[`q:${id}`] = status;
+  }
+  for (const e of input.capabilityEntries ?? []) {
+    out[`cap:${e.key}`] = e.status;
+  }
+  return out;
 }
 
 /**

@@ -507,7 +507,12 @@ ${summary}`;
       .map(([k, v]) => `- ${k}：${v}`)
       .join('\n');
     if (!answerLines.trim()) {
-      return { ok: false, reason: 'no-data', error: '请先回答几个引导问题（目标/预算/供应链/毛利要求等），AI 才能判断自身适配度。' };
+      return {
+        ok: false,
+        reason: 'no-data',
+        error:
+          '请先在「设置 → 背景信息」填一些背景（选择题即可），或回答「看自己」的 3 个拍板问题，AI 才能判断自身适配度。',
+      };
     }
     prompt = `请结合以下「用户背景」与「团队简要回答」，完成「看自己」分析，判断团队解决某个未满足需求的适配度，输出 JSON：
 {
