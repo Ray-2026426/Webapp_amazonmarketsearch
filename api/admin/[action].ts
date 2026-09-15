@@ -11,8 +11,8 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getServiceSupabase, verifyToken, isAdminEmail, json } from '../auth/_shared.js';
-import { summarizeUsage, filterUsageByRange, describeUsage, type UsageEvent } from '../../src/utils/usageAccounting';
-import { maskKey, describeCheck } from '../../src/utils/keyMasking';
+import { summarizeUsage, filterUsageByRange, describeUsage, type UsageEvent } from '../../src/utils/usageAccounting.js';
+import { maskKey, describeCheck } from '../../src/utils/keyMasking.js';
 
 function env(name: string): string {
   return (process.env[name] || '').trim();

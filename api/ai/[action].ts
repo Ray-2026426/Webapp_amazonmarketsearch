@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyToken, json } from '../auth/_shared.js';
-import { redactText } from '../../src/utils/keyMasking';
-import { validateRelayTarget } from '../../src/utils/aiEndpoints';
-import { parseModelsResponse } from '../../src/utils/aiModels';
+import { redactText } from '../../src/utils/keyMasking.js';
+import { validateRelayTarget } from '../../src/utils/aiEndpoints.js';
+import { parseModelsResponse } from '../../src/utils/aiModels.js';
 
 /**
  * AI 请求的服务端转发（`/api/ai/chat`）。

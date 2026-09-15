@@ -21,8 +21,8 @@ import {
   DEFAULT_TTL_SECONDS,
   type PoolCacheEntry,
   type PoolDataType,
-} from '../../src/utils/poolCache';
-import { entryToCacheRow, rowToCacheEntry, prunePlan, summarizeCacheRows } from '../../src/utils/poolCacheStore';
+} from '../../src/utils/poolCache.js';
+import { entryToCacheRow, rowToCacheEntry, prunePlan, summarizeCacheRows } from '../../src/utils/poolCacheStore.js';
 import {
   createUsageEvent,
   checkQuota,
@@ -31,7 +31,7 @@ import {
   describeUsage,
   type UsageEvent,
   type UsageTool,
-} from '../../src/utils/usageAccounting';
+} from '../../src/utils/usageAccounting.js';
 
 /* ───────────── 密钥（只在服务端） ───────────── */
 
