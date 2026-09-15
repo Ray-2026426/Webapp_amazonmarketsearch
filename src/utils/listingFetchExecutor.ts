@@ -1,12 +1,14 @@
 // M5 · Listing 抓取执行器：按计划走**服务端数据池**抓取（PRD §11.2）。
 //
 // 与 planListingFetch 的分工：计划器决定"抓什么、按什么顺序、花多少钱"（纯函数、可测），
-// 执行器只负责"按计划调用、隔离失败、汇总进度"。执行器**永远不接触密钥**：
-// 它只把 tool/args 发给 /api/data/mcp，密钥由服务端解析。
+// 执行器只负责"按计划调用、隔离失败、汇总进度"。执行器**不解析平台密钥**：
+// 它把 tool/args + 本机为该 provider 填的用户 Key 发给 /api/data/mcp，密钥由服务端按
+// "用户 Key 优先 → 平台兜底"的顺序选定（见 dataPoolClient.withUserKey / api/data/[action].ts）。
 //
 // 为什么要把并发限住：MCP 是外部服务，一次打十几个并发容易被限流或超时，
 // 反而让"抓取成功率"这项验收指标变差。默认并发 3，并按优先级顺序推进。
 
+import { withUserKey } from './dataPoolClient';
 import { planListingFetch, assembleListingDetails, evaluateFetchPlan, type FetchDepth, type FetchPlanEvaluation, type FetchStep, type FetchStepResult } from './listingFetchPlan';
 import type { FieldGroup, ListingDetail, TrafficDetail } from './listingFields';
 
@@ -25,23 +27,25 @@ export interface ExecuteResult {
   note: string;
 }
 
-/** 单步调用：只发 tool/args，密钥由服务端解析（前端永不接触） */
+/** 单步调用：只发 tool/args（+ 本机用户 Key，若有），平台密钥由服务端解析 */
 async function callGateway(step: FetchStep, opts: ExecuteOptions): Promise<FetchStepResult> {
   const started = Date.now();
   try {
     const res = await fetch('/api/data/mcp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token: opts.token,
-        provider: step.provider,
-        tool: step.tool,
-        args: step.args,
-        type: step.type,
-        usageTool: step.usageTool,
-        workspaceId: opts.workspaceId ?? 'default',
-        projectId: opts.projectId,
-      }),
+      body: JSON.stringify(
+        withUserKey(step.provider, {
+          token: opts.token,
+          provider: step.provider,
+          tool: step.tool,
+          args: step.args,
+          type: step.type,
+          usageTool: step.usageTool,
+          workspaceId: opts.workspaceId ?? 'default',
+          projectId: opts.projectId,
+        })
+      ),
     });
     const body = (await res.json().catch(() => ({}))) as {
       ok?: boolean;

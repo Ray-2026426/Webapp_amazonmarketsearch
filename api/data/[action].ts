@@ -1,13 +1,22 @@
 // M5 · 平台数据池网关（PRD §11.2「商用核心」）。
 //
 // 一次业务调用在这里完成四件事，顺序固定：
-//   1) 解析密钥（**只在服务端**：管理员在 Supabase user_metadata.appKeys 里存的，或本机环境变量）
+//   1) 解析密钥（**用户自带的 Key 优先 → 平台 Key 兜底**，见 src/utils/mcpRequestKey.ts）
 //   2) 查缓存（按数据类型 TTL，命中直接返回并把 cacheHit 记进用量）
 //   3) 配额校验（超限直接拒绝，不浪费外部调用）
-//   4) 调外部 MCP → 写缓存 → 记一条用量事件（成功/失败都记）
+//   4) 调外部 MCP → 写缓存 → 记一条用量事件（成功/失败都记，并带上 keySource 标签）
 //
-// 安全口径：本模块的任何返回值里都**不含密钥**；前端只拿业务数据。
-// 密钥解析顺序：管理员配置（服务端可读）→ 环境变量 → 没有就明确报"未配置"。
+// 密钥口径（BYO Key，2026-09 用户决策变更："需要其他用户也能填 key"）：
+//   ① 本次请求携带的用户 Key（浏览器本机保存，随请求体带来）→ 只在**当次请求内**使用；
+//   ② 服务端 app_config / 环境变量里的平台 Key（团队共享兜底）；
+//   ③ 都没有 → 明确报"未配置"，不编造。
+//
+// 安全红线（破了就是事故，逐条都有测试守着）：
+//   · 任何返回值里都不含密钥（连平台 Key 的指纹也不给：那是可暴力核对的信息）；
+//   · 用户 Key **绝不写库**（不写 app_config、不写任何表）、**绝不写日志**（含 console）、
+//     **绝不出现在任何响应体里**；上游把 Key 回显在报错里时统一过 redactText 抹掉；
+//   · 上游只把 Key 放**请求头**（secret-key），绝不拼进 URL query；
+//   · 非法用户 Key（空 / 超长 / 含控制字符）一律当作"没提供"，静默回退平台 Key，不报错泄露细节。
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getServiceSupabase, verifyToken, isAdminEmail, json } from '../auth/_shared.js';
@@ -32,6 +41,9 @@ import {
   type UsageEvent,
   type UsageTool,
 } from '../../src/utils/usageAccounting.js';
+import { decideProviderKeySource, resolveProviderKey, type ProviderKeySource } from '../../src/utils/mcpRequestKey.js';
+import { redactText } from '../../src/utils/keyMasking.js';
+import { validateRelayTarget } from '../../src/utils/aiEndpoints.js';
 
 /* ───────────── 密钥（只在服务端） ───────────── */
 
@@ -63,8 +75,9 @@ function env(name: string): string {
   return (process.env[name] || '').trim();
 }
 
-async function resolveProviderSecret(provider: ProviderName): Promise<string> {
-  // 1) 管理员在服务端保存的（Supabase user_metadata.appKeys）
+/** 平台 Key（**只有平台来源**：app_config → 环境变量）。用户自带的 Key 走 resolveRequestSecret */
+async function resolvePlatformSecret(provider: ProviderName): Promise<string> {
+  // 1) 管理员在「配置中心」保存的（Supabase app_config: key:<provider>）
   const s = getServiceSupabase();
   if (s) {
     try {
@@ -77,6 +90,23 @@ async function resolveProviderSecret(provider: ProviderName): Promise<string> {
   }
   // 2) 环境变量
   return env(PROVIDER_ENV_KEY[provider]);
+}
+
+/**
+ * 本次请求用谁的 Key —— **唯一的解析入口**，顺序钉死为"用户 Key 优先 → 平台兜底"：
+ *   ① `decideProviderKeySource`（纯函数）先看用户带来的 Key 是否可用；
+ *   ② **只有不可用时才去读平台 Key**（最小暴露面：用户自带 Key 时一次都不碰 app_config）；
+ *   ③ 两边都没有 → source='none'，调用方如实报"未配置"。
+ *
+ * 返回的 key 只在本函数调用栈里往下传（→ 上游请求头），不落库、不落日志、不进响应体。
+ */
+async function resolveRequestSecret(
+  provider: ProviderName,
+  userKeyRaw: unknown
+): Promise<{ key: string; source: ProviderKeySource }> {
+  const decision = decideProviderKeySource(userKeyRaw);
+  const platformKey = decision.source === 'platform' ? await resolvePlatformSecret(provider) : '';
+  return resolveProviderKey({ userKey: decision.userKey, platformKey });
 }
 
 function resolveProviderUrl(provider: ProviderName): string {
@@ -199,22 +229,28 @@ async function recordUsage(event: UsageEvent): Promise<void> {
   // 有 service_role 时落库（表见 008_usage_events.sql）；没有就只留内存，管理员面板仍可看
   const s = getServiceSupabase();
   if (!s) return;
+  // 记的是 `keySource` 这个**字面量标签**（user/platform/none），绝不是 Key 本身：
+  // 这张表里永远不该出现任何密钥片段，付费阶段只靠这个标签区分"用户自付 / 平台承担"。
+  const base = {
+    id: event.id,
+    workspace_id: event.workspaceId,
+    user_id: event.userId,
+    project_id: event.projectId ?? null,
+    tool: event.tool,
+    provider: event.provider,
+    ok: event.ok,
+    cache_hit: Boolean(event.cacheHit),
+    calls: event.calls,
+    input_tokens: event.inputTokens ?? null,
+    output_tokens: event.outputTokens ?? null,
+    duration_ms: event.durationMs ?? null,
+    error: event.error ?? null,
+  };
   try {
-    await s.from('usage_events').insert({
-      id: event.id,
-      workspace_id: event.workspaceId,
-      user_id: event.userId,
-      project_id: event.projectId ?? null,
-      tool: event.tool,
-      provider: event.provider,
-      ok: event.ok,
-      cache_hit: Boolean(event.cacheHit),
-      calls: event.calls,
-      input_tokens: event.inputTokens ?? null,
-      output_tokens: event.outputTokens ?? null,
-      duration_ms: event.durationMs ?? null,
-      error: event.error ?? null,
-    });
+    const { error } = await s.from('usage_events').insert({ ...base, key_source: event.keySource ?? null });
+    // key_source 列需要迁移（008 之后的增量）；线上还没跑迁移时退化为不带该列的写入，
+    // 标记仍然保留在内存事件与接口返回里 —— 记账不能因为少一列就整条丢掉。
+    if (error) await s.from('usage_events').insert(base);
   } catch {
     /* 记账失败不能挡住业务：内存里已经有一份 */
   }
@@ -237,44 +273,73 @@ const SS_TOOL_NAMES: Record<string, string> = {
   aba_research_weekly: 'aba_research_weekly',
 };
 
-async function callMcp(provider: ProviderName, tool: string, args: Record<string, unknown>): Promise<{ ok: boolean; data?: unknown; error?: string; calls: number }> {
-  const secret = await resolveProviderSecret(provider);
-  if (!secret) {
-    return { ok: false, error: `${provider} 未在服务端配置密钥（管理员可在设置→数据池配置，或设置环境变量 ${PROVIDER_ENV_KEY[provider]}）`, calls: 0 };
-  }
-  const endpoint = resolveProviderUrl(provider);
-  const call = async (method: string, params?: Record<string, unknown>, id = 1) => {
-    const body: McpRpc = { jsonrpc: '2.0', id, method, ...(params ? { params } : {}) };
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-        'secret-key': secret,
-        'MCP-Protocol-Version': '2025-03-26',
-      },
-      body: JSON.stringify(body),
-    });
-    const text = await res.text();
-    if (!res.ok) throw new Error(`MCP HTTP ${res.status}: ${text.slice(0, 200)}`);
-    // SSE 或 JSON 都兼容：取最后一个含 result/error 的 JSON 行
-    const lines = text.split('\n').filter((l) => l.trim().startsWith('{'));
-    const parsed = lines.length > 0 ? JSON.parse(lines[lines.length - 1]) : null;
-    return parsed as { result?: unknown; error?: { message?: string } } | null;
-  };
+/**
+ * 一次 JSON-RPC 请求。
+ * `secret` 由调用方解析好传进来（密钥解析只在一个地方发生，避免散开）。
+ * 密钥只出现在 **请求头**：绝不拼进 URL query（query 会进代理日志与 Referer）。
+ * 上游报错文本一律过 `redactText`：外部服务经常把 Key 原样回显在错误里。
+ */
+async function mcpPost(
+  endpoint: string,
+  secret: string,
+  method: string,
+  params?: Record<string, unknown>,
+  id = 1
+): Promise<{ result?: unknown; error?: { message?: string } } | null> {
+  const body: McpRpc = { jsonrpc: '2.0', id, method, ...(params ? { params } : {}) };
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      ...(secret ? { 'secret-key': secret } : {}),
+      'MCP-Protocol-Version': '2025-03-26',
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(redactText(`MCP HTTP ${res.status}: ${text.slice(0, 200)}`));
+  // SSE 或 JSON 都兼容：取最后一个含 result/error 的 JSON 行
+  const lines = text.split('\n').filter((l) => l.trim().startsWith('{'));
+  return (lines.length > 0 ? JSON.parse(lines[lines.length - 1]) : null) as
+    | { result?: unknown; error?: { message?: string } }
+    | null;
+}
 
+const MCP_INIT_PARAMS = { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'kairo', version: '1.0' } };
+
+/** 只做握手（验证用）：不调任何业务工具，因此不计费也不产生业务副作用 */
+async function mcpHandshake(endpoint: string, secret: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const init = await mcpPost(endpoint, secret, 'initialize', MCP_INIT_PARAMS, 0);
+    if (init?.error) return { ok: false, error: redactText(init.error.message || 'MCP initialize 失败') };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? redactText(e.message) : 'MCP 握手失败' };
+  }
+}
+
+/** 握手 + 调业务工具 */
+async function callMcp(
+  provider: ProviderName,
+  tool: string,
+  args: Record<string, unknown>,
+  secret: string,
+  endpointOverride?: string
+): Promise<{ ok: boolean; data?: unknown; error?: string; calls: number }> {
+  const endpoint = (endpointOverride || resolveProviderUrl(provider)).trim();
   let calls = 0;
   try {
     calls += 1;
-    const init = await call('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'kairo', version: '1.0' } }, 0);
-    if (init?.error) throw new Error(init.error.message || 'MCP initialize 失败');
+    const init = await mcpPost(endpoint, secret, 'initialize', MCP_INIT_PARAMS, 0);
+    if (init?.error) throw new Error(redactText(init.error.message || 'MCP initialize 失败'));
     calls += 1;
     const toolName = provider === 'sellersprite' ? SS_TOOL_NAMES[tool] || tool : tool;
-    const r = await call('tools/call', { name: toolName, arguments: args }, 2);
-    if (r?.error) throw new Error(r.error.message || 'MCP 调用失败');
+    const r = await mcpPost(endpoint, secret, 'tools/call', { name: toolName, arguments: args }, 2);
+    if (r?.error) throw new Error(redactText(r.error.message || 'MCP 调用失败'));
     return { ok: true, data: (r?.result as Record<string, unknown>)?.content ?? r?.result, calls };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'MCP 调用失败', calls };
+    return { ok: false, error: e instanceof Error ? redactText(e.message) : 'MCP 调用失败', calls };
   }
 }
 
@@ -290,7 +355,11 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
   if (!tool) return json(res, 400, { ok: false, error: '缺少 tool' });
   if (!Object.keys(PROVIDER_ENV_KEY).includes(provider)) return json(res, 400, { ok: false, error: `未知 provider：${provider}` });
 
-  // ① 配额
+  // ① 这次用的是谁的 Key（用户自带 → 平台兜底）。只在这里解析一次，往下传。
+  //    缓存命中时不读平台 Key（省一次库读），记账仍按"本次请求的来源"记标签。
+  const keyDecision = decideProviderKeySource(body.userKey);
+
+  // ② 配额
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
@@ -301,7 +370,7 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
     return json(res, 429, { ok: false, error: quota.reason, quota });
   }
 
-  // ② 缓存（持久化表优先，进程内兜底）
+  // ③ 缓存（持久化表优先，进程内兜底）
   const type = (String(body.type || 'other') as PoolDataType) ?? 'other';
   const key = buildCacheKey(type, { provider, tool, args, projectId });
   const nowIso = new Date().toISOString();
@@ -309,20 +378,40 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
   if (hitEntry) {
     const bumped = await bumpCacheHitEntry(hitEntry);
     await recordUsage(
-      createUsageEvent({ workspaceId, userId: auth.userId, projectId, tool: usageTool, provider, ok: true, cacheHit: true, calls: 0 })
+      createUsageEvent({
+        workspaceId,
+        userId: auth.userId,
+        projectId,
+        tool: usageTool,
+        provider,
+        ok: true,
+        cacheHit: true,
+        calls: 0,
+        keySource: keyDecision.source,
+      })
     );
     return json(res, 200, {
       ok: true,
       cached: true,
       cacheReason: `缓存命中（创建于 ${bumped.createdAt}，命中 ${bumped.hits} 次）`,
       data: bumped.value,
+      keySource: keyDecision.source,
       ttlSeconds: DEFAULT_TTL_SECONDS[type],
     });
   }
 
-  // ③ 调外部 + ④ 写缓存 + 记账
+  // ④ 解析密钥 → 调外部 → 写缓存 → 记账（成功失败都记，并带上"用的谁的 Key"）
+  const { key: secret, source: keySource } = await resolveRequestSecret(provider, body.userKey);
+  if (!secret) {
+    // 注意：这里**不回报**任何 Key 片段，也不区分"你没填"与"平台没配"以外的细节
+    return json(res, 400, {
+      ok: false,
+      error: `${provider} 没有可用的密钥：你可以在「设置 → MCP 数据」填自己的 Key（只存本机），或让管理员在配置中心配置平台 Key`,
+      keySource,
+    });
+  }
   const started = Date.now();
-  const result = await callMcp(provider, tool, args);
+  const result = await callMcp(provider, tool, args, secret);
   const durationMs = Date.now() - started;
   const ttlSeconds = Number(body.ttlSeconds ?? 0) || DEFAULT_TTL_SECONDS[type];
   if (result.ok) {
@@ -340,20 +429,32 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
       calls: result.calls,
       durationMs,
       error: result.ok ? undefined : result.error,
+      keySource,
     })
   );
-  if (!result.ok) return json(res, 502, { ok: false, error: result.error, cacheReason: '未命中缓存（本次为真实调用）' });
-  return json(res, 200, { ok: true, cached: false, cacheReason: '未命中缓存（本次为真实调用）', data: result.data, durationMs, ttlSeconds });
+  if (!result.ok) {
+    return json(res, 502, { ok: false, error: result.error, keySource, cacheReason: '未命中缓存（本次为真实调用）' });
+  }
+  return json(res, 200, {
+    ok: true,
+    cached: false,
+    cacheReason: '未命中缓存（本次为真实调用）',
+    data: result.data,
+    durationMs,
+    keySource,
+    ttlSeconds,
+  });
 }
 
-/** 状态：哪些 provider 在服务端已配置（只回布尔与指纹，不回密钥）+ 缓存概览 */
+/** 状态：哪些 provider 在服务端已配置（**只回布尔**）+ 缓存概览 */
 async function handleStatus(_req: VercelRequest, res: VercelResponse, _auth: unknown, body: Record<string, unknown>) {
-  const providers: Record<string, { configured: boolean; fingerprint: string; hasCustomUrl: boolean }> = {};
+  const providers: Record<string, { configured: boolean; hasCustomUrl: boolean }> = {};
   for (const p of Object.keys(PROVIDER_ENV_KEY) as ProviderName[]) {
-    const secret = await resolveProviderSecret(p);
+    const secret = await resolvePlatformSecret(p);
     providers[p] = {
       configured: secret.length > 0,
-      fingerprint: secret ? `${secret.slice(0, 3)}…${secret.slice(-4)}` : '',
+      // 这里**不再回指纹**：数据池状态是给所有登录用户看的，而平台 Key 的"首 3 末 4"
+      // 也是可以拿来核对的秘密片段。管理员要看指纹请走管理员后台自带的环境自检。
       hasCustomUrl: Boolean(env(PROVIDER_ENV_URL[p])),
     };
   }
@@ -377,8 +478,67 @@ async function handleStatus(_req: VercelRequest, res: VercelResponse, _auth: unk
     pruned: pruning,
     usage: describeUsage(summarizeUsage(USAGE, { limit: 20 })),
     note: usingDb
-      ? '密钥只在服务端；缓存持久化在 Supabase pool_cache（实例回收不丢）'
-      : '密钥只在服务端；当前无 service_role，缓存退回进程内（实例回收会丢，接口不变）',
+      ? '平台 Key 只在服务端；用户自带的 Key 只在当次请求内使用（不落库、不落日志）；缓存持久化在 Supabase pool_cache'
+      : '平台 Key 只在服务端；用户自带的 Key 只在当次请求内使用（不落库、不落日志）；当前无 service_role，缓存退回进程内',
+  });
+}
+
+/**
+ * 验证（「验证」按钮的唯一后端实现）：**按密钥来源分别验证**。
+ *
+ * 与 `mcp` 的区别（刻意做成两件事）：
+ *   - 只做 MCP `initialize` 握手，不调任何业务工具；
+ *   - **不写缓存、不记用量、不占配额** —— 点一下"验证"不该花掉一次额度，也不该污染账单；
+ *   - 返回体只有 `keySource` 与一句话，**连指纹都不回**（指纹也是可核对的秘密片段）。
+ *
+ * 自定义 MCP：地址由用户提供，所以必须过 `validateRelayTarget`（与 AI 转发同一套 SSRF 底线），
+ * 且这里只转发 initialize，绝不转发 tools/call —— 网关不变成"任意 MCP 代理"。
+ */
+async function handleVerify(_req: VercelRequest, res: VercelResponse, _auth: unknown, body: Record<string, unknown>) {
+  const providerRaw = String(body.provider || '');
+  const isCustom = providerRaw === 'custom';
+  const provider = (isCustom ? 'sellersprite' : providerRaw) as ProviderName;
+  if (!isCustom && !Object.keys(PROVIDER_ENV_KEY).includes(providerRaw)) {
+    return json(res, 400, { ok: false, error: `未知 provider：${providerRaw}` });
+  }
+  // 来源标签先算好再返回：返回体里只出现 'user' / 'platform' 这两个字面量，
+  // 不出现任何与 Key 值相关的表达式（见 tests/securityKeys.test.ts 的"不得进响应体"守卫）。
+  const requestedSource = decideProviderKeySource(body.userKey).source;
+
+  let endpointOverride = '';
+  if (isCustom) {
+    const check = validateRelayTarget(String(body.endpoint || ''));
+    if (!check.ok) {
+      return json(res, 400, {
+        ok: false,
+        keySource: requestedSource,
+        error: `自定义 MCP 地址不可用：${check.reason}（平台网关要能连到它；本机地址请在本机自行确认）`,
+      });
+    }
+    endpointOverride = check.url;
+  }
+
+  const { key: secret, source: keySource } = await resolveRequestSecret(provider, body.userKey);
+  if (!secret && !isCustom) {
+    return json(res, 200, {
+      ok: false,
+      keySource,
+      message: `${provider} 没有可用的密钥：填你自己的 Key（只存本机），或让管理员配置平台 Key`,
+    });
+  }
+
+  // 自定义 MCP 可能本来就不需要 Key（公开端点）：不带凭证也握一次手，如实回报结果
+  const handshake = await mcpHandshake(endpointOverride || resolveProviderUrl(provider), secret);
+  if (!handshake.ok) {
+    if (isCustom && !secret && /HTTP 40[13]/.test(handshake.error ?? '')) {
+      return json(res, 200, { ok: false, keySource, message: '端点要求鉴权：请填一个你自己的 Key（只存本机）再验证' });
+    }
+    return json(res, 200, { ok: false, keySource, message: handshake.error || '握手失败' });
+  }
+  return json(res, 200, {
+    ok: true,
+    keySource,
+    message: keySource === 'user' ? '连接成功（用的是你自己的 Key）' : keySource === 'platform' ? '连接成功（用的是平台 Key）' : '连接成功（自定义 MCP，未带 Key）',
   });
 }
 
@@ -397,6 +557,7 @@ const handlers: Record<string, (req: VercelRequest, res: VercelResponse, auth: {
   mcp: handleMcp,
   status: (req, res, _auth, body) => handleStatus(req, res, _auth, body),
   usage: handleUsage,
+  verify: (req, res, _auth, body) => handleVerify(req, res, _auth, body),
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

@@ -1,6 +1,14 @@
 /** MCP 数据源配置（可多家）+ 应用功能开关（仅存本机浏览器） */
-import { getAuthToken, getCurrentUser, isAdminSession } from './auth';
-import { getDefaultServerKey, pushServerKeys } from './serverKeys';
+//
+// BYO Key（2026-09 用户决策变更，原话："需要其他用户也能填 key，后续我们再考虑做付费，
+// 那时候再关闭 mcp 入口，换成计费模式。"）：
+//   这里保存的 `secretKey` 是**用户自己填的 Key**，只存在他自己的浏览器 localStorage；
+//   留空 = 走服务端平台 Key 兜底（团队共享，见 api/data/[action].ts 的解析顺序）。
+//
+// 因此本文件有两条硬约束（改了就是事故）：
+//   ① 平台 Key 绝不注入到浏览器：不再从 env / 服务端读取任何 Key 来预填输入框；
+//   ② 用户 Key 绝不写库：保存只写 localStorage，不再 push 到服务端。
+import { getCurrentUser, isAdminSession } from './auth';
 
 const MCP_KEY = 'amzdev_mcp_settings';
 const FEATURES_KEY = 'amzdev_feature_flags';
@@ -55,36 +63,12 @@ function providerKindLabel(kind: McpProviderKind): string {
   return '自定义 MCP';
 }
 
-function envDefaultXydcSecret(): string {
-  try {
-  return getDefaultServerKey('xydc');
-  } catch {
-    return '';
-  }
-}
-
-function envDefaultSellerSpriteSecret(): string {
-  try {
-  return getDefaultServerKey('sellersprite');
-  } catch {
-    return '';
-  }
-}
-
-function envDefaultLingXingSecret(): string {
-  try {
-    return getDefaultServerKey('lingxing');
-  } catch {
-    return '';
-  }
-}
-
-function envDefaultSorftimeSecret(): string {
-  try {
-    return getDefaultServerKey('sorftime');
-  } catch {
-    return '';
-  }
+/**
+ * 平台 Key **绝不注入浏览器**（BYO Key 决策）：这里刻意不读任何服务端/环境变量默认值。
+ * 保留函数名是为了让"曾经会预填平台 Key"这条路径显式消失，而不是悄悄换个地方又长回来。
+ */
+function noBrowserPlatformKey(): string {
+  return '';
 }
 
 export interface McpSettings {
@@ -105,24 +89,22 @@ function uid(): string {
 }
 
 export function createSellerSpriteProvider(partial?: Partial<McpProviderEntry>): McpProviderEntry {
-  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
     id: partial?.id || `ss_${uid()}`,
     name: partial?.name || '卖家精灵',
     kind: 'sellersprite',
-    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultSellerSpriteSecret() : '') || '').trim(),
+    secretKey: (partial?.secretKey || noBrowserPlatformKey() || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
 }
 
 export function createLingXingProvider(partial?: Partial<McpProviderEntry>): McpProviderEntry {
-  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
     id: partial?.id || `lx_${uid()}`,
     name: partial?.name || '领星',
     kind: 'lingxing',
-    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultLingXingSecret() : '') || '').trim(),
+    secretKey: (partial?.secretKey || noBrowserPlatformKey() || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
@@ -140,24 +122,22 @@ export function createCustomProvider(partial?: Partial<McpProviderEntry>): McpPr
 }
 
 export function createXydcProvider(partial?: Partial<McpProviderEntry>): McpProviderEntry {
-  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
     id: partial?.id || `xydc_${uid()}`,
     name: partial?.name || '西柚洞察',
     kind: 'xydc',
-    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultXydcSecret() : '') || '').trim(),
+    secretKey: (partial?.secretKey || noBrowserPlatformKey() || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
 }
 
 export function createSorftimeProvider(partial?: Partial<McpProviderEntry>): McpProviderEntry {
-  const defaultsAllowed = canUseAdminMcpDefaults();
   return {
     id: partial?.id || `sorf_${uid()}`,
     name: partial?.name || 'Sorftime',
     kind: 'sorftime',
-    secretKey: (partial?.secretKey || (defaultsAllowed ? envDefaultSorftimeSecret() : '') || '').trim(),
+    secretKey: (partial?.secretKey || noBrowserPlatformKey() || '').trim(),
     mcpUrl: (partial?.mcpUrl || '').trim(),
     enabled: partial?.enabled !== false,
   };
@@ -171,28 +151,11 @@ function parseProviderKind(raw: unknown): McpProviderKind {
   return 'sellersprite';
 }
 
-/** 保证四家内置数据源默认存在；Key 为空时仅用环境变量默认值兜底（不写死） */
+/** 保证四家内置数据源默认存在。Key 一律为空（用户在界面上自己填；填了只存本机） */
 function ensureBuiltinProviders(providers: McpProviderEntry[]): McpProviderEntry[] {
-  const defaultsAllowed = canUseAdminMcpDefaults();
-  const envXydc = defaultsAllowed ? envDefaultXydcSecret() : '';
-  const envSs = defaultsAllowed ? envDefaultSellerSpriteSecret() : '';
-  const envLx = defaultsAllowed ? envDefaultLingXingSecret() : '';
-  const envSorf = defaultsAllowed ? envDefaultSorftimeSecret() : '';
-  const list = providers.map((p) => {
-    if (p.kind === 'xydc' && !p.secretKey.trim() && envXydc) {
-      return { ...p, secretKey: envXydc };
-    }
-    if (p.kind === 'sellersprite' && !p.secretKey.trim() && envSs) {
-      return { ...p, secretKey: envSs };
-    }
-    if (p.kind === 'lingxing' && !p.secretKey.trim() && envLx) {
-      return { ...p, secretKey: envLx };
-    }
-    if (p.kind === 'sorftime' && !p.secretKey.trim() && envSorf) {
-      return { ...p, secretKey: envSorf };
-    }
-    return p;
-  });
+  // 旧版本曾在这里把 env / 服务端的平台 Key 拷进浏览器条目 —— BYO Key 决策后彻底删掉：
+  // 浏览器里的 Key 只能来自用户自己输入。
+  const list = [...providers];
   if (!list.some((p) => p.kind === 'lingxing')) {
     list.unshift(createLingXingProvider());
   }
@@ -401,15 +364,17 @@ export function isOfficialSorftimeMcpUrl(url: string): boolean {
   return /mcp\.sorftime\.com/i.test(u);
 }
 
-/** Sorftime：官方地址走同源反代，Key 拼到 query */
-export function getSorftimeEndpoint(mcpUrl?: string, secretKey?: string): string {
-  const key = (secretKey ?? '').trim();
+/**
+ * Sorftime 实际请求 endpoint：官方地址一律走同源反代。
+ *
+ * 安全红线（2026-09 BYO Key）：**Key 不得进入 URL query**（query 会进浏览器历史、代理日志、
+ * Referer 与审计记录），所以这个函数不再拼 `?key=`。第二个参数保留是为了不改调用点签名，
+ * 但**刻意忽略**它；需要 Key 的调用一律走服务端网关（Key 只放请求体/请求头）。
+ */
+export function getSorftimeEndpoint(mcpUrl?: string, _secretKey?: string): string {
   const custom = (mcpUrl ?? '').trim().replace(/\/+$/, '');
   if (!custom || isOfficialSorftimeMcpUrl(custom.split('?')[0] || custom)) {
-    return key ? `${SORFTIME_MCP_PROXY_PATH}?key=${encodeURIComponent(key)}` : SORFTIME_MCP_PROXY_PATH;
-  }
-  if (key && !/[?&]key=/.test(custom)) {
-    return `${custom}${custom.includes('?') ? '&' : '?'}key=${encodeURIComponent(key)}`;
+    return SORFTIME_MCP_PROXY_PATH;
   }
   return custom;
 }
@@ -450,15 +415,35 @@ export function saveMcpSettings(settings: McpSettings): void {
       providers,
     } satisfies McpSettings)
   );
-  // 管理员保存时同步到服务器
-  const token = getAuthToken();
-  if (isAdminSession(getCurrentUser()) && token) {
-    void pushServerKeys(token, {
-      sellersprite: providers.find((p) => p.kind === 'sellersprite')?.secretKey || '',
-      xydc: providers.find((p) => p.kind === 'xydc')?.secretKey || '',
-      lingxing: providers.find((p) => p.kind === 'lingxing')?.secretKey || '',
-      sorftime: providers.find((p) => p.kind === 'sorftime')?.secretKey || '',
-    });
+  // 安全红线（BYO Key）：**到此为止**。用户自己的 Key 绝不写库（不写 app_config、不写任何表），
+  // 旧实现里那段"管理员保存时同步到服务器"的调用（往服务端推本机 Key）已经整段删除。
+  // 平台 Key 只在「管理员后台 → 配置中心」配置（api/admin 的 config set，写入 app_config）。
+}
+
+/** 本机保存的 Key 是否属于这个数据源（不做任何网络请求） */
+function userKeyEntry(kind: McpProviderKind, settings?: McpSettings | null): McpProviderEntry | null {
+  const s = settings ?? loadMcpSettings();
+  const list = s.providers?.length ? s.providers : normalizeProviders(s);
+  return (
+    list.find((p) => p.kind === kind && p.enabled && p.secretKey.trim())
+    || list.find((p) => p.kind === kind && p.secretKey.trim())
+    || list.find((p) => p.kind === kind && p.enabled)
+    || list.find((p) => p.kind === kind)
+    || null
+  );
+}
+
+/**
+ * 这个数据源在**本机浏览器**里填的 Key（空串 = 没填，要走平台 Key 兜底）。
+ *
+ * 只读 localStorage，绝不来自服务端 —— 平台 Key 永远不会出现在这里。
+ * 调用数据池时把它随请求体带给网关；网关只用当次，不落库不落日志。
+ */
+export function getUserKeyForProvider(kind: McpProviderKind, settings?: McpSettings | null): string {
+  try {
+    return (userKeyEntry(kind, settings)?.secretKey || '').trim();
+  } catch {
+    return '';
   }
 }
 

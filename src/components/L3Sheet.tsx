@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { ArrowLeft, HelpCircle, Loader2 } from 'lucide-react';
 import { cn } from './ui/Card';
-import { L3_LOOK_LABELS, type L3Id, type L3Page } from '../utils/l3Pages';
+import { L3_LOOK_LABELS, type L3Id, type L3Look } from '../utils/l3Pages';
 
 /**
  * 二级页正文的注册函数（数据由"拥有它的那个视图"提供，页壳只负责渲染）。
@@ -21,7 +21,29 @@ export type L3BodyRender = (id: L3Id, cardId?: string) => ReactNode;
  */
 export type L3BlockVariant = 'inline' | 'sheet';
 
-const INFO_ITEMS: { key: keyof Pick<L3Page, 'problem' | 'entry' | 'backTo' | 'depends'>; label: string }[] = [
+/**
+ * 页壳需要知道的页面信息（结构化类型，而不是写死 `L3Page`）。
+ *
+ * 为什么要放宽：2026-09 新增的「品牌资产与信息」页不是线框图里的编号页（⑪⑫…），
+ * 但它同样需要"全屏 + 返回 + Escape + 四句契约"这套壳。放宽成结构化类型后，
+ * `L3Page` 天然满足它（无需改注册表），品牌页也能复用同一个页壳 —— 不许复制第二份页壳。
+ */
+export interface L3SheetPageInfo {
+  /** 圈号/标记（线框图编号页是 ①…⑭） */
+  badge: string;
+  /** 页头右上角那行归属说明（不传则默认「二级页<badge>」） */
+  badgeLabel?: string;
+  look: L3Look;
+  title: string;
+  problem: string;
+  entry: string;
+  backTo: string;
+  depends: string;
+  /** 非线框图页面的偏离说明（有值时页壳会改称「本页要求（已按用户指示调整）」） */
+  deviation?: string;
+}
+
+const INFO_ITEMS: { key: keyof Pick<L3SheetPageInfo, 'problem' | 'entry' | 'backTo' | 'depends'>; label: string }[] = [
   { key: 'problem', label: '这个页面解决什么问题' },
   { key: 'entry', label: '从哪进入' },
   { key: 'backTo', label: '返回去哪' },
@@ -46,7 +68,7 @@ export function L3Sheet({
   footer,
   busy,
 }: {
-  page: L3Page;
+  page: L3SheetPageInfo;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
@@ -74,7 +96,7 @@ export function L3Sheet({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={`二级页${page.badge}：${page.title}`}
+      aria-label={`${page.badgeLabel ?? `二级页${page.badge}`}：${page.title}`}
       className="fixed inset-0 z-50 bg-[#f5f5f7] overflow-y-auto"
     >
       {/* 页头：返回 + 圈号 + 标题 + 归属的"看" + 右侧操作位 */}
@@ -94,7 +116,7 @@ export function L3Sheet({
           <div className="min-w-0">
             <p className="text-[15px] font-semibold text-[#1d1d1f] truncate">{page.title}</p>
             <p className="text-[11px] text-[#86868b]">
-              {L3_LOOK_LABELS[page.look]} · 二级页{page.badge}
+              {L3_LOOK_LABELS[page.look]} · {page.badgeLabel ?? `二级页${page.badge}`}
             </p>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">

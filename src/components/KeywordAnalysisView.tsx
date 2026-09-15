@@ -18,6 +18,7 @@ import {
 } from './KeywordAnalysis';
 import { InsightReportPanels } from './InsightReportPanels';
 import { Select } from './ui/Select';
+import { InfoTip } from './ui/InfoTip';
 import { FeishuPushButton } from './FeishuPushButton';
 import { aiInsightToMarkdown } from '../utils/reportToMarkdown';
 
@@ -497,27 +498,23 @@ function KeywordDrillModal({
   );
 }
 
+/**
+ * 机会分算法说明（内容一字未改）。
+ * 2026-09 按用户指示统一到全站唯一的 ⓘ 角标（PRD §15.24）：这里原本是本文件手写的
+ * ScoreHelp（自己管 open state、只能点击、没有 Esc、还用原生 title 属性当兜底提示）。
+ * 现在交给 ui/InfoTip：悬浮/点击/Esc/键盘聚焦/点击外部关闭一套行为全站一致。
+ */
 function ScoreHelp() {
-  const [open, setOpen] = useState(false);
   return (
-    <span className="relative inline-flex">
-      <button type="button" onClick={() => setOpen(v => !v)} className="p-0.5 rounded-full text-[#86868b] hover:text-indigo-600" title="机会分说明" aria-label="机会分说明">
-        <HelpCircle className="w-3.5 h-3.5" />
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full mt-2 z-30 w-72 p-3 bg-white border border-black/10 rounded-xl shadow-xl text-[11px] text-[#424245] leading-relaxed normal-case font-normal">
-          <div className="font-semibold text-[#1d1d1f] mb-1.5">机会分怎么算</div>
-          <ul className="space-y-1 list-disc pl-3.5">
-            <li>转化潜力 35%（均 CVR）</li>
-            <li>获客效率 25%（CPC÷CVR，越低越好）</li>
-            <li>需求量 25%（该任务周搜索量）</li>
-            <li>投放难度 15%（难度越低分越高）</li>
-          </ul>
-          <p className="mt-2 text-[#86868b]">词数少于 3 的任务不进入排行，避免碎片噪声。</p>
-          <button type="button" className="mt-2 text-indigo-600 font-medium" onClick={() => setOpen(false)}>知道了</button>
-        </div>
-      )}
-    </span>
+    <InfoTip title="机会分怎么算" label="机会分说明" size="md">
+      <ul className="space-y-1 list-disc pl-3.5">
+        <li>转化潜力 35%（均 CVR）</li>
+        <li>获客效率 25%（CPC÷CVR，越低越好）</li>
+        <li>需求量 25%（该任务周搜索量）</li>
+        <li>投放难度 15%（难度越低分越高）</li>
+      </ul>
+      <p className="mt-2 text-[#86868b]">词数少于 3 的任务不进入排行，避免碎片噪声。</p>
+    </InfoTip>
   );
 }
 

@@ -57,6 +57,9 @@ export const CAPABILITY_ITEMS: { dimension: CapabilityDimension; key: string; la
   { dimension: 'category_team', key: 'ads', label: '广告能力', hint: '能不能自己投广告并控 ACOS' },
   { dimension: 'category_team', key: 'ops', label: '运营能力', hint: '是否能自己操盘 Listing/广告' },
   { dimension: 'category_team', key: 'after_sales', label: '售后能力', hint: '差评/退货/客服是否有人接' },
+  // 2026-09（PRD §15.23）：亚马逊卖家的第一约束是"新品拿不到前 20 条评论"，
+  // 它既不是纯运营能力也不是纯资金，所以单独一项，由背景信息「测评与评论资源」推导。
+  { dimension: 'category_team', key: 'review_resource', label: '评论资源', hint: '能不能合规地拿到新品前 20 条评论' },
   { dimension: 'compliance', key: 'certification', label: '认证', hint: '目标站点要求的认证是否齐备' },
   { dimension: 'compliance', key: 'trademark', label: '商标', hint: '是否已注册商标/能否授权' },
   { dimension: 'compliance', key: 'patent', label: '专利风险', hint: '目标卖点是否可能踩专利' },

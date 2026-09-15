@@ -5,7 +5,10 @@
 //   - 每次数据池调用产生一条 UsageEvent（谁 / 哪个工作区 / 哪个工具 / 哪个项目 / 成功失败 / 耗时 / 成本）；
 //   - 成本估算用"单位成本表"（MCP 次数、LLM token），表可配置，但换算逻辑固定；
 //   - 缓存命中不计费（§12 M3 验收里也强调"缓存命中不计"），但**仍然记账**（cacheHit=true），
-//     因为要能回答"这个月有多少次本来会花钱的调用被缓存省掉了"。
+//     因为要能回答"这个月有多少次本来会花钱的调用被缓存省掉了"；
+//   - BYO Key（2026-09 用户决策变更）：多记一个 `keySource` 字面量 —— 这次用的是**谁的** Key。
+//     只记标签（user / platform / none），**绝不记 Key 本身**；付费阶段据此把成本归到
+//     "用户自付"还是"平台承担"。
 
 export type UsageTool =
   | 'market'
@@ -24,6 +27,20 @@ export const USAGE_TOOL_LABELS: Record<UsageTool, string> = {
   traffic: '流量词取数',
   ai: 'AI 调用',
   other: '其他',
+};
+
+/**
+ * 这次外部调用花的是**谁的** Key（成本归因用；**不是** Key 本身，也永远不是）。
+ *   user     = 调用者自己在界面上填的 Key（只存他的本机浏览器）
+ *   platform = 服务端 app_config / 环境变量里的平台 Key（团队共享）
+ *   none     = 两边都没有，本次调用必然失败（如实记账，便于区分"没配 Key"与"Key 不好用"）
+ */
+export type UsageKeySource = 'user' | 'platform' | 'none';
+
+export const USAGE_KEY_SOURCE_LABELS: Record<UsageKeySource, string> = {
+  user: '用户自带 Key',
+  platform: '平台 Key',
+  none: '未配置 Key',
 };
 
 export interface UsageEvent {
@@ -47,6 +64,8 @@ export interface UsageEvent {
   durationMs?: number;
   /** 失败原因（ok=false 时） */
   error?: string;
+  /** 本次用的是谁的 Key（user=用户自带 / platform=平台兜底 / none=没配）——**只记标签，不记 Key** */
+  keySource?: UsageKeySource;
   createdAt: string;
 }
 
@@ -97,6 +116,8 @@ export interface UsageSummary {
   byUser: UsageSummaryRow[];
   byProject: UsageSummaryRow[];
   byProvider: UsageSummaryRow[];
+  /** 按"用的是谁的 Key"分组（付费阶段据此区分用户自付 / 平台承担） */
+  byKeySource: UsageSummaryRow[];
   /** 明细（按时间倒序，最多 limit 条） */
   events: UsageEvent[];
 }
@@ -163,6 +184,7 @@ export function summarizeUsage(
     byUser: groupBy(list, (e) => e.userId, (k) => k, table),
     byProject: groupBy(list, (e) => e.projectId ?? '（未关联项目）', (k) => k, table),
     byProvider: groupBy(list, (e) => e.provider, (k) => k, table),
+    byKeySource: groupBy(list, (e) => e.keySource ?? 'none', (k) => USAGE_KEY_SOURCE_LABELS[k as UsageKeySource] ?? k, table),
     events: sorted.slice(0, Math.max(1, opts.limit ?? 100)),
   };
 }
@@ -253,5 +275,8 @@ export function describeUsage(summary: UsageSummary): string {
   const t = summary.total;
   const cacheNote = t.cacheHits > 0 ? `，缓存命中 ${t.cacheHits} 次（省 $${t.savedUsd.toFixed(4)}）` : '';
   const failNote = t.failures > 0 ? `，失败 ${t.failures} 次（${(t.failureRate * 100).toFixed(1)}%）` : '';
-  return `本月 ${t.events} 次记账 / ${t.calls} 次外部调用，估算成本 $${t.costUsd.toFixed(4)}${cacheNote}${failNote}`;
+  // BYO Key：把"用户自付"的次数单独说出来，付费阶段这就是账单分界线
+  const userKeyEvents = summary.byKeySource.find((r) => r.key === 'user')?.events ?? 0;
+  const keyNote = userKeyEvents > 0 ? `，其中 ${userKeyEvents} 次用的是用户自带 Key` : '';
+  return `本月 ${t.events} 次记账 / ${t.calls} 次外部调用，估算成本 $${t.costUsd.toFixed(4)}${cacheNote}${failNote}${keyNote}`;
 }

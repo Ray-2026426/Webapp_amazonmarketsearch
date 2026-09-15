@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ClipboardList, History, Info, Loader2, Wallet } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ClipboardList, History, Loader2, Wallet } from 'lucide-react';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
+import { InfoTip } from './ui/InfoTip';
 import {
   CAPABILITY_DIMENSION_LABELS,
   CAPABILITY_DIMENSION_ORDER,
@@ -412,7 +413,21 @@ export function AccountBackgroundBlock({
               ；建议先补 <b>{weak.title}</b>（还差 {weak.empty} 项）
             </>
           )}
-          。背景信息在「设置 → 背景信息」里填，这里只读；它决定下面推导出什么能力，也决定你要回答的问题有多少。
+          。
+          {/* 2026-09 按用户指示收进 ⓘ 角标（PRD §15.24）：原文尾巴那句 42 字说明平铺在这里，
+              正文只留"从哪填"这个真正影响操作的信息，其余悬浮/点击角标看。 */}
+          <span className="whitespace-nowrap">
+            从「设置 → 背景信息」填
+            <InfoTip
+              title="背景信息怎么影响这一页"
+              label="查看背景信息说明"
+              wrapperClassName="ml-0.5"
+              paragraphs={[
+                '背景信息在「设置 → 背景信息」里维护，这一页只读；要改内容请去设置页。',
+                '它决定下面能推导出哪些能力，也决定你在「看自己」里还要回答几个拍板问题：填得越全，要你回答的越少。',
+              ]}
+            />
+          </span>
         </p>
 
         {/* 分组摘要：每组写清"它影响五看里的哪一个判断" */}
@@ -472,8 +487,20 @@ export function AccountBackgroundBlock({
             </button>
           </div>
           <p className="text-[10px] text-indigo-700/80 mt-0.5 leading-relaxed">
-            规则是确定性的（同输入同输出，AI 不参与、也不能改）。判断不了的项会显示"判断不了"，不是"不具备"。
-            需要不同结论时**逐条覆盖**，覆盖会显式标记，AI 永远不会改写它。
+            {/* 2026-09 按用户指示收进 ⓘ 角标（PRD §15.24）。
+                注意：这里**故意保留**了「判断不了 ≠ 不具备」与「要改就逐条覆盖」两句正文 ——
+                它们会改变用户对结论的解读（把"判断不了"读成"不具备"会直接压掉一个机会），
+                属于"不能藏进角标"的口径；收进角标的只是推导规则本身（确定性、AI 不参与）这类解释性内容。 */}
+            判断不了 ≠ 不具备；要改结论请逐条覆盖
+            <InfoTip
+              title="推导规则"
+              label="查看能力推导规则"
+              wrapperClassName="ml-1 align-baseline"
+              paragraphs={[
+                '能力结论由背景信息按固定规则推导：同输入同输出，AI 不参与、也不能改。',
+                '需要不同结论时逐条覆盖；覆盖会显式标记，AI 永远不会改写它。',
+              ]}
+            />
           </p>
           {showDerivation && (
             <div className="mt-2 space-y-1.5">
@@ -620,9 +647,17 @@ export function CategoryQuizBlock({
             </span>
           </div>
         </div>
-        <p className="text-[11px] text-[#86868b] leading-relaxed mb-3 flex items-start gap-1.5">
-          <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-indigo-500" />
-          只问背景信息答不了、但决定拍板的三件事：最低毛利率 / 止损条件 / 必须满足的进入条件。能力与资源不再逐条问你，已由背景信息推导。
+        <p className="text-[11px] text-[#86868b] leading-relaxed mb-3 flex flex-wrap items-center gap-1.5">
+          {/* 2026-09 按用户指示收进 ⓘ 角标（PRD §15.24）：原文 55 字说明压成一句 ≤20 字摘要。 */}
+          只问 3 个拍板问题：毛利率 / 止损 / 进入条件
+          <InfoTip
+            title="为什么只问这三件事"
+            label="查看拍板问题说明"
+            paragraphs={[
+              '只问背景信息答不了、但决定拍板的三件事：最低毛利率 / 止损条件 / 必须满足的进入条件。',
+              '能力与资源不再逐条问你，已由背景信息推导。',
+            ]}
+          />
         </p>
 
         {busy && quiz.questions.length === 0 ? (

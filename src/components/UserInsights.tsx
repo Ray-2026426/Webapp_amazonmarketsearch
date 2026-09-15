@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Upload, Sparkles, Loader2, MessageSquare, ThumbsUp, ThumbsDown, MapPin, Users as UsersIcon, Search, X, ChevronLeft, ChevronRight, ChevronDown, TrendingUp, FileText, Heart, Route, SlidersHorizontal, Languages } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Card';
+import { InfoTip } from './ui/InfoTip';
 import {
   parseReviewsWithMapping,
   scanReviewFile,
@@ -1138,7 +1139,19 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
           {/* 筛选：与图表/KPI 联动；正文搜索在底部「评论明细列表」 */}
           <div className="rounded-2xl border border-black/5 bg-[#fafafa] overflow-hidden">
             <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-              <p className="text-[11px] text-[#86868b] sm:max-w-md">以下筛选作用于上方 KPI、标签图与趋势。评论列表的搜索与「仅图/视频」在页面最下方单独设置。</p>
+              {/* 2026-09 按用户指示收进 ⓘ 角标（PRD §15.24）：原文 37 字说明常驻在筛选条左侧，
+                  改为一句 ≤20 字摘要 + 角标。 */}
+              <p className="text-[11px] text-[#86868b] sm:max-w-md flex flex-wrap items-center gap-1">
+                以上筛选作用于 KPI / 标签图 / 趋势
+                <InfoTip
+                  title="筛选作用范围"
+                  label="查看筛选作用范围"
+                  paragraphs={[
+                    '以下筛选作用于上方 KPI、标签图与趋势。',
+                    '评论列表的搜索与「仅图 / 视频」在页面最下方单独设置。',
+                  ]}
+                />
+              </p>
               <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                 <button
                   type="button"
@@ -1601,8 +1614,16 @@ export const UserInsights: React.FC<UserInsightsProps> = React.memo(({
                   <div className="flex items-center gap-3 flex-wrap">
                     <TrendingUp className="w-4 h-4 text-violet-500 shrink-0" />
                     <div className="min-w-0">
-                      <CardTitle className="text-sm font-bold">TOP 标签 · 月度对比</CardTitle>
-                      <p className="text-[11px] text-[#86868b] mt-0.5">当前维度下出现最多的前 8 个标签，按月对比（无需再选标签）</p>
+                      <CardTitle className="text-sm font-bold">
+                        TOP 标签 · 月度对比
+                        {/* 2026-09 按用户指示收进 ⓘ 角标（PRD §15.24）：原文 30 字读图说明。 */}
+                        <InfoTip
+                          title="这张图看什么"
+                          label="查看月度对比说明"
+                          wrapperClassName="ml-1"
+                          content="当前维度下出现最多的前 8 个标签，按月对比（无需再选标签）。"
+                        />
+                      </CardTitle>
                     </div>
                     <Select
                       value={trendDim}

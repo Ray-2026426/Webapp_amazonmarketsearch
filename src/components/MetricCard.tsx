@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card';
-import { LucideIcon, TrendingUp, TrendingDown, HelpCircle } from 'lucide-react';
+import { LucideIcon, TrendingUp, TrendingDown } from 'lucide-react';
+import { InfoTip } from './ui/InfoTip';
 
 interface MetricCardProps {
   title: string;
@@ -14,23 +15,11 @@ interface MetricCardProps {
   mom?: { value: number; isPositive: boolean; };
 }
 
-function TooltipIcon({ text }: { text: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <span className="relative inline-flex items-center ml-1">
-      <HelpCircle
-        className="w-3.5 h-3.5 text-[#b0b0b8] hover:text-[#6366f1] cursor-help transition-colors"
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
-      />
-      {show && (
-        <div className="absolute left-5 top-0 z-50 bg-white border border-black/10 rounded-2xl shadow-2xl p-3 w-56 text-xs text-[#1d1d1f] leading-relaxed pointer-events-none">
-          {text}
-        </div>
-      )}
-    </span>
-  );
-}
+/**
+ * tooltip 文案一律走全站唯一的 InfoTip（PRD §15.24）。
+ * 这里原先手写了一个 TooltipIcon（只能鼠标悬浮、不能点击固定、不能 Tab 聚焦、也没有 Esc），
+ * 与 MarketConcentrationChart / BrandLeaderboard 里的另外两份手搓实现行为不一致 —— 已统一。
+ */
 
 export const MetricCard = React.memo(function MetricCard({ title, value, icon: Icon, description, subtitle, tooltip, large, yoy, mom }: MetricCardProps) {
   const TrendIcon = (isPositive: boolean) => isPositive ? TrendingUp : TrendingDown;
@@ -45,7 +34,7 @@ export const MetricCard = React.memo(function MetricCard({ title, value, icon: I
                 <Icon className="h-4 w-4 text-indigo-600" />
               </div>
               <span className="text-[13px] font-medium text-[#86868b]">{title}</span>
-              {tooltip && <TooltipIcon text={tooltip}/>}
+              {tooltip && <InfoTip content={tooltip} label={`${title} 的指标说明`} />}
             </div>
             <div className="text-[40px] font-bold tracking-tight text-[#1d1d1f] leading-none my-2">{value}</div>
           </div>
@@ -79,7 +68,7 @@ export const MetricCard = React.memo(function MetricCard({ title, value, icon: I
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5 pt-3 px-4">
         <CardTitle className="text-[12px] font-medium text-[#86868b] flex items-center">
           {title}
-          {tooltip && <TooltipIcon text={tooltip}/>}
+          {tooltip && <InfoTip content={tooltip} label={`${title} 的指标说明`} wrapperClassName="ml-1" />}
         </CardTitle>
         <div className="p-1.5 bg-[#f5f5f7] rounded-full">
           <Icon className="h-3.5 w-3.5 text-[#86868b]" />

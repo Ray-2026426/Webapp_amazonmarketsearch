@@ -12,6 +12,7 @@ import {
   CalendarRange,
 } from 'lucide-react';
 import { cn } from './ui/Card';
+import { InfoTip } from './ui/InfoTip';
 import { Card } from './ui/Card';
 import {
   loadMarketLook,
@@ -225,8 +226,19 @@ export function MarketLookView({
       {((data.segmentAdvice ?? '').trim()) && (
         <Card>
           <div className="p-5">
-            <p className="text-sm font-semibold text-[#1d1d1f] mb-1">AI 对三个细分方案的解释</p>
-            <p className="text-xs text-[#aeaeb2] mb-3">只解释差异与盲区；分数与归属由确定性规则决定，AI 改动无效</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] mb-1 flex flex-wrap items-center gap-1">
+              AI 对三个细分方案的解释
+              {/* 2026-09 按用户指示收进 ⓘ 角标（PRD §15.24）：原文 35 字副标题。 */}
+              <InfoTip
+                title="AI 在这里只做什么"
+                label="查看 AI 解释的边界"
+                paragraphs={[
+                  '只说差异与盲区；分数与归属由确定性规则决定，AI 改动无效。',
+                  '所以这一块读的是"为什么三种切法不一样"，不是新的评分结论。',
+                ]}
+              />
+            </p>
+            <p className="text-xs text-[#aeaeb2] mb-3">只解释差异与盲区，不改分</p>
             <p className="text-[13px] text-[#424245] leading-relaxed whitespace-pre-wrap">{data.segmentAdvice ?? ''}</p>
           </div>
         </Card>

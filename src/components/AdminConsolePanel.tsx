@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, BarChart3, CheckCircle2, Loader2, RefreshCw, ScrollText, Users } from 'lucide-react';
+import { AlertTriangle, BarChart3, CheckCircle2, ClipboardCopy, Loader2, RefreshCw, ScrollText, Users } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
 import { getAuthToken, isAdminSession, getCurrentUser } from '../utils/auth';
 import { describeUsage, summarizeUsage, type UsageSummary } from '../utils/usageAccounting';
 import { clearPerfSamples, loadPerfSamples, summarizePerf } from '../utils/perfBudget';
+import { buildMigrationSql, SOURCE_MIGRATION_FILE } from '../utils/migrationSql';
 
 /**
  * M5 · 管理员后台面板（PRD §11.4）。
@@ -28,14 +30,35 @@ interface HealthPayload {
   /** 数据库表自检（回答"要不要跑迁移"）：逐表探测 + 缺失清单 + 该怎么补 */
   database?: {
     client: 'service_role' | 'none';
-    tables: { name: string; ok: boolean; migration: string; required: boolean; why: string; error?: string }[];
+    tables: {
+      name: string;
+      ok: boolean;
+      migration: string;
+      required: boolean;
+      /** table = 数据表（有建表语句可复制）；bucket = Storage 桶（007 那种，没有建表语句） */
+      kind?: 'table' | 'bucket';
+      why: string;
+      error?: string;
+    }[];
     missingRequired: string[];
+    /** 可选表缺失（**不跑也能用**，只是对应能力退化） */
+    missingOptional?: string[];
+    /** 缺失且能复制建表语句的表名 */
+    copyableTables?: string[];
+    /** 缺失但不是数据表（没有建表语句可复制） */
+    nonTableItems?: string[];
     hint: string;
   } | null;
   env?: Record<string, { configured: boolean; fingerprint?: string; count?: number }>;
   providers?: Record<string, { configured: boolean; fingerprint?: string }>;
   note?: string;
   cloudDisabled?: boolean;
+  /** 缺表自愈：这次自检就发现缺表（界面据此主动显示琥珀色提示，不必等某个接口先失败） */
+  needsMigration?: boolean;
+  missingTable?: string;
+  missingTables?: string[];
+  copyableTables?: string[];
+  hint?: string;
 }
 
 interface AdminUserRow {
@@ -141,6 +164,8 @@ export function AdminConsolePanel() {
   const [error, setError] = useState('');
   /** 缺表时的友好提示（不是错误，是"该跑迁移了"）：hint + 缺哪张表 */
   const [migrationNotice, setMigrationNotice] = useState<{ hint: string; missingTable: string; where: string } | null>(null);
+  /** 复制失败（浏览器不允许写剪贴板）时把 SQL 显示出来，绝不让用户"复制了个空的" */
+  const [sqlPreview, setSqlPreview] = useState('');
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [usage, setUsage] = useState<{ summary: UsageSummary; describe: string; cloudDisabled?: boolean } | null>(null);
   const [users, setUsers] = useState<AdminUserRow[]>([]);
@@ -176,6 +201,40 @@ export function AdminConsolePanel() {
   useEffect(() => {
     if (isAdmin) void load(tab);
   }, [tab, isAdmin, load]);
+
+  /**
+   * 一键复制"缺失那几张表"的建表 SQL（用户要求：别再让我去翻仓库文件）。
+   * SQL 来自 src/utils/migrationSql.ts —— 内容逐字取自 supabase/migrations/all_in_one.sql，
+   * 且 tests/migrationSql.test.ts 断言两边不漂移。
+   */
+  const copyMigrationSql = useCallback(async (tables: string[]) => {
+    const { sql, tables: picked, unknown } = buildMigrationSql(tables);
+    setSqlPreview(sql);
+    try {
+      await navigator.clipboard.writeText(sql);
+      toast.success(
+        picked.length > 0
+          ? `已复制 ${picked.length} 张表的建表 SQL（${picked.join('、')}）：去 Supabase → SQL Editor 粘贴执行`
+          : '没有可复制的建表语句'
+      );
+    } catch {
+      toast.error('浏览器不允许自动写剪贴板：SQL 已显示在提示下方，请手动全选复制');
+    }
+    if (unknown.length > 0) {
+      toast.message(`${unknown.join('、')} 不是数据表，没有建表语句，可忽略`);
+    }
+  }, []);
+
+  // 缺表清单（服务端逐表探测的结果优先；只有单条 needsMigration 时退回那一条）
+  const dbTables = health?.database?.tables ?? [];
+  const missingTables = dbTables.filter((t) => !t.ok);
+  const copyableTables =
+    health?.database?.copyableTables && health.database.copyableTables.length > 0
+      ? health.database.copyableTables
+      : migrationNotice?.missingTable
+        ? [migrationNotice.missingTable]
+        : [];
+  const nonTableItems = health?.database?.nonTableItems ?? [];
 
   if (!isAdmin) {
     return (
@@ -218,16 +277,73 @@ export function AdminConsolePanel() {
         </button>
       </div>
 
-      {/* 缺表 = 该跑迁移了（不是错误，所以用琥珀色提示而不是红色报错） */}
+      {/* 缺表 = 该跑迁移了（不是错误，所以用琥珀色提示而不是红色报错）。
+          用户上一轮的反馈是"只看到一句泛泛的提示" → 本轮补：缺哪张表（逐张 + 必建/可选 + 影响）、
+          一键复制建表 SQL、以及**不跑也能用**的实话。 */}
       {migrationNotice && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-900 space-y-1">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-900 space-y-2">
           <p className="font-semibold">数据库还没迁移（不是故障，跑一次就好）</p>
-          {migrationNotice.missingTable && (
+
+          {missingTables.length > 0 ? (
+            <ul className="space-y-0.5">
+              {missingTables.map((t) => (
+                <li key={t.name}>
+                  · <code className="font-mono">{t.name}</code>
+                  <span className="ml-1 font-semibold">{t.required ? '（必建）' : '（可选）'}</span>
+                  <span className="ml-1 text-amber-800/90">— {t.why}</span>
+                  <span className="ml-1 text-amber-700/80">迁移 {t.migration}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
             <p>
-              缺的表：<code className="font-mono">{migrationNotice.missingTable}</code>
+              缺的表：<code className="font-mono">{migrationNotice.missingTable || '（服务端未给出具体表名，点右侧刷新表状态可见逐表清单）'}</code>
             </p>
           )}
-          <p>{migrationNotice.hint}</p>
+
+          <p>
+            <span className="font-semibold">不跑也能用</span>：只是用量统计 / 审计日志 / 数据池缓存持久化 / 报告资产上传会缺失或退化
+            （缓存退化为进程内 → 实例回收即丢，外部调用成本变高）；只有 projects / project_members 缺失时，项目与协作数据才真的存不下来。
+          </p>
+
+          {migrationNotice.hint && <p className="text-amber-800/90">服务端原始提示：{migrationNotice.hint}</p>}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void copyMigrationSql(copyableTables)}
+              disabled={copyableTables.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+            >
+              <ClipboardCopy className="w-3 h-3" />
+              一键复制建表 SQL{copyableTables.length > 0 ? `（${copyableTables.length} 张表：${copyableTables.join('、')}）` : ''}
+            </button>
+            <button
+              type="button"
+              onClick={() => void load('health')}
+              className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800 hover:border-amber-400"
+            >
+              刷新表状态
+            </button>
+            <span className="text-[10px] text-amber-800/90">
+              复制后：Supabase → SQL Editor → 粘贴 → Run（可重复执行，不会破坏已有数据）→ 回到本页刷新。
+            </span>
+          </div>
+
+          {nonTableItems.length > 0 && (
+            <p className="text-[10px] text-amber-800/90">
+              {nonTableItems.join('、')} 不是数据表（是 Storage 桶），没有建表语句可复制：在 Supabase → Storage 里建同名桶即可。
+            </p>
+          )}
+
+          {sqlPreview && (
+            <details className="text-[10px]">
+              <summary className="cursor-pointer text-amber-800">查看要执行的 SQL（复制失败时可手动全选）</summary>
+              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-amber-200 bg-white/80 p-2 font-mono text-[10px] leading-relaxed">
+                {sqlPreview}
+              </pre>
+            </details>
+          )}
         </div>
       )}
 
@@ -279,9 +395,31 @@ export function AdminConsolePanel() {
                 ))}
               </div>
               {health.database?.tables?.some((t) => !t.ok) && (
-                <p className="text-[10px] text-[#86868b] mt-1.5">
-                  补迁移：Supabase → SQL Editor → 执行仓库里的 <code className="font-mono">supabase/migrations/all_in_one.sql</code>（可重复执行）。
-                </p>
+                <div className="mt-1.5 space-y-1.5">
+                  <ul className="space-y-0.5">
+                    {health.database.tables
+                      .filter((t) => !t.ok)
+                      .map((t) => (
+                        <li key={t.name} className="text-[10px] text-[#86868b]">
+                          · <code className="font-mono text-amber-700">{t.name}</code>
+                          {t.required ? '（必建）' : '（可选，不跑也能用）'} — {t.why}
+                        </li>
+                      ))}
+                  </ul>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void copyMigrationSql(copyableTables)}
+                      disabled={copyableTables.length === 0}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 hover:border-amber-400 disabled:opacity-60"
+                    >
+                      <ClipboardCopy className="w-3 h-3" /> 一键复制建表 SQL
+                    </button>
+                    <span className="text-[10px] text-[#86868b]">
+                      或整份执行仓库里的 <code className="font-mono">{SOURCE_MIGRATION_FILE}</code>（可重复执行）。
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
 

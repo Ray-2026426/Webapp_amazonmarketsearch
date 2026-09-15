@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText, Plus, Globe, CloudDownload, ToggleLeft, UserRound, ShieldCheck, Users, RefreshCw, Loader2 } from 'lucide-react';
+import { X, Sparkles, Key, Check, AlertCircle, Cpu, FileText, Globe, CloudDownload, ToggleLeft, UserRound, ShieldCheck, Users, RefreshCw, Loader2 } from 'lucide-react';
 import {
   AI_PROVIDERS,
   AiProvider,
@@ -42,7 +42,8 @@ import {
   weakestBackgroundGroup,
   type UserBackgroundProfile,
 } from '../utils/userBackground';
-import { testMcpProvider } from '../utils/sellerspriteApi';
+import { verifyDataPoolProvider } from '../utils/dataPoolClient';
+import { maskKey } from '../utils/keyMasking';
 import { toast } from 'sonner';
 import { AiPromptManager } from './AiPromptManager';
 import { SystemDiagnosticsPanel } from './SystemDiagnosticsPanel';
@@ -55,8 +56,28 @@ import {
   providerRequiresCustomUrl,
 } from '../utils/aiEndpoints';
 import { Select, MultiSelectChips } from './ui/Select';
+import { BrandDetailSheet, BrandListEditor } from './BrandDetailSheet';
+import { InfoTip } from './ui/InfoTip';
 
 type SettingsTab = 'api' | 'profile' | 'mcp' | 'features' | 'prompts' | 'diagnostics' | 'admin' | 'team';
+
+/**
+ * 数据源地址输入框的占位提示。
+ * 抽成函数是为了让"MCP 面板里每个数据源的 名称/地址/Key/验证 四样"保持**同一段 JSX**渲染：
+ * 一旦在行内按 kind 写三元分支，就很容易演变成"某一类数据源又没有 Key 输入框"。
+ */
+function mcpUrlPlaceholder(kind: McpProviderEntry['kind']): string {
+  return kind === 'custom' ? 'https://your-mcp.example.com/mcp' : '留空 = 走应用内安全代理';
+}
+
+/** 数据源角标文案（同样抽出来，保证行内那四样是同一段 JSX，不掺任何 kind 分支） */
+function mcpKindLabel(kind: McpProviderEntry['kind']): string {
+  if (kind === 'sellersprite') return '卖家精灵';
+  if (kind === 'xydc') return '西柚洞察';
+  if (kind === 'lingxing') return '领星';
+  if (kind === 'sorftime') return 'Sorftime';
+  return '自定义';
+}
 
 interface AiSettingsPanelProps {
   settings: AiSettings | null;
@@ -87,7 +108,6 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   /** 允许浏览器直连（Key 不经过本站服务端）；见 AiSettings.allowBrowserDirect */
   const [allowBrowserDirect, setAllowBrowserDirect] = useState(settings?.allowBrowserDirect === true);
   const [customModels, setCustomModels] = useState<Partial<Record<AiProvider, string[]>>>(settings?.customModels ?? {});
-  const [newCustomModelName, setNewCustomModelName] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
   /** 「获取模型」：正在拉取 / 拉到的模型 / 失败原因（三者都在 hook 区，避免 hook 顺序问题） */
@@ -106,10 +126,15 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     }));
   });
   const [testingProviderId, setTestingProviderId] = useState<string | null>(null);
-  const [mcpTestResults, setMcpTestResults] = useState<Record<string, 'ok' | 'fail'>>({});
+  /** 每个数据源上一次「验证」的结果：状态 + 一句人话（含"用的谁的 Key"） */
+  const [mcpTestResults, setMcpTestResults] = useState<Record<string, { state: 'ok' | 'fail'; note: string }>>({});
 
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
   const [userBackground, setUserBackground] = useState<UserBackgroundProfile>(() => loadUserBackground());
+  /** 品牌列表里"就地展开"的品牌 id（内联形态，与全屏页共用同一个区块组件） */
+  const [openBrandId, setOpenBrandId] = useState<string | null>(null);
+  /** 全屏品牌资产页打开的品牌 id（复用 L3 页壳的形态） */
+  const [sheetBrandId, setSheetBrandId] = useState<string | null>(null);
 
   useEffect(() => {
     const p = settings?.provider ?? 'deepseek';
@@ -142,29 +167,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     setTestResult(null);
   };
 
-  const handleAddCustomModel = () => {
-    const name = newCustomModelName.trim();
-    if (!name) { toast.error('请输入模型名称'); return; }
-    const current = customModels[provider] ?? [];
-    if (current.includes(name)) { toast.error('该自定义模型已存在'); return; }
-    if (cfg.models.includes(name)) { toast.error('该模型已存在于默认列表中'); return; }
-    setCustomModels(prev => ({
-      ...prev,
-      [provider]: [...(prev[provider] ?? []), name],
-    }));
-    setNewCustomModelName('');
-    toast.success(`已添加自定义模型：${name}`);
-  };
 
-  const handleRemoveCustomModel = (name: string) => {
-    setCustomModels(prev => ({
-      ...prev,
-      [provider]: (prev[provider] ?? []).filter(m => m !== name),
-    }));
-    if (model === name) {
-      setModel(cfg.defaultModel);
-    }
-  };
 
   /**
    * 「获取模型」：用当前 Key 去问供应商有哪些可用模型，拉回来直接选。
@@ -240,23 +243,35 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     });
   };
 
+  /**
+   * 「验证」：**按密钥来源分别验证**（BYO Key，2026-09 用户决策变更）。
+   *
+   * 与旧实现的区别（旧实现是"假验证"）：以前这里调 `testMcpProvider` → `checkDataPoolReady`，
+   * 它只查"服务端数据池配没配卖家精灵"——既不看你在界面上填了什么，也不看是哪个数据源。
+   * 现在统一走 `verifyDataPoolProvider`（→ 网关 `/api/data/verify`）：
+   *   - 本机填了自己的 Key → 网关用**你的** Key 做一次 MCP 握手；
+   *   - 没填 → 用平台 Key 握手，并如实告诉用户"这次用的是平台 Key"；
+   *   - 只握手，不调业务工具、不记用量、不占配额。
+   * 明文 Key 只在这一次同源请求的**请求体**里出现（绝不进 URL query、不进日志、不进返回体）。
+   */
   const handleTestMcpProvider = async (provider: McpProviderEntry) => {
-    if (!provider.secretKey.trim()) {
-      toast.error('请先填写密钥');
-      return;
-    }
     if (provider.kind === 'custom' && !provider.mcpUrl.trim()) {
       toast.error('自定义 MCP 需要填写地址');
       return;
     }
     setTestingProviderId(provider.id);
     try {
-      await testMcpProvider(provider);
-      setMcpTestResults((prev) => ({ ...prev, [provider.id]: 'ok' }));
-      toast.success(`「${provider.name}」连接成功`);
+      const result = await verifyDataPoolProvider({
+        provider: provider.kind,
+        endpoint: provider.kind === 'custom' ? provider.mcpUrl : undefined,
+      });
+      setMcpTestResults((prev) => ({ ...prev, [provider.id]: { state: result.ok ? 'ok' : 'fail', note: result.message } }));
+      if (result.ok) toast.success(`「${provider.name}」${result.message}`);
+      else toast.error(`「${provider.name}」${result.message}`);
     } catch (e: unknown) {
-      setMcpTestResults((prev) => ({ ...prev, [provider.id]: 'fail' }));
-      toast.error(`验证失败：${e instanceof Error ? e.message : '未知错误'}`);
+      const note = e instanceof Error ? e.message : '未知错误';
+      setMcpTestResults((prev) => ({ ...prev, [provider.id]: { state: 'fail', note } }));
+      toast.error(`验证失败：${note}`);
     } finally {
       setTestingProviderId(null);
     }
@@ -346,6 +361,8 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
 
   /** 背景信息完整度（确定性纯函数；只影响"可信度"，不进入任何评分公式，权重固定 25/25/25/15/10） */
   const bgReport = computeBackgroundCompleteness(userBackground);
+  /** 全屏品牌资产页要展示的品牌（找不到就当作没打开，不渲染空页） */
+  const sheetBrand = userBackground.brands.find((b) => b.id === sheetBrandId) ?? null;
   const bgWeak = weakestBackgroundGroup(bgReport);
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
@@ -401,7 +418,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
             <div className="space-y-5 overflow-y-auto">
               {/* ① 选供应商 */}
               <div className="space-y-2">
-                <label className="text-sm font-bold text-[#1d1d1f]">① 选 AI 供应商</label>
+                <label className="text-sm font-bold text-[#1d1d1f]">选 AI 供应商</label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {AI_PROVIDERS.map((p) => (
                     <button
@@ -424,7 +441,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
               <div className="space-y-2">
                 <label className="text-sm font-bold text-[#1d1d1f] flex items-center gap-2">
                   <Key className="w-4 h-4 text-indigo-600" />
-                  ② 填 API Key
+                  API Key
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -473,9 +490,9 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                 </p>
               </div>
 
-              {/* ③ 获取模型 → 点一个选中 */}
+              {/* 用户要求：不要步骤编号；按钮放在"模型名"前面（获取模型 / 验证 → 再选模型） */}
               <div className="space-y-2">
-                <label className="text-sm font-bold text-[#1d1d1f]">③ 获取模型，点一个用</label>
+                <label className="text-sm font-bold text-[#1d1d1f]">模型</label>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
@@ -487,9 +504,23 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                     {fetchingModels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                     {fetchingModels ? '获取中…' : '获取模型'}
                   </button>
-                  <span className="text-[11px] text-[#86868b]">
-                    {!apiKey.trim() ? '先填 Key' : '拉不到就直接手填模型名'}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={handleTest}
+                    disabled={isTesting || !apiKey.trim()}
+                    title={!apiKey.trim() ? '请先填 API Key' : '用当前 Key 发一次真实请求，确认能不能用'}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      testResult === 'ok'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : testResult === 'fail'
+                          ? 'border-rose-200 bg-rose-50 text-rose-700'
+                          : 'border-black/10 bg-white text-[#424245] hover:border-indigo-300 hover:text-indigo-700'
+                    }`}
+                  >
+                    {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : testResult === 'ok' ? <Check className="w-3.5 h-3.5" /> : testResult === 'fail' ? <AlertCircle className="w-3.5 h-3.5" /> : null}
+                    {isTesting ? '验证中…' : testResult === 'ok' ? '验证通过' : testResult === 'fail' ? '验证失败' : '验证'}
+                  </button>
+                  {!apiKey.trim() && <span className="text-[11px] text-[#86868b]">先填 Key，再点上面两个按钮</span>}
                 </div>
 
                 {modelsError && (
@@ -665,42 +696,6 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                     )}
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-[#1d1d1f]">手动添加模型名</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={newCustomModelName}
-                        onChange={(e) => setNewCustomModelName(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleAddCustomModel(); }}
-                        placeholder="例如 deepseek-flash"
-                        className="flex-1 px-3 py-2 bg-white border border-black/10 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddCustomModel}
-                        className="px-3 py-2 bg-white border border-black/10 rounded-lg text-xs font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700 transition-colors whitespace-nowrap flex items-center gap-1"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        添加
-                      </button>
-                    </div>
-                    {currentCustomModels.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {currentCustomModels.map((m) => (
-                          <span
-                            key={m}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-[11px] font-medium"
-                          >
-                            {m}
-                            <button type="button" onClick={() => handleRemoveCustomModel(m)} className="hover:text-rose-600 transition-colors">
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
                 </div>
               </details>
             </div>
@@ -708,10 +703,13 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
 
           {tab === 'profile' && (
             <div className="space-y-4 overflow-y-auto">
-              <div className="rounded-2xl bg-indigo-50 border border-indigo-100 px-4 py-3 text-sm text-indigo-900 leading-relaxed">
-                这里填的是「谁在做判断」：以选择题为主（自由文本只有 3 个），每一组都写明它影响五看里的哪个判断。
-                填得越全，「看自己」里要你回答的问题就越少、适配度也越可信；留空不阻塞分析。信息只保存在本机浏览器。
-              </div>
+              {/* 2026-09 用户要求：大段说明占地方，全部删除，只留一句以内的短提示。
+                  被删掉的是三处：①「以选择题为主、每一组都写明影响哪个判断」那段总说明；
+                  ②「填得越全…问题就越少…留空不阻塞分析…信息只保存在本机浏览器」那段（原文见 PRD §15.23）；
+                  ③ 完整度那一行的长句（原样形如「背景信息完整度 27/29：已足够可信」）。
+                  注意②不只是啰嗦：本轮之后「看自己」固定只问 3 个拍板问题，背景信息填多填少都不会减少题量，
+                  所以"问题就越少"这句是**不准确的**，已从 describeBackgroundCompleteness() 里一并去掉。
+                  每一组的「影响哪个判断」也改成角标（<details> 点开才显示），不再平铺成长段。 */}
 
               {/* 完整度（确定性；只影响可信度，不影响任何打分权重） */}
               <div className="flex flex-wrap items-center gap-2">
@@ -722,34 +720,61 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                 >
                   背景信息完整度 {bgReport.filled}/{bgReport.total}
                 </span>
-                <span className="text-[11px] text-[#86868b] leading-relaxed">{describeBackgroundCompleteness(bgReport)}</span>
+                <span className="text-[11px] text-[#86868b] leading-relaxed">
+                  {describeBackgroundCompleteness(bgReport)}
+                  {bgWeak ? ` · 建议先补「${bgWeak.title}」（还差 ${bgWeak.empty} 项）` : ''}
+                </span>
               </div>
-              {bgWeak && (
-                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-relaxed">
-                  建议先补 <b>{bgWeak.title}</b>（还差 {bgWeak.empty} 项）—— 这一组对你当前的判断影响最大。
-                </p>
-              )}
 
               {BACKGROUND_GROUPS.map((g) => (
                 <div key={g.id} className="rounded-2xl border border-black/8 bg-white p-4 space-y-3">
                   <div>
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs font-bold text-[#1d1d1f]">{g.title}</p>
+                      <div className="flex flex-wrap items-baseline gap-2">
+                        <p className="text-xs font-bold text-[#1d1d1f]">{g.title}</p>
+                        {/* 角标：默认只占一行小字，点开才展开"影响哪个判断"（用户明确要求不要平铺成长段） */}
+                        <details className="inline-block align-baseline">
+                          <summary className="cursor-pointer list-none rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100">
+                            影响哪个判断
+                          </summary>
+                          <p className="mt-1 text-[11px] text-indigo-700/80 leading-relaxed">{g.affects}</p>
+                        </details>
+                      </div>
                       <span className="text-[10px] text-[#86868b]">
                         {bgReport.byGroup[g.id].filled}/{bgReport.byGroup[g.id].total} 已填
                       </span>
                     </div>
-                    {/* 一句话：这一组影响五看里的哪一个判断 */}
-                    <p className="text-[11px] text-indigo-700/80 mt-0.5 leading-relaxed">{g.affects}</p>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {g.fields.map((f) => (
-                      <div key={f.key} className={f.kind === 'multi' ? 'space-y-1 sm:col-span-2' : 'space-y-1'}>
-                        <label className="text-xs font-semibold text-[#86868b]">
-                          {f.label}
-                          {f.hint && <span className="ml-1 font-normal text-[10px] text-[#aeaeb2]">{f.hint}</span>}
-                        </label>
-                        {f.kind === 'select' ? (
+                      <div
+                        key={f.key}
+                        className={f.kind === 'multi' || f.kind === 'list' ? 'space-y-1 sm:col-span-2' : 'space-y-1'}
+                      >
+                        <div className="flex flex-wrap items-baseline gap-1.5">
+                          <label className="text-xs font-semibold text-[#86868b]">
+                            {f.label}
+                            {f.hint && <span className="ml-1 font-normal text-[10px] text-[#aeaeb2]">{f.hint}</span>}
+                          </label>
+                          {/* 字段级的"影响哪个判断"同样收进角标：点击才展开，且是**正文里的可访问文本**
+                              （不用原生 title 属性——不能换行、触屏/键盘用户看不到，另一个改动已把这条列为反模式） */}
+                          <details className="inline-block align-baseline">
+                            <summary className="cursor-pointer list-none rounded-full bg-[#f5f5f7] px-1.5 py-0.5 text-[10px] font-semibold text-[#86868b] hover:text-indigo-700">
+                              影响
+                            </summary>
+                            <p className="mt-1 text-[11px] text-indigo-700/80 leading-relaxed">{f.affects}</p>
+                          </details>
+                        </div>
+                        {f.kind === 'list' ? (
+                          /* 品牌名：可添加多个；点开某个品牌就地填商标/备案/品牌资产，也可以全屏打开（同一份实现） */
+                          <BrandListEditor
+                            brands={userBackground.brands}
+                            onChange={(next) => setUserBackground((prev) => ({ ...prev, brands: next }))}
+                            openBrandId={openBrandId}
+                            onToggleOpen={(id) => setOpenBrandId((prev) => (prev === id ? null : id))}
+                            onOpenSheet={(id) => setSheetBrandId(id)}
+                          />
+                        ) : f.kind === 'select' ? (
                           <Select
                             value={String(getBackgroundFieldValue(userBackground, f.key) ?? '')}
                             onChange={(v) => setUserBackground((prev) => setBackgroundFieldValue(prev, f.key, v))}
@@ -782,35 +807,45 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  setUserBackground({ ...EMPTY_USER_BACKGROUND, fields: {}, notes: {}, legacyNotes: '' });
+                  setUserBackground({ ...EMPTY_USER_BACKGROUND, fields: {}, notes: {}, brands: [], legacyNotes: '' });
                   toast.info('已清空表单，点「应用设置」后才会真正清除');
                 }}
                 className="text-xs text-[#86868b] hover:text-rose-600"
               >
                 清空背景信息表单
               </button>
+
+              {/* 品牌资产全屏页：复用项目既有的 L3 页壳（返回 / Escape / 四句契约），正文与内联同一份实现 */}
+              {sheetBrand && (
+                <BrandDetailSheet
+                  brand={sheetBrand}
+                  brands={userBackground.brands}
+                  onChange={(next) => setUserBackground((prev) => ({ ...prev, brands: next }))}
+                  onClose={() => setSheetBrandId(null)}
+                />
+              )}
             </div>
           )}
 
           {tab === 'mcp' && (
             <div className="space-y-4 overflow-y-auto">
-              {/* 2026-09 用户要求：MCP 配置简化、傻瓜化、没必要出现的文字都删掉。
-                  精简原则：① 全局说明只留一句；② 每个数据源压缩成一行（名称 + 启用 + 检查）；
-                  ③ 地址这类"默认不用管"的东西收进「高级」；④ 删掉所有营销式提示。 */}
+              {/*
+                用户决策变更（2026-09 原话："需要其他用户也能填 key，后续我们再考虑做付费，
+                那时候再关闭 mcp 入口，换成计费模式。"）：
+                旧的「决策 A（浏览器不保存任何密钥、密钥只在服务端）」被推翻 —— 现在**每个数据源**
+                （卖家精灵 / 西柚洞察 / 领星 / Sorftime / 自定义）都有 名称 / 地址 / Key / 验证 四样。
+                Key 留空 = 用服务端平台 Key（团队共享）；填了 = 用你自己的，**只存在本机浏览器**。
+              */}
               <p className="text-xs text-[#86868b] leading-relaxed">
-                密钥由平台在服务端管理（管理员后台 → 配置中心）。这里只看状态，浏览器不保存任何密钥。
+                你自己的 Key 只存在本机浏览器，不上传服务器保存。
               </p>
 
               <div className="space-y-2">
                 {mcpProviders.map((p) => {
                   const testState = mcpTestResults[p.id];
                   const isTesting = testingProviderId === p.id;
-                  const kindLabel =
-                    p.kind === 'sellersprite' ? '卖家精灵'
-                    : p.kind === 'xydc' ? '西柚洞察'
-                    : p.kind === 'lingxing' ? '领星'
-                    : p.kind === 'sorftime' ? 'Sorftime'
-                    : '自定义';
+                  const hasOwnKey = Boolean(p.secretKey.trim());
+                  const kindLabel = mcpKindLabel(p.kind);
                   return (
                     <div key={p.id} className="rounded-2xl border border-black/10 bg-white px-4 py-3 space-y-2">
                       <div className="flex items-center gap-2.5 flex-wrap">
@@ -836,21 +871,21 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                           onClick={() => handleTestMcpProvider(p)}
                           disabled={isTesting}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap ${
-                            testState === 'ok'
+                            testState?.state === 'ok'
                               ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                              : testState === 'fail'
+                              : testState?.state === 'fail'
                                 ? 'border-rose-200 bg-rose-50 text-rose-700'
                                 : 'border-black/10 bg-white text-[#424245] hover:border-indigo-300 hover:text-indigo-700'
                           }`}
                         >
                           {isTesting ? (
                             <span className="animate-spin">⟳</span>
-                          ) : testState === 'ok' ? (
+                          ) : testState?.state === 'ok' ? (
                             <Check className="w-3.5 h-3.5" />
-                          ) : testState === 'fail' ? (
+                          ) : testState?.state === 'fail' ? (
                             <AlertCircle className="w-3.5 h-3.5" />
                           ) : null}
-                          {isTesting ? '检查中…' : testState === 'ok' ? '可用' : testState === 'fail' ? '不可用' : '检查'}
+                          {isTesting ? '验证中…' : testState?.state === 'ok' ? '可用' : testState?.state === 'fail' ? '不可用' : '验证'}
                         </button>
                         {p.kind === 'custom' && (
                           <button
@@ -863,34 +898,49 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                         )}
                       </div>
 
-                      {p.secretKey ? (
-                        <button
-                          type="button"
-                          onClick={() => updateProvider(p.id, { secretKey: '' })}
-                          className="rounded-lg border border-rose-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:border-rose-400"
-                        >
-                          清除本机残留的旧密钥（{p.secretKey.length} 位）
-                        </button>
-                      ) : null}
-
-                      <details className="rounded-xl bg-[#f5f5f7] px-3 py-2">
-                        <summary className="text-[11px] text-[#424245] cursor-pointer select-none">
-                          高级：自定义 MCP 地址（默认留空即可）
-                        </summary>
-                        <div className="pt-2 space-y-1.5">
+                      {/* 四样里的「地址 / Key」：**所有数据源一视同仁**，不再按 kind 分支 */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] text-[#86868b]">地址</label>
                           <input
                             type="text"
                             value={p.mcpUrl}
                             onChange={(e) => updateProvider(p.id, { mcpUrl: e.target.value })}
-                            placeholder="留空 = 走应用内安全代理"
+                            placeholder={mcpUrlPlaceholder(p.kind)}
                             className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
-                          <p className="text-[11px] text-[#86868b] leading-relaxed">
-                            只有自建中转（或需要走自己的同源代理路径，如 <code className="font-mono">/api-proxy/xxx</code>）时才填；
-                            填官方地址会让浏览器跨域报错。
-                          </p>
                         </div>
-                      </details>
+                        <div className="space-y-1">
+                          <label className="text-[11px] text-[#86868b]">Key</label>
+                          <input
+                            type="password"
+                            value={p.secretKey}
+                            onChange={(e) => updateProvider(p.id, { secretKey: e.target.value })}
+                            placeholder="留空 = 用平台 Key（团队共享）；填了 = 用你自己的（只存在本机）"
+                            className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      {hasOwnKey ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* 掩码显示：只给"前 3 末 4"的指纹，方便确认填的是哪一个 Key */}
+                          <span className="text-[11px] text-[#424245] font-mono">已填 · {maskKey(p.secretKey)}</span>
+                          <button
+                            type="button"
+                            onClick={() => updateProvider(p.id, { secretKey: '' })}
+                            className="rounded-lg border border-rose-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:border-rose-400"
+                          >
+                            清除本机密钥
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {testState?.note ? (
+                        <p className={`text-[11px] ${testState.state === 'ok' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                          {testState.note}
+                        </p>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -943,10 +993,19 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                   }}
                 />
                 <div>
-                  <div className="text-sm font-semibold text-[#1d1d1f]">市场准入评估</div>
-                  <p className="text-xs text-[#86868b] mt-1 leading-relaxed">
-                    市场大盘顶部的评分卡（多维度红黄绿灯）。当前版本你暂不满意时，可保持关闭；需要试用时再勾选打开。
-                  </p>
+                  {/* 2026-09 按用户指示把长说明收进 ⓘ 角标（PRD §15.24）：原文 42 字注脚改为一句 ≤20 字摘要 */}
+                  <div className="text-sm font-semibold text-[#1d1d1f] flex items-center gap-1.5">
+                    市场准入评估
+                    <InfoTip
+                      title="市场准入评估是什么"
+                      label="查看市场准入评估说明"
+                      paragraphs={[
+                        '市场大盘顶部的评分卡：体量、增长、集中度、评论数、价格分散度、新品占比、评分、FBA 成本 8 个维度各分绿/黄/红三档，用来快速判断这个市场好不好进。',
+                        '它是加分项、不是必选项：关掉不影响任何分析与机会结论，只是不显示这张卡。',
+                      ]}
+                    />
+                  </div>
+                  <p className="text-xs text-[#86868b] mt-1 leading-relaxed">默认关闭；打开后市场大盘顶部出现评分卡。</p>
                 </div>
               </label>
             </div>

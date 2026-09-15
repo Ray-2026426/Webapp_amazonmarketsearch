@@ -13,6 +13,20 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getServiceSupabase, verifyToken, isAdminEmail, json } from '../auth/_shared.js';
 import { summarizeUsage, filterUsageByRange, describeUsage, type UsageEvent } from '../../src/utils/usageAccounting.js';
 import { maskKey, describeCheck } from '../../src/utils/keyMasking.js';
+import {
+  buildMigrationSql,
+  classifyDbError,
+  describeMissingTables,
+  hasMigrationDdl,
+  missingTableName,
+} from '../../src/utils/migrationSql.js';
+
+/**
+ * 用户要照做的迁移文件（必须是**具体文件名**：只说"跑迁移"等于没说）。
+ * 与 src/utils/migrationSqlTables.ts 的 SOURCE_MIGRATION_FILE 同源，
+ * 由 tests/migrationSql.test.ts 断言两者一致（防哪天改了生成器这里忘改）。
+ */
+const MIGRATION_FILE = 'supabase/migrations/all_in_one.sql';
 
 function env(name: string): string {
   return (process.env[name] || '').trim();
@@ -27,58 +41,106 @@ function maskKeyLocal(value: string): string {
   return maskKey(value);
 }
 
-/** 环境自检（§11.4「环境自检」+ §2.5-4 的根治）：只回状态与指纹，不回值 */
 /**
  * 数据库表自检（回答"我到底要不要跑迁移"）。
  *
  * 背景：用户不确定 Supabase 那几张表建没建。猜没用 —— 直接逐表探测：
  * 用 `select ... head:true` 拿一行，出错（PostgREST 的 42P01 = 表不存在）就是没建。
  * 只回"表名 + 建没建 + 错误码"，不含任何数据内容。
+ *
+ * 2026-09 修正两处口径（用户反馈："提示太泛，不知道该干什么"）：
+ *   1. `project_assets` **不是数据表**：007 建的是 Storage bucket（`project-assets`），
+ *      以前拿它当表去 `select` 永远 42P01 → 界面永远显示"缺表"，而迁移文件里根本没有它的建表语句。
+ *      现在按 kind 区分探测方式（table → head 查询；bucket → storage.getBucket），结论才可信。
+ *   2. 补上 `app_config`：管理员「配置中心」与数据池密钥解析一直在读写这张表，
+ *      但 001-009 从没建过它（010 已补进迁移）；不列出来，用户会一直以为是"迁移跑过了却还是坏的"。
  */
 const EXPECTED_TABLES = [
-  { name: 'projects', migration: '001', required: true, why: '项目与五看数据' },
-  { name: 'project_members', migration: '002/006', required: true, why: '项目成员与权限' },
-  { name: 'project_assets', migration: '007', required: false, why: '报告资产（缺失只影响资产上传）' },
-  { name: 'usage_events', migration: '008', required: false, why: '用量记账（缺失则用量统计为空）' },
-  { name: 'audit_events', migration: '008', required: false, why: '审计日志（缺失则审计为空）' },
-  { name: 'pool_cache', migration: '009', required: false, why: '数据池缓存（缺失则退化为进程内缓存，成本变高）' },
+  { name: 'projects', migration: '001', required: true, kind: 'table', why: '项目与五看数据（缺了项目存不下来）' },
+  { name: 'project_members', migration: '002/006', required: true, kind: 'table', why: '项目成员与权限（缺了协作与权限判断失效）' },
+  { name: 'app_config', migration: '010', required: false, kind: 'table', why: '管理员「配置中心」的密钥表（缺了只能用环境变量配密钥，界面上改不了）' },
+  { name: 'usage_events', migration: '008', required: false, kind: 'table', why: '用量记账（缺了用量统计为空，只剩进程内统计、重启归零）' },
+  { name: 'audit_events', migration: '008', required: false, kind: 'table', why: '审计日志（缺了审计列表为空，操作不留痕）' },
+  { name: 'pool_cache', migration: '009', required: false, kind: 'table', why: '数据池缓存（缺了退化为进程内缓存，实例回收即丢，外部调用成本变高）' },
+  { name: 'project_assets', migration: '007', required: false, kind: 'bucket', bucket: 'project-assets', why: '报告资产桶（007 建的是 Storage bucket，不是数据表；缺了只影响资产上传）' },
 ] as const;
+
+interface TableProbe {
+  name: string;
+  ok: boolean;
+  migration: string;
+  required: boolean;
+  kind: 'table' | 'bucket';
+  why: string;
+  error?: string;
+}
 
 async function tableStatus(): Promise<{
   client: 'service_role' | 'none';
-  tables: { name: string; ok: boolean; migration: string; required: boolean; why: string; error?: string }[];
+  tables: TableProbe[];
   missingRequired: string[];
+  missingOptional: string[];
+  /** 缺失且**迁移文件里有建表语句**的表（界面靠它拼"一键复制"的 SQL） */
+  copyableTables: string[];
+  /** 缺失但不是数据表（没有建表语句可复制，例如 project_assets 桶） */
+  nonTableItems: string[];
   hint: string;
 }> {
   const s = getServiceSupabase();
-  const tables: { name: string; ok: boolean; migration: string; required: boolean; why: string; error?: string }[] = [];
+  const tables: TableProbe[] = [];
+  const base = (t: (typeof EXPECTED_TABLES)[number], ok: boolean, error?: string): TableProbe => ({
+    name: t.name,
+    ok,
+    migration: t.migration,
+    required: t.required,
+    kind: t.kind,
+    why: t.why,
+    error,
+  });
   if (!s) {
     return {
       client: 'none',
-      tables: EXPECTED_TABLES.map((t) => ({ name: t.name, ok: false, migration: t.migration, required: t.required, why: t.why, error: '未配置 SERVICE_ROLE_KEY，无法探测' })),
+      tables: EXPECTED_TABLES.map((t) => base(t, false, '未配置 SERVICE_ROLE_KEY，无法探测')),
       missingRequired: [],
+      missingOptional: [],
+      copyableTables: [],
+      nonTableItems: [],
       hint: '未配置 SUPABASE_SERVICE_ROLE_KEY：服务端读不了数据库，先在 Vercel 配好这个变量',
     };
   }
   for (const t of EXPECTED_TABLES) {
     try {
-      const { error } = await s.from(t.name).select('*', { count: 'exact', head: true }).limit(1);
-      tables.push({ name: t.name, ok: !error, migration: t.migration, required: t.required, why: t.why, error: error?.message });
+      if (t.kind === 'bucket') {
+        // 桶不存在时 supabase-js 返回 error（不抛异常），拿 error 当"没建"
+        const { error } = await s.storage.getBucket(t.bucket);
+        tables.push(base(t, !error, error?.message));
+      } else {
+        const { error } = await s.from(t.name).select('*', { count: 'exact', head: true }).limit(1);
+        tables.push(base(t, !error, error?.message));
+      }
     } catch (e) {
-      tables.push({ name: t.name, ok: false, migration: t.migration, required: t.required, why: t.why, error: e instanceof Error ? e.message : 'unknown' });
+      tables.push(base(t, false, e instanceof Error ? e.message : 'unknown'));
     }
   }
-  const missingRequired = tables.filter((t) => !t.ok && t.required).map((t) => t.name);
-  const missingOptional = tables.filter((t) => !t.ok && !t.required).map((t) => t.name);
+  const missing = tables.filter((t) => !t.ok);
+  const missingRequired = missing.filter((t) => t.required).map((t) => t.name);
+  const missingOptional = missing.filter((t) => !t.required).map((t) => t.name);
+  const copyableTables = missing.filter((t) => t.kind === 'table' && hasMigrationDdl(t.name)).map((t) => t.name);
+  const nonTableItems = missing.filter((t) => t.kind !== 'table').map((t) => t.name);
   return {
     client: 'service_role',
     tables,
     missingRequired,
+    missingOptional,
+    copyableTables,
+    nonTableItems,
     hint:
       missingRequired.length > 0
-        ? `必建表缺失：${missingRequired.join('、')} —— 必须去 Supabase SQL Editor 执行 supabase/migrations/all_in_one.sql`
+        ? `必建表缺失：${missingRequired.join('、')} —— 用「一键复制建表 SQL」把这几张表的语句贴到 Supabase → SQL Editor 执行` +
+          `（也可以直接跑 ${MIGRATION_FILE}，可重复执行）`
         : missingOptional.length > 0
-          ? `核心表齐全；可选表缺失：${missingOptional.join('、')}（跑一次 all_in_one.sql 即可补上，不跑也能用）`
+          ? `核心表齐全；可选表缺失：${missingOptional.join('、')}（不跑也能用：只是用量统计/审计/缓存持久化/资产上传会缺失或退化；` +
+            `跑一次 ${MIGRATION_FILE} 即可补上）`
           : '所有表齐全，无需迁移',
   };
 }
@@ -88,30 +150,47 @@ async function tableStatus(): Promise<{
  *
  * 2026-09 修：以前一律 `json(res, 500, {error})` —— 用户看到的就是"HTTP 500，管理员后台都不能用"。
  * 但**缺表不是服务器崩了**，而是"该跑迁移了"，两者必须分开：
- *   · 缺表（PostgREST 42P01 / "does not exist"）→ 200 + needsMigration + 可照做的指引；
- *   · 其他（权限、Key 无效、网络）→ 500 + 原始信息（面板会把原文显示出来）。
+ *   · 缺表（PostgREST 42P01 / "does not exist" / schema cache）→ 200 + needsMigration + 可照做的指引；
+ *   · 权限错误（42501 / permission denied / RLS）→ 500 + 明确写"这不是缺表，跑迁移解决不了"；
+ *   · 其他（Key 无效、网络）→ 500 + 原始信息（面板会把原文显示出来）。
+ *
+ * 分类逻辑抽到 src/utils/migrationSql.ts（纯函数、可单测）：见 classifyDbError / missingTableName。
  */
-function isMissingTable(error: { code?: string; message?: string } | null): boolean {
-  if (!error) return false;
-  if (error.code === '42P01') return true;
-  return /does not exist|Could not find the table|relation .* does not exist|schema cache/i.test(error.message ?? '');
-}
-
 function dbError(res: VercelResponse, where: string, error: { code?: string; message?: string } | null) {
   const message = error?.message || '未知数据库错误';
-  if (isMissingTable(error)) {
+  const kind = classifyDbError(error);
+  if (kind === 'missing-table') {
+    const table = missingTableName(message);
+    const tables = table ? [table] : [];
+    const copyable = tables.filter((t) => hasMigrationDdl(t));
     return json(res, 200, {
       ok: true,
       needsMigration: true,
       where,
-      missingTable: /"([a-z_]+)"/.exec(message)?.[1] || '',
+      // 具体表名（修了原来 `/"([a-z_]+)"/` 把 schema 名 "public" 当成表名的 bug）
+      missingTable: table,
+      missingTables: tables,
+      copyableTables: copyable,
       error: message,
-      hint: '数据库表还没建：去 Supabase → SQL Editor 执行 supabase/migrations/all_in_one.sql（可重复执行，不会破坏已有数据）。跑完刷新本页即可。',
+      hint:
+        tables.length > 0
+          ? describeMissingTables(tables)
+          : `数据库表还没建：去 Supabase → SQL Editor 执行 ${MIGRATION_FILE}（可重复执行，不会破坏已有数据）。跑完刷新本页即可。`,
+    });
+  }
+  if (kind === 'permission') {
+    return json(res, 500, {
+      ok: false,
+      where,
+      kind: 'permission',
+      error: `权限错误（不是缺表，跑迁移解决不了）：${message}`,
+      hint: '检查这张表的 RLS 策略 / 使用的角色（service_role 应绕过 RLS）；缺表提示只在 42P01 时出现。',
     });
   }
   return json(res, 500, { ok: false, error: message, where });
 }
 
+/** 环境自检（§11.4「环境自检」+ §2.5-4 的根治）：只回状态与指纹，不回值 */
 async function health(_req: VercelRequest, res: VercelResponse) {
   const s = getServiceSupabase();
   let supabase: { configured: boolean; reachable: boolean; error?: string } = { configured: Boolean(s), reachable: false };
@@ -130,11 +209,19 @@ async function health(_req: VercelRequest, res: VercelResponse) {
   } catch (e) {
     database = null;
   }
+  // 缺表这件事在这里就告诉界面（不是等某个接口失败才提示）：
+  // 打开管理员后台 → 环境自检，立刻能看到"缺哪张表 + 一键复制建表 SQL + 不跑也能用"。
+  const stillMissing = (database?.tables ?? []).filter((t) => !t.ok);
   return json(res, 200, {
     ok: true,
     checkedAt: new Date().toISOString(),
     supabase,
     database,
+    needsMigration: stillMissing.length > 0,
+    missingTable: stillMissing[0]?.name ?? '',
+    missingTables: stillMissing.map((t) => t.name),
+    copyableTables: database?.copyableTables ?? [],
+    hint: database?.hint,
     env: {
       APP_JWT_SECRET: describeCheck(env('APP_JWT_SECRET')),
       ADMIN_EMAILS: describeCheck(env('ADMIN_EMAILS'), { count: env('ADMIN_EMAILS').split(',').filter(Boolean).length }),

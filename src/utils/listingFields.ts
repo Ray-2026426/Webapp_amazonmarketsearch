@@ -8,6 +8,7 @@
 //   3 个竞对全字段抓取成功率 ≥90%（缓存命中不计）。
 
 import type { Product, HistoryRecord } from './parser';
+import { LISTING_IMAGE_MAX, describeListingImageScope } from './listingImages';
 
 export type FieldSource = 'frontend' | 'sellersprite' | 'derived';
 export type FieldGroup = 'product' | 'listing' | 'traffic';
@@ -44,7 +45,16 @@ export interface ListingFieldDef {
 /** 字段清单（顺序即展示顺序） */
 export const LISTING_FIELDS: ListingFieldDef[] = [
   // ── 产品 · 前台 ──
-  { key: 'mainImages', group: 'product', label: '主图（第 1-7 张）', source: 'frontend', how: '抓商品页主图组，缺图张数要标出来' },
+  // 口径（PRD §15.25，用户指示）：默认抓**整套图** = Listing 图库第 1-N 张（主图 + 附图），**默认不含 A+ 模块图**。
+  // 字段 key 仍是 `mainImages`（既有导出/报告的渲染与断言都按这个 key 取值，改名会破坏兼容），
+  // 但含义已明确为"整套图"，上限与 A+ 口径见 listingImages.ts。
+  {
+    key: 'mainImages',
+    group: 'product',
+    label: `Listing 图库（主图 + 附图，第 1-${LISTING_IMAGE_MAX} 张）`,
+    source: 'frontend',
+    how: describeListingImageScope(),
+  },
   { key: 'video', group: 'product', label: '视频', source: 'frontend', how: '抓商品页视频位' },
   { key: 'price', group: 'product', label: '价格', source: 'frontend', how: '商品页售价（含促销价）' },
   { key: 'listPrice', group: 'product', label: '划线价 / 优惠券', source: 'frontend', how: '抓划线价与 Coupon' },
@@ -81,7 +91,12 @@ export const LISTING_FIELDS: ListingFieldDef[] = [
 ];
 
 export interface ListingDetail {
+  /** 整套图（主图 + 附图）：Listing 图库第 1-N 张；默认不含 A+ 模块图（见 listingImages.ts） */
   images?: string[];
+  /** 被整套图上限截掉的张数（如实记数，方便判断"接口是不是把一堆杂图混进来了"） */
+  imagesTruncatedByCap?: number;
+  /** A+ 模块图：**默认不抓**，只有显式开启 includeAplusImages 时才有值 */
+  aplusImages?: string[];
   videoCount?: number;
   listPrice?: number;
   coupon?: string;
@@ -175,6 +190,7 @@ export function readFieldValue(
 
   switch (fieldKey) {
     case 'mainImages':
+      // 展示口径不变（"N 张"），含义已是"整套图"；A+ 是否包含由抓取层决定，不在这里加戏。
       return l?.images && l.images.length > 0 ? `${l.images.length} 张` : undefined;
     case 'video':
       return typeof l?.videoCount === 'number' ? (l.videoCount > 0 ? `${l.videoCount} 个` : '无') : undefined;

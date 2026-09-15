@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kairo · 界面借鉴样张（抄哪一屏、改成什么样）</title>
+<style>
+  :root{--accent:#4f46e5;--accent2:#7c3aed;--ink:#1d1d1f;--ink2:#424245;--mut:#86868b;--line:rgba(0,0,0,.08);--bg:#f5f5f7;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;}
+  header{background:#fff;border-bottom:1px solid var(--line);padding:20px 28px;position:sticky;top:0;z-index:10;}
+  header h1{margin:0 0 6px;font-size:19px;}
+  header p{margin:0;color:var(--mut);font-size:12.5px;max-width:1000px;}
+  main{max-width:1180px;margin:0 auto;padding:24px 20px 80px;}
+  section{background:#fff;border:1px solid var(--line);border-radius:20px;padding:20px 22px;margin:0 0 22px;}
+  h2{margin:0 0 4px;font-size:16px;}
+  .src{display:inline-block;font-size:11px;font-weight:700;color:var(--accent);background:#eef0ff;border-radius:8px;padding:2px 8px;margin-bottom:10px;}
+  .note{background:#fff8e6;border:1px solid #f3e0a8;border-radius:12px;padding:10px 12px;font-size:12px;color:#7a5b00;margin:12px 0 0;}
+  .note b{color:#5c4300;}
+  .mut{color:var(--mut);font-size:11.5px;}
+  .row{display:flex;gap:14px;}
+  .m{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:12px;flex:1;min-width:0;}
+  .m .ttl{font-size:11px;font-weight:700;color:var(--mut);letter-spacing:.03em;margin-bottom:8px;text-transform:uppercase;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;}
+  .chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:#f0f0f2;color:var(--ink2);}
+  .chip.ok{background:#e7f7ee;color:#137a44;}.chip.warn{background:#fff3e0;color:#9a5b00;}.chip.bad{background:#fdeaea;color:#a32020;}
+  .chip.info{background:#eef0ff;color:var(--accent);}
+  .btn{display:inline-block;font-size:12px;font-weight:600;padding:5px 11px;border-radius:9px;background:var(--accent);color:#fff;}
+  .btn.ghost{background:#fff;color:var(--ink2);border:1px solid var(--line);}
+  .it{padding:7px 9px;border-radius:9px;font-size:12.5px;}
+  .it.on{background:#eef0ff;color:var(--accent);font-weight:600;}
+  .grid3{display:grid;grid-template-columns:180px 1fr 260px;gap:0;}
+  .grid3 > .col{padding:12px;}
+  .grid3 > .col + .col{border-left:1px solid var(--line);}
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);}
+  th{color:var(--mut);font-weight:600;font-size:11px;}
+  .bar{height:6px;border-radius:99px;background:#ececf0;overflow:hidden;width:70px;display:inline-block;vertical-align:middle;}
+  .bar > i{display:block;height:100%;background:var(--accent);}
+  .ring{width:44px;height:44px;border-radius:50%;background:conic-gradient(var(--accent) 0 62%, #ececf0 62% 100%);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--accent);}
+  .ring > span{width:34px;height:34px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;}
+  .kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px;font-size:11px;color:var(--ink2);background:#fff;}
+  .cmdk{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 40px rgba(0,0,0,.12);overflow:hidden;max-width:520px;}
+  .cmdk input{width:100%;border:0;border-bottom:1px solid var(--line);padding:12px 14px;font-size:13px;outline:none;}
+  .cmp{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px;}
+  .cmp th{background:#fafafc;}
+  .cmp td,.cmp th{border:1px solid var(--line);padding:8px 10px;vertical-align:top;}
+  footer{max-width:1180px;margin:0 auto;padding:0 20px 60px;color:var(--mut);font-size:12px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>界面对照样张：抄哪一屏、改成什么样</h1>
+  <p>上一版我写的是"机制/架构借鉴"，答偏了。这一版全部是**界面层面的样张**：每一块都标出借鉴的产品与具体是哪一屏，并用 Kairo 的真实字段（看用户 / 需求分类树 / 赢的路径 / 细分排行…）画出来，你可以直接对着看。样张里的布局就是建议照做的形态。</p>
+</header>
+<main>
+
+<!-- 1 -->
+<section>
+  <h2>样张 1 · 三栏工作区：左导航 ｜ 中列表 ｜ 右侧详情面板</h2>
+  <span class="src">借鉴：Linear（issue 详情）、Twenty（CRM 记录详情）、Notion（侧栏 + 页面）</span>
+  <div class="m">
+    <div class="grid3">
+      <div class="col">
+        <div class="mut" style="margin-bottom:6px;">项目中心</div>
+        <div class="it on">薄枕 thin pillow</div>
+        <div class="it">颈枕 memory foam</div>
+        <div class="it">腰靠 lumbar</div>
+        <div class="mut" style="margin:10px 0 6px;">工具</div>
+        <div class="it">市场大盘</div>
+        <div class="it">竞品明细</div>
+        <div class="it">用户洞察</div>
+        <div class="it">关键词分析</div>
+      </div>
+      <div class="col">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <div class="ttl" style="margin:0;">竞对（3）</div>
+          <span class="chip info">按角色排序</span>
+          <span style="flex:1"></span>
+          <span class="btn ghost">筛选</span>
+        </div>
+        <div class="card" style="margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <b>B0XXXXXXX1</b><span class="chip">头部</span><span class="chip ok">赢面成立</span>
+            <span style="flex:1"></span><span class="mut">$39.9 · 4.6★ · 2.3k 评论</span>
+          </div>
+          <div class="mut" style="margin-top:4px;">主图 7 张 · A+ 有 · 五点缺口：无高度调节</div>
+        </div>
+        <div class="card" style="margin-bottom:8px;border-color:var(--accent);box-shadow:0 0 0 3px #eef0ff;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <b>B0XXXXXXX2</b><span class="chip">跟随者</span><span class="chip warn">人有我优</span>
+            <span style="flex:1"></span><span class="mut">$32.9 · 4.3★ · 870 评论</span>
+          </div>
+          <div class="mut" style="margin-top:4px;">痛点集中：闷热 6% · 洗后变形 4%</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <b>B0XXXXXXX3</b><span class="chip">新人</span><span class="chip bad">无赢面</span>
+            <span style="flex:1"></span><span class="mut">$27.9 · 4.1★ · 120 评论</span>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="ttl">详情：B0XXXXXXX2</div>
+        <div class="card" style="margin-bottom:8px;">
+          <div class="mut">用户画像</div>
+          <div style="font-size:12.5px;">侧睡为主（61%）· 关注颈椎支撑 · 预算 $30-45</div>
+        </div>
+        <div class="card" style="margin-bottom:8px;">
+          <div class="mut">痛点未满足</div>
+          <div><span class="chip bad">闷热 6%</span> <span class="chip warn">洗后变形 4%</span></div>
+        </div>
+        <div class="card">
+          <div class="mut">赢的路径</div>
+          <div style="font-size:12.5px;">人有我优 → <b>凉感面料 + 可机洗</b></div>
+          <div class="mut" style="margin-top:4px;">依据：4 条评论原文 · 覆盖 2/3 竞对</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="note"><b>我们现在：</b>竞对三列横向铺开，点开详情要跳页或展开内联块，返回后位置会丢。<br><b>借鉴后：</b>列表留在中间、详情永远在右边（滚列表时详情不跳），键盘上下键切记录 —— 这是 Linear/Twenty 已经验证过的"看很多条、每条看一眼"的形态。</div>
+</section>
+
+<!-- 2 -->
+<section>
+  <h2>样张 2 · 「发现问题」清单：严重度 + 修复建议面板</h2>
+  <span class="src">借鉴：Ahrefs Site Audit / Semrush Site Audit（同类数据工具的问题清单屏）、Sentry（issue 列表 + 右栏详情）</span>
+  <div class="m">
+    <div class="grid3" style="grid-template-columns:1fr 300px;">
+      <div class="col">
+        <div style="display:flex;gap:6px;margin-bottom:10px;">
+          <span class="chip bad">严重 3</span><span class="chip warn">中等 5</span><span class="chip">提示 9</span>
+          <span style="flex:1"></span><span class="chip info">按影响面排序</span>
+        </div>
+        <table>
+          <tr><th>问题</th><th>证据</th><th>影响</th><th></th></tr>
+          <tr><td><span class="chip bad">严重</span> 高度不可调 / 颈痛</td><td class="mut">8%（16 条评论）</td><td><span class="bar"><i style="width:72%"></i></span> 72</td><td><span class="btn ghost">查看</span></td></tr>
+          <tr><td><span class="chip bad">严重</span> 闷热、透气差</td><td class="mut">6%（12 条）</td><td><span class="bar"><i style="width:61%"></i></span> 61</td><td><span class="btn ghost">查看</span></td></tr>
+          <tr><td><span class="chip warn">中等</span> 洗后变形</td><td class="mut">4%（8 条）</td><td><span class="bar"><i style="width:44%"></i></span> 44</td><td><span class="btn ghost">查看</span></td></tr>
+          <tr><td><span class="chip warn">中等</span> 尺寸偏小</td><td class="mut">3%（6 条）</td><td><span class="bar"><i style="width:31%"></i></span> 31</td><td><span class="btn ghost">查看</span></td></tr>
+        </table>
+      </div>
+      <div class="col">
+        <div class="ttl">高度不可调 / 颈痛</div>
+        <div class="card" style="margin-bottom:8px;">
+          <div class="mut">证据（可点回原文）</div>
+          <div style="font-size:12.5px;">「用了两周脖子更疼」· B0XXXXXXX2 · 2026-03-11</div>
+          <div class="mut" style="margin-top:4px;">共 16 条 · 覆盖 2/3 竞对</div>
+        </div>
+        <div class="card" style="margin-bottom:8px;">
+          <div class="mut">怎么补</div>
+          <div style="font-size:12.5px;">三档高度结构件 · 成本 +$1.8 · 模具 15 天</div>
+        </div>
+        <div class="card">
+          <div class="mut">归属</div>
+          <div style="font-size:12.5px;">已进机会卡「颈枕 · 可调高度」· 优先级 P0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="note"><b>我们现在：</b>痛点/满足矩阵画成 ●◐○— 的格子，能看清"哪格不满"，但**看不出该先修哪个**。<br><b>借鉴后：</b>同一批证据换成"问题清单 + 严重度 + 影响面排序 + 右栏修复建议"，点一条看一条，最后一条条决定要不要进机会卡 —— 这正是 Ahrefs 让非技术用户也能干活的形态。</div>
+</section>
+
+<!-- 3 -->
+<section>
+  <h2>样张 3 · 高密度数据表：筛选条 + 可排序表 + 批量勾选</h2>
+  <span class="src">借鉴：Jungle Scout Product Database / Helium 10（亚马逊卖家每天用的界面）、Airtable 表格视图</span>
+  <div class="m">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;">
+      <span class="chip info">站点 US</span><span class="chip info">类目：枕</span><span class="chip info">$25-60</span><span class="chip info">评分 ≥4.0</span>
+      <span class="btn ghost">+ 筛选</span><span style="flex:1"></span>
+      <span class="mut">已选 3 个 ASIN</span><span class="btn">加入竞对样本池</span>
+    </div>
+    <table>
+      <tr><th style="width:26px"><input type="checkbox"></th><th>ASIN</th><th>标题</th><th>价格</th><th>月销</th><th>评分</th><th>评论</th><th>上架</th><th>角色</th></tr>
+      <tr><td><input type="checkbox" checked></td><td>B0XXXXXXX1</td><td>Memory Foam Pillow…</td><td>$39.9</td><td>3.1k</td><td>4.6★</td><td>2,310</td><td>2024-06</td><td><span class="chip">头部</span></td></tr>
+      <tr><td><input type="checkbox" checked></td><td>B0XXXXXXX2</td><td>Cooling Neck Pillow…</td><td>$32.9</td><td>1.8k</td><td>4.3★</td><td>870</td><td>2025-01</td><td><span class="chip">跟随者</span></td></tr>
+      <tr><td><input type="checkbox" checked></td><td>B0XXXXXXX3</td><td>Soft Pillow for Side…</td><td>$27.9</td><td>420</td><td>4.1★</td><td>120</td><td>2026-02</td><td><span class="chip">新人</span></td></tr>
+      <tr><td><input type="checkbox"></td><td>B0XXXXXXX4</td><td>Adjustable Height…</td><td>$45.9</td><td>260</td><td>4.5★</td><td>88</td><td>2026-03</td><td><span class="chip warn">黄金坑位</span></td></tr>
+    </table>
+  </div>
+  <div class="note"><b>我们现在：</b>细分排行是卡片列表，一眼最多看 4-5 个；要比较只能逐个点开。<br><b>借鉴后：</b>同一批数据给一张能排序、能筛选、能批量勾选入池的表格。亚马逊卖家对这个形态**零学习成本**（Jungle Scout/Helium 10 就是这个），而且"勾选→加入竞对样本池"能一键接上五看下一步。</div>
+</section>
+
+<!-- 4 -->
+<section>
+  <h2>样张 4 · 上手清单 + 进度环（空状态不再是灰屏）</h2>
+  <span class="src">借鉴：Shopify 首页 Setup guide、Stripe Dashboard 的激活清单、Segment onboarding</span>
+  <div class="m">
+    <div class="row">
+      <div class="card" style="flex:1;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="ring"><span>62%</span></div>
+          <div>
+            <b>把这条项目跑到"能拍板"</b>
+            <div class="mut">还差 2 步 · 预计 6 分钟</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <div class="it"><span class="chip ok">✓</span> 建项目（品类 / 站点 / 目标）</div>
+          <div class="it"><span class="chip ok">✓</span> 看用户：需求分类树（12 条需求）</div>
+          <div class="it"><span class="chip ok">✓</span> 看市场：选定目标细分</div>
+          <div class="it on"><span class="chip info">→</span> 看竞对：确认 3 个竞对（推荐已就绪）</div>
+          <div class="it"><span class="chip">4</span> 看自己：回答 3 个问题</div>
+          <div class="it"><span class="chip">5</span> 看机会：出结论（0 个也是结论）</div>
+        </div>
+      </div>
+      <div class="card" style="flex:1;">
+        <div class="ttl">现在只做一件事</div>
+        <div style="font-size:13px;margin-bottom:8px;">点下面这个按钮，系统按需求分类树自动挑 3 个竞对（头部 / 跟随者 / 新人各一个），挑完可以换人。</div>
+        <span class="btn">自动挑 3 个竞对</span>
+        <span class="btn ghost">我自己填 ASIN</span>
+        <div class="mut" style="margin-top:10px;">跳过也行：跳过会在机会卡的"证据可信度"里降权，并在报告里标注。</div>
+      </div>
+    </div>
+  </div>
+  <div class="note"><b>我们现在：</b>新项目进去是空的五看页 + 一堆说明；用户不知道该从哪下手。<br><b>借鉴后：</b>永远告诉他"现在只做一件事 + 一键做完"，并显示还差几步、大概几分钟。Shopify/Stripe 的激活清单就是靠这一屏把新用户转化出来的。</div>
+</section>
+
+<!-- 5 -->
+<section>
+  <h2>样张 5 · 命令面板（⌘K）：五看之间跳、改任何东西</h2>
+  <span class="src">借鉴：Linear（⌘K）、Raycast、Notion（快速查找）、GitHub（⌘K）</span>
+  <div class="m">
+    <div class="cmdk">
+      <input value="改需求" readonly>
+      <div style="padding:6px;">
+        <div class="it on">改看用户的「需求分类树」<span class="mut" style="float:right;">看用户</span></div>
+        <div class="it">改目标细分<span class="mut" style="float:right;">看市场</span></div>
+        <div class="it">改竞对样本（换人）<span class="mut" style="float:right;">看竞对</span></div>
+        <div class="it">改毛利红线 / 止损条件<span class="mut" style="float:right;">看自己</span></div>
+        <div class="it">重算机会卡<span class="mut" style="float:right;">看机会</span></div>
+      </div>
+      <div style="padding:8px 12px;border-top:1px solid var(--line);" class="mut">
+        <span class="kbd">↑↓</span> 选择 · <span class="kbd">Enter</span> 打开 · <span class="kbd">Esc</span> 关闭
+      </div>
+    </div>
+    <div class="mut" style="margin-top:8px;">改动之后，上一条（响应式联动）会告诉你"因为你改了 X，所以机会分从 61 → 68"。</div>
+  </div>
+  <div class="note"><b>我们现在：</b>想改需求得先切到"看用户"、再找到那块、再展开 —— 三步以上，而且切走会丢当前上下文。<br><b>借鉴后：</b>一个快捷键直达任何"可改的东西"，改完回到原地。</div>
+</section>
+
+<!-- 对照表 -->
+<section>
+  <h2>汇总：每个屏抄谁、解决我们哪个抱怨</h2>
+  <table class="cmp">
+    <tr><th>样张</th><th>抄自（具体到屏）</th><th>解决你哪句抱怨</th><th>影响哪些页面</th></tr>
+    <tr><td>1 三栏工作区</td><td>Linear issue 详情 / Twenty 记录详情</td><td>"交互性很差劲"（点进点出丢上下文）</td><td>项目中心、品牌详情、竞对详情、机会卡详情</td></tr>
+    <tr><td>2 问题清单 + 修复面板</td><td>Ahrefs / Semrush Site Audit</td><td>"不符合人性"（看得出问题，看不出先修哪个）</td><td>看竞对（缺口）、看用户（未满足需求）、看机会（机会点）</td></tr>
+    <tr><td>3 高密度数据表</td><td>Jungle Scout Product Database / Helium 10</td><td>"不符合亚马逊卖家特征"（卡片不够比、卖家习惯表格）</td><td>看市场（细分/ASIN 池）、看用户（关键词/VOC）</td></tr>
+    <tr><td>4 上手清单 + 进度</td><td>Shopify Setup guide / Stripe 激活清单</td><td>"傻瓜式操作"（新项目不知从哪下手）</td><td>项目中心空状态、五看每一步的"现在只做一件事"</td></tr>
+    <tr><td>5 ⌘K 命令面板</td><td>Linear ⌘K / Raycast</td><td>"交互性差"（改一个东西要切三步）</td><td>全局</td></tr>
+  </table>
+  <div class="note"><b>请你挑</b>：告诉我"样张几先做"，我就按它改真页面（不是再写文档）。如果你更想要的是把 <code>docs/ui-wireframes.html</code> 更新成与当前实现一致，我也可以重画那两份图纸。</div>
+</section>
+
+</main>
+<footer>
+  说明：本文是**界面形态**提案，不是线框图替代品。样张里的文案与数据都是 Kairo 现有字段（需求分类树 / 赢的路径 / 细分排行 / 机会卡），布局则来自上表列出的产品。所有布局都用纯 HTML+CSS 画出来，可直接在浏览器里打开对照。
+</footer>
+</body>
+</html>

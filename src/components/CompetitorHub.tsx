@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Crosshair, Loader2, Image as ImageIcon, Activity, Grid3X3, Plus, X, Upload,
-  ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Star, Package, ExternalLink, RefreshCw, Sparkles, HelpCircle, Trash2,
+  ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Star, Package, ExternalLink, RefreshCw, Sparkles, Trash2,
   History,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
+import { InfoTip } from './ui/InfoTip';
 import { SecondaryReportPage } from './SecondaryReportPage';
 import {
   SELLERSPRITE_MARKETPLACES,
@@ -16,12 +16,14 @@ import {
   fetchTrafficStatFromMcp,
   fetchTrafficKeywordsDetailedFromMcp,
   fetchParentMatrixFromMcp,
+  asinGalleryUrls,
   type AsinDetailSnapshot,
   type AsinSalesTrendSnapshot,
   type TrafficStatSnapshot,
   type ParentMatrixSnapshot,
   type TrafficKeywordDetail,
 } from '../utils/sellerspriteApi';
+import { LISTING_IMAGE_MAX } from '../utils/listingImages';
 import { parseSingleCompetitorZip } from '../utils/competitorArchiveParser';
 import type { Product } from '../utils/parser';
 import type { CompetitorDemoSnapshot } from '../utils/demoData';
@@ -146,53 +148,11 @@ function writeCachedAsinAnalysis(key: string, value: string): void {
   } catch {}
 }
 
-/** 用 fixed + portal，避免表格 overflow 把气泡裁掉 */
-function Tip({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const btnRef = useRef<HTMLButtonElement>(null);
-
-  const place = () => {
-    const el = btnRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const width = 224;
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
-    const top = r.bottom + 6;
-    setPos({ top, left });
-    setOpen(true);
-  };
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        type="button"
-        title={text}
-        aria-label={text}
-        className="inline-flex align-middle ml-0.5 text-[#c7c7cc] hover:text-indigo-600 focus:outline-none focus-visible:text-indigo-600"
-        onMouseEnter={place}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={place}
-        onBlur={() => setOpen(false)}
-      >
-        <HelpCircle className="w-3.5 h-3.5" />
-      </button>
-      {open &&
-        createPortal(
-          <div
-            role="tooltip"
-            className="fixed z-[9999] w-56 rounded-lg bg-[#1d1d1f] text-white text-[11px] leading-relaxed px-2.5 py-2 shadow-lg pointer-events-none"
-            style={{ top: pos.top, left: pos.left }}
-          >
-            {text}
-          </div>,
-          document.body
-        )}
-    </>
-  );
-}
-
+/**
+ * 表头 / 指标旁的说明角标：内容一字未改，实现统一到全站唯一的 ui/InfoTip（PRD §15.24）。
+ * 这里原本是本文件手写的 Tip（fixed + portal 的悬浮气泡，只能悬浮、没有 Esc、
+ * 还用原生 title 属性当兜底），是仓库里第 4 份手搓角标实现 —— 已删除。
+ */
 function stripHtmlFence(raw: string): string {
   let html = raw.replace(/^```html?\s*\n?/i, '').replace(/\n?```\s*$/, '').trim();
   if (!html.startsWith('<')) {
@@ -1352,13 +1312,30 @@ ${variations}
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-[#86868b]">
-        默认只看主图（卖家精灵抓取，不受图包影响）。需要时再展开附图 / A+，按「第 N 张对第 N 张」横向对比；可在下方调整顺序或删除。
+      {/* 2026-09 按用户指示收进 ⓘ 角标（PRD §15.24）：原文 47 字说明常驻在图片墙顶部，
+          改为一句 ≤20 字摘要 + 角标（附图 / A+ 的操作细节放角标里）。 */}
+      <p className="text-xs text-[#86868b] flex flex-wrap items-center gap-1">
+        默认只看主图；要展开附图 / A+ 看角标
+        <InfoTip
+          title="图片对比的范围"
+          label="查看图片对比说明"
+          paragraphs={[
+            '默认只看主图（卖家精灵抓取，不受图包影响）。',
+            '需要时再展开附图 / A+，按「第 N 张对第 N 张」横向对比；可在下方调整顺序或删除。',
+          ]}
+        />
       </p>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {details.map((d) => {
           const mainUrl = d.zoomImageUrl || d.imageUrl;
+          /**
+           * 2026-09 口径（PRD §15.25 / listingImages.ts）：默认抓**整套图**（Listing 图库 = 主图 + 附图，
+           * 默认不含 A+），上限 ${LISTING_IMAGE_MAX}。老快照只有首图时 asinGalleryUrls 会退化成"只有那一张"，
+           * 所以这里不会因为口径升级而把老数据显示成空白。
+           */
+          const gallery = asinGalleryUrls(d);
+          const galleryShown = gallery.slice(0, LISTING_IMAGE_MAX);
           const pack = packs[d.asin];
           const bullets =
             pack?.bulletPoints?.trim()
@@ -1374,9 +1351,28 @@ ${variations}
                 ) : (
                   <div className="aspect-square max-h-40 flex items-center justify-center text-xs text-[#86868b] bg-white rounded-xl border border-dashed">暂无图片</div>
                 )}
+                {galleryShown.length > 1 && (
+                  <div className="mt-2">
+                    <div className="text-[10px] text-[#86868b] mb-1">
+                      Listing 图库 {gallery.length} 张（主图 + 附图，默认不含 A+）
+                      {typeof d.galleryTruncated === 'number' && d.galleryTruncated > 0 ? ' · 超出上限已截断' : ''}
+                    </div>
+                    <div className="flex gap-1.5 overflow-x-auto pb-1">
+                      {galleryShown.map((u, idx) => (
+                        <img
+                          key={`${d.asin}-gallery-${idx}`}
+                          src={u}
+                          alt={`${d.asin} 第 ${idx + 1} 张`}
+                          className="w-12 h-12 shrink-0 object-cover rounded-lg border border-black/10 bg-white"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[#86868b]">
-                  <span className="px-2 py-0.5 rounded-full bg-white border border-black/5">附图 {(pack?.secondaryPreviewUrls.length || 0)} 张</span>
-                  <span className="px-2 py-0.5 rounded-full bg-white border border-black/5">A+ {(pack?.aplusPreviewUrls.length || 0)} 张</span>
+                  <span className="px-2 py-0.5 rounded-full bg-white border border-black/5">
+                    A+ {(pack?.aplusPreviewUrls.length || 0)} 张{pack?.aplusPreviewUrls.length ? '' : '（默认不抓）'}
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -1631,19 +1627,19 @@ function TrafficView({
                 <th className="py-2 pr-3">ASIN</th>
                 <th className="py-2 pr-3">
                   流量词
-                  <Tip text="能给这个 ASIN 带来搜索曝光的关键词总数（卖家精灵统计）。" />
+                  <InfoTip content="能给这个 ASIN 带来搜索曝光的关键词总数（卖家精灵统计）。" />
                 </th>
                 <th className="py-2 pr-3">
                   有排名词
-                  <Tip text="在自然搜索结果里有排名位置的词数量。" />
+                  <InfoTip content="在自然搜索结果里有排名位置的词数量。" />
                 </th>
                 <th className="py-2 pr-3">
                   广告词
-                  <Tip text="出现在 SP 等广告里的词数量。" />
+                  <InfoTip content="出现在 SP 等广告里的词数量。" />
                 </th>
                 <th className="py-2">
                   广告依赖度
-                  <Tip text="广告词 ÷ 流量词。越高说明越依赖打广告获客，自然流量越弱。一般超过 40% 要警惕。" />
+                  <InfoTip content="广告词 ÷ 流量词。越高说明越依赖打广告获客，自然流量越弱。一般超过 40% 要警惕。" />
                 </th>
               </tr>
             </thead>
@@ -1676,10 +1672,10 @@ function TrafficView({
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold">{asin} · 核心流量词明细（按流量占比）</CardTitle>
               <CardDescription className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-                <span>流量占比<Tip text="这个词给该 ASIN 贡献了多少搜索流量，百分比越高越重要。" /></span>
-                <span>ABA排名<Tip text="亚马逊品牌分析里的搜索热度排名，数字越小说明词越热门。" /></span>
-                <span>自然排名<Tip text="不打广告时，在搜索结果第几页、大致第几位。" /></span>
-                <span>广告排名<Tip text="SP 广告出现在第几页第几位。" /></span>
+                <span>流量占比<InfoTip content="这个词给该 ASIN 贡献了多少搜索流量，百分比越高越重要。" /></span>
+                <span>ABA排名<InfoTip content="亚马逊品牌分析里的搜索热度排名，数字越小说明词越热门。" /></span>
+                <span>自然排名<InfoTip content="不打广告时，在搜索结果第几页、大致第几位。" /></span>
+                <span>广告排名<InfoTip content="SP 广告出现在第几页第几位。" /></span>
               </CardDescription>
             </CardHeader>
             <CardContent className="overflow-x-auto">
@@ -1744,7 +1740,7 @@ function ParentMatrixView({
         <h3 className="text-sm font-bold text-[#1d1d1f] flex items-center gap-2">
           <Package className="w-4 h-4 text-violet-600" />
           品牌下其他链接（来自大盘数据）
-          <Tip text="不额外调 MCP。直接从你已导入的市场大盘里，找出同品牌、且不在当前父体变体里的其他 ASIN。" />
+          <InfoTip content="不额外调 MCP。直接从你已导入的市场大盘里，找出同品牌、且不在当前父体变体里的其他 ASIN。" />
         </h3>
         {!brandSiblings.length || brandSiblings.every((b) => !b.items.length) ? (
           <EmptyHint text="大盘里没找到同品牌其他 ASIN。可能是品牌名不一致，或大盘只有当前这几条。" />

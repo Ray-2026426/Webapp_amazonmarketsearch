@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { ComposedChart, Bar, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend, ReferenceLine } from 'recharts';
 import { Product, HistoryRecord, getCurrencySymbol } from '../utils/parser';
-import { BarChart2, HelpCircle } from 'lucide-react';
+import { BarChart2 } from 'lucide-react';
+import { InfoTip } from './ui/InfoTip';
 
 interface Props {
   products: Product[];
@@ -21,7 +22,17 @@ function getHhiLevel(hhi: number) {
   return HHI_LEVELS.find(l => hhi <= l.max) ?? HHI_LEVELS[HHI_LEVELS.length - 1];
 }
 
-const HHI_EXPLANATION = `HHI（赫芬达尔-赫希曼指数）是衡量市场集中度的标准指标。\n\n计算方法：将市场中每个品牌的销售额份额（%）平方后求和。\n\n判断标准：\n• HHI < 1000：分散市场，竞争充分\n• 1000 ≤ HHI < 1800：中等集中，存在壁垒\n• HHI ≥ 1800：高度集中，寡头垄断`;
+/**
+ * HHI 说明（PRD §15.24）：
+ * 这段原本是页面里手搓的一个悬浮浮层（自己写 showHint state + 绝对定位 div），
+ * 行为和全站其它角标不一致（只能悬浮、不能点固定、不能 Tab 聚焦、没有 Esc）。
+ * 现在统一交给 ui/InfoTip，正文里保留图例上的三档区间（<1000 / 1000–1800 / >1800），
+ * 角标只讲"这个指数是什么、怎么算出来"这种原理性内容。
+ */
+const HHI_EXPLANATION_PARAGRAPHS = [
+  'HHI（赫芬达尔-赫希曼指数）是衡量市场集中度的标准指标：把每个品牌的销售额份额（%）平方后求和，份额越集中，数值越大。',
+  '本图的判断标准：HHI < 1000 分散市场、竞争充分，相对容易进入；1000–1800 中等集中，存在壁垒；≥ 1800 高度集中，接近寡头垄断。',
+];
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
@@ -44,7 +55,6 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export const MarketConcentrationChart = React.memo(function MarketConcentrationChart({ products, history, months, domain = 'amazon.com' }: Props) {
-  const [showHint, setShowHint] = useState(false);
   const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set());
 
   const toggleLine = (key: string) => {
@@ -109,17 +119,12 @@ export const MarketConcentrationChart = React.memo(function MarketConcentrationC
             <CardTitle className="flex items-center gap-2">
               <BarChart2 className="w-5 h-5 text-violet-500"/>
               市场集中度趋势
-              <div className="relative inline-block">
-                <button onMouseEnter={()=>setShowHint(true)} onMouseLeave={()=>setShowHint(false)} onClick={()=>setShowHint(v=>!v)}
-                  className="w-5 h-5 rounded-full bg-[#f5f5f7] border border-black/10 flex items-center justify-center text-[#86868b] hover:text-indigo-600 hover:border-indigo-300 transition-colors">
-                  <HelpCircle className="w-3.5 h-3.5"/>
-                </button>
-                {showHint && (
-                  <div className="absolute left-6 top-0 z-50 bg-white border border-black/10 rounded-2xl shadow-2xl p-4 w-72 text-xs text-[#1d1d1f] leading-relaxed whitespace-pre-line">
-                    {HHI_EXPLANATION}
-                  </div>
-                )}
-              </div>
+              <InfoTip
+                title="HHI 怎么读"
+                size="md"
+                label="查看 HHI 说明"
+                paragraphs={HHI_EXPLANATION_PARAGRAPHS}
+              />
             </CardTitle>
             <CardDescription>HHI指数月度变化 + Top3/Top5/Top10品牌份额，判断市场是否在垄断化</CardDescription>
           </div>

@@ -12,6 +12,7 @@ import {
   type McpSettings,
   type McpProviderEntry,
 } from './mcpConfig';
+import { extractListingImages, listingImageFetchArgs } from './listingImages';
 
 export const SELLERSPRITE_MARKETPLACES = [
   'US', 'UK', 'DE', 'FR', 'IT', 'ES', 'JP', 'CA', 'AU', 'MX', 'IN', 'BR', 'AE',
@@ -631,8 +632,20 @@ export interface AsinDetailSnapshot {
   price: number;
   rating: number;
   ratings: number;
+  /** 首图（兼容既有调用：竞品明细的"主图对比"历史上只看这一张） */
   imageUrl: string;
   zoomImageUrl: string;
+  /**
+   * **整套图**（Listing 图库第 1-N 张 = 主图 + 附图；PRD §15.25 默认口径）。
+   * 接口给了数组就用数组（去重 + 上限 9 张），只给了单图就退回 `[首图]` —— 不编造缺失的附图。
+   * **默认不含 A+ 模块图**。
+   * 可选：历史快照（IDB / 云端老数据）里没有这个字段，读取方一律走 `asinGalleryUrls()` 兜底。
+   */
+  imageUrls?: string[];
+  /** A+ 模块图：默认空数组（用户指示"除了 A+"）；只有显式 includeAplusImages 才读接口的 A+ 字段。可选见上 */
+  aplusImageUrls?: string[];
+  /** 被整套图上限截掉的张数（>0 说明接口混进了图库以外的图，如实记数） */
+  galleryTruncated?: number;
   features: string[];
   lqs: number;
   fulfillment: string;
@@ -669,9 +682,17 @@ function parseVariationList(raw: unknown): VariationChild[] {
     .filter(Boolean) as VariationChild[];
 }
 
-function mapAsinDetail(d: Record<string, unknown>, fallbackAsin: string): AsinDetailSnapshot {
+function mapAsinDetail(
+  d: Record<string, unknown>,
+  fallbackAsin: string,
+  opts?: { includeAplusImages?: boolean }
+): AsinDetailSnapshot {
   const features = Array.isArray(d.features) ? d.features.map(String) : [];
   const asin = String(d.asin || fallbackAsin).toUpperCase();
+  // 抓图口径（PRD §15.25）：默认整套图（主图 + 附图），默认排除 A+ 模块图。
+  // 口径与上限都在 listingImages.ts 里一处定义，这里只做映射。
+  const gallery = extractListingImages(d, { includeAplus: opts?.includeAplusImages === true });
+  const cover = String(d.zoomImageUrl || d.imageUrl || gallery.images[0] || '');
   return {
     asin,
     title: String(d.title || ''),
@@ -679,8 +700,11 @@ function mapAsinDetail(d: Record<string, unknown>, fallbackAsin: string): AsinDe
     price: Number(d.price) || 0,
     rating: Number(d.rating) || 0,
     ratings: Number(d.ratings) || 0,
-    imageUrl: String(d.imageUrl || d.zoomImageUrl || ''),
-    zoomImageUrl: String(d.zoomImageUrl || d.imageUrl || ''),
+    imageUrl: String(d.imageUrl || gallery.images[0] || ''),
+    zoomImageUrl: cover,
+    imageUrls: gallery.images,
+    aplusImageUrls: gallery.aplusImages,
+    galleryTruncated: gallery.truncated,
     features,
     lqs: Number(d.lqs) || 0,
     fulfillment: String(d.fulfillment || ''),
@@ -701,15 +725,35 @@ function mapAsinDetail(d: Record<string, unknown>, fallbackAsin: string): AsinDe
   };
 }
 
+/**
+ * 取某个 ASIN 的**整套图**（主图 + 附图，默认口径，不含 A+）。
+ *
+ * 读取方一律走这个函数：老快照（IDB / 云端历史）里没有 `imageUrls`，
+ * 直接读字段会拿到 undefined；这里退回首图，保证"有图就显示出来"。
+ */
+export function asinGalleryUrls(detail: AsinDetailSnapshot | null | undefined): string[] {
+  if (!detail) return [];
+  const list = Array.isArray(detail.imageUrls) ? detail.imageUrls.filter((u) => String(u || '').trim()) : [];
+  if (list.length > 0) return list;
+  const cover = String(detail.zoomImageUrl || detail.imageUrl || '').trim();
+  return cover ? [cover] : [];
+}
+
+/**
+ * 拉 ASIN 详情快照。
+ * @param opts.includeAplusImages 是否连 A+ 模块图一起读（**默认 false**：用户指示"除了 A+"）
+ */
 export async function fetchAsinDetailFromMcp(
   asin: string,
-  marketplace: string
+  marketplace: string,
+  opts?: { includeAplusImages?: boolean }
 ): Promise<AsinDetailSnapshot> {
   const payload = await callSellerSpriteToolBrowser('asin_detail', {
     asin: asin.trim().toUpperCase(),
     marketplace: normalizeMarketplaceCode(marketplace),
+    ...listingImageFetchArgs({ includeAplus: opts?.includeAplusImages === true }),
   });
-  return mapAsinDetail(unwrapData(payload), asin);
+  return mapAsinDetail(unwrapData(payload), asin, opts);
 }
 
 export interface AsinSalesTrendPoint {

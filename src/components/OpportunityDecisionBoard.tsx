@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
+import { InfoTip } from './ui/InfoTip';
 import { Card } from './ui/Card';
 import {
   loadOpportunities,
@@ -509,9 +510,17 @@ export function OpportunityDecisionBoard({
                 );
               })}
             </ol>
-            <p className="text-[10px] text-[#86868b]">
-              说明：这里的排序是**确定性建议**（AI 不改分、也不排序）；若两张卡共用供应链或同一批素材，
-              先做前一张能摊薄后一张的成本——这一点需要你自己判断并在卡上拍板。
+            <p className="text-[10px] text-[#86868b] flex flex-wrap items-center gap-1">
+              {/* 2026-09 按用户指示收进 ⓘ 角标（PRD §15.24）：原文 2 行 65 字说明（且含未渲染的 ** 记号）。 */}
+              排序只是建议，先做哪个由你拍板
+              <InfoTip
+                title="这个顺序是怎么来的"
+                label="查看排序说明"
+                paragraphs={[
+                  '排序规则是确定性的：按「评分 → 覆盖度 → 前置资源缺口」计算，AI 不改分、也不排序。',
+                  '若两张卡共用供应链或同一批素材，先做前一张能摊薄后一张的成本 —— 这一点需要你自己判断并在卡上拍板。',
+                ]}
+              />
             </p>
           </div>
         </Card>
@@ -570,8 +579,18 @@ export function OpportunityDecisionBoard({
         <Card>
           <div className="p-5">
             <p className="text-sm font-semibold text-[#1d1d1f] mb-1">优先级矩阵（评分 × 覆盖度）</p>
-            <p className="text-[11px] text-[#86868b] mb-2">
-              横轴评分、纵轴覆盖度；右上角是"又高分又有证据"，右下角是"高分但证据单薄"（要先补证据，别急着投钱）。
+            <p className="text-[11px] text-[#86868b] mb-2 flex flex-wrap items-center gap-1">
+              {/* 2026-09 按用户指示收进 ⓘ 角标（PRD §15.24）：原文 41 字的读图说明，
+                  下面四张象限卡已经把同样的结论按格子写清了，正文只留轴的含义。 */}
+              横轴评分 × 纵轴覆盖度
+              <InfoTip
+                title="怎么读这张矩阵"
+                label="查看矩阵读法"
+                paragraphs={[
+                  '右上角是「又高分又有证据」——优先做；右下角是「高分但证据单薄」——要先补证据，别急着投钱。',
+                  '左下角两格分别代表「证据够但价值低」与「分低证据也少」，都不适合马上投入。',
+                ]}
+              />
             </p>
             <div className="grid grid-cols-2 gap-2">
               {[
@@ -1116,11 +1135,21 @@ export function OpportunityRoadmapBlock({
   if (!sheet) return body;
   return (
     <div className="space-y-2">
-      <p className="text-[11px] text-[#86868b]">
-        这一页就是这张卡上「先做 / 后做 / 前置资源 / 控制点」的完整版：同一份数据、同一份实现。
-        控制点的默认值来自确定性规则（按利润假设与风险推导），**阈值可以直接在这里改**：
-        保存后写进这张卡，并把你之前对这个数字的「已确认」作废（确认的是那个数字，数字变了要重新拍板）；
-        不想要人工值就点「恢复默认」回到推导值。这里只改阈值，评分 / 覆盖度 / 资源缺口都不受影响。
+      <p className="text-[11px] text-[#86868b] flex flex-wrap items-center gap-1">
+        {/* 2026-09 按用户指示收进 ⓘ 角标（PRD §15.24）：原文 4 行 146 字说明（页壳顶部最大的一块平铺文字）。
+            正文保留「阈值可直接改 + 改完要重新拍板」这两个会改变行为的要点，其余展开看角标。 */}
+        阈值可直接改；改完需重新拍板
+        <InfoTip
+          title="控制点与阈值说明"
+          label="查看控制点说明"
+          size="md"
+          paragraphs={[
+            '这一页就是这张卡上「先做 / 后做 / 前置资源 / 控制点」的完整版：同一份数据、同一份实现。',
+            '控制点的默认值来自确定性规则（按利润假设与风险推导）。',
+            '保存后写进这张卡，并把你之前对这个数字的「已确认」作废（确认的是那个数字，数字变了要重新拍板）；不想要人工值就点「恢复默认」回到推导值。',
+            '这里只改阈值，评分 / 覆盖度 / 资源缺口都不受影响。',
+          ]}
+        />
       </p>
       {body}
     </div>

@@ -60,7 +60,7 @@ function test(name: string, fn: () => void) {
 
 /** 最小背景信息：只给推导需要的字段（测试里显式写清"哪条输入推出哪条结论"） */
 function background(over: Partial<UserBackgroundProfile['fields']> = {}): UserBackgroundProfile {
-  return { fields: { ...over }, notes: {}, legacyNotes: '', updatedAt: '' };
+  return { fields: { ...over }, notes: {}, brands: [], legacyNotes: '', updatedAt: '' };
 }
 
 console.log('capability library');

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CloudDownload, Crosshair, Loader2, Swords, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CloudDownload, Crosshair, Images, Loader2, Swords, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from './ui/Card';
 import { Card } from './ui/Card';
@@ -44,6 +44,7 @@ import { DRILLDOWN_ENTRIES } from '../utils/competitorDrilldown';
 import { loadCapabilityLibrary } from '../utils/capabilityLibrary';
 import { resolveCapabilities } from '../utils/capabilityDerivation';
 import { loadUserBackgroundById } from '../utils/userBackground';
+import { LISTING_IMAGE_MAX, describeListingImageScope } from '../utils/listingImages';
 
 /**
  * M3 · 看竞对深度分析（PRD §6.3）。
@@ -454,6 +455,61 @@ export function CompetitorDeepDive({
               </div>
             ))}
           </div>
+        </div>
+      </Card>
+
+      {/* ①-2 整套图（PRD §15.25 默认口径：Listing 图库第 1-N 张 = 主图 + 附图，默认不含 A+ 模块图） */}
+      <Card>
+        <div className="p-5">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <Images className="w-4 h-4 text-indigo-600" />
+            <p className="text-sm font-semibold text-[#1d1d1f]">整套图（Listing 图库：主图 + 附图）</p>
+            <span className="text-[11px] text-[#aeaeb2]">{describeListingImageScope()}</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {loaded.columns.map((asin) => {
+              const detail = data?.listingDetails?.[asin];
+              const gallery = detail?.images ?? [];
+              const truncated = detail?.imagesTruncatedByCap ?? 0;
+              const aplusN = detail?.aplusImages?.length ?? 0;
+              return (
+                <div key={asin} className="rounded-xl border border-black/8 bg-[#f8f9fb] p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-[11px] text-[#1d1d1f]">{asin}</span>
+                    <span className="text-[10px] text-[#86868b]">
+                      {gallery.length > 0 ? `${gallery.length} 张（上限 ${LISTING_IMAGE_MAX}）` : '未抓取'}
+                    </span>
+                  </div>
+                  {gallery.length > 0 ? (
+                    <div className="mt-2 grid grid-cols-5 gap-1">
+                      {gallery.map((url, i) => (
+                        <a key={`${asin}-${url}`} href={url} target="_blank" rel="noreferrer" className="block">
+                          <img
+                            src={url}
+                            alt={`${asin} 第 ${i + 1} 张`}
+                            title={`第 ${i + 1} 张`}
+                            className="w-full aspect-square object-contain rounded border border-black/5 bg-white"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-[10px] text-amber-700">
+                      还没抓到整套图：点上方「抓取全字段」按默认口径（第 1-{LISTING_IMAGE_MAX} 张）抓一次。
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-[10px] text-[#86868b]">
+                    {truncated > 0 ? `接口还返回了 ${truncated} 张超上限的图（已截断，只留前 ${LISTING_IMAGE_MAX} 张）；` : ''}
+                    {aplusN > 0 ? `A+ 模块图 ${aplusN} 张（显式开启才抓）` : 'A+ 模块图默认不抓'}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[10px] text-[#86868b]">
+            为什么默认不带 A+：A+ 模块图是"详情页下半屏的品牌故事"，和买家第一眼看的图库不是一回事；
+            混在一起会让"第 N 张对第 N 张"的横向对比失去可比性。要看 A+ 用上一步的 zip 图包（附图 / A+ 文件夹）。
+          </p>
         </div>
       </Card>
 

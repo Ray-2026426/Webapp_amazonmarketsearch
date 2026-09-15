@@ -1,6 +1,10 @@
--- 全量迁移（合并 supabase/migrations/001-007）
+-- 全量迁移（合并 supabase/migrations/001-010）
 -- 在 Supabase 网页 SQL Editor 里「一次全选粘贴 → Run」即可。
 -- 所有语句都是幂等写法（if not exists / drop policy if exists / create or replace），重复执行也安全。
+--
+-- 2026-09 追加 010 · app_config：管理员后台「配置中心」与数据池密钥解析（api/data 的 resolveProviderSecret）
+-- 读写的就是这张表，但 001-009 里从来没有建过它 —— 于是"跑完迁移配置中心还是坏的"。
+-- 这不是新功能，是把已经写进代码的表补进迁移，缺表自愈才真的能自愈。
 
 -- ========== 001_projects ==========
 create table if not exists public.projects (
@@ -456,6 +460,17 @@ create policy usage_events_service_only on public.usage_events
 -- 说明：service_role 绕过 RLS，因此策略写成"全部拒绝"即可；
 -- 普通 JWT 与 anon 一律读不到（这比"允许用户读自己的"更安全，用量只给管理员看）。
 
+-- 2026-09 追加 · key_source（自带密钥归因）
+-- 为什么加这一列：用户决策变更后（PRD §15.26），平台 Key 与**用户自带 Key** 都能用，
+-- 记账必须能分开（"这个月平台付了多少、用户自带 Key 跑了多少次"）。这一列只记
+-- 'user' | 'platform' | 'none' 三个字面量 —— **绝不记录 Key 本身**。
+-- 幂等写法：已经跑过 008 的库，再整体执行一次 all_in_one.sql 就会补上这一列。
+alter table public.usage_events
+  add column if not exists key_source text not null default 'platform';
+
+-- 管理员后台「用量统计」按 Key 来源分账要走这条索引
+create index if not exists usage_events_key_source_idx on public.usage_events (key_source);
+
 -- 审计日志（§11.4 审计日志：登录/取数/报告生成/机会决策等关键操作留痕）
 create table if not exists public.audit_events (
   id            text primary key,
@@ -520,4 +535,34 @@ create policy pool_cache_service_only on public.pool_cache
   with check (false);
 -- 说明：service_role 绕过 RLS，因此策略写成"全部拒绝"即可；
 -- 普通 JWT 与 anon 一律读写不到：缓存里存的是按 key 付费取回的外部数据，泄露等于泄露数据池成本。
+
+
+-- ============================================================
+-- 010 · app_config（管理员「配置中心」的服务端键值表）
+-- ============================================================
+-- 为什么补这张表：api/admin/[action].ts 的 config get/set/clear 与 api/data/[action].ts
+-- 的 resolveProviderSecret 一直在读写 public.app_config，但 001-009 从未建过它 ——
+-- 结果是"迁移全跑完，配置中心保存密钥仍然失败"，而缺表提示又指向 all_in_one.sql，形成死循环。
+--
+-- 口径：
+-- - key 用 'key:<provider>' 前缀（sellersprite / xydc / lingxing / sorftime / deepseek）；
+-- - value 是密钥明文，所以这张表**只有 service_role 能读写**（前端一律走 /api/admin/*，永不直连）；
+-- - 缺失时的降级行为不是崩溃：resolveProviderSecret 会回退环境变量（见 api/data/[action].ts），
+--   但管理员就再也无法在界面上换密钥了 —— 所以它是"可选但强烈建议建"的表。
+
+create table if not exists public.app_config (
+  key         text primary key,             -- 'key:sellersprite' 这类前缀键
+  value       text not null,                -- 配置值（密钥明文；只允许服务端读写）
+  updated_at  timestamptz not null default now()
+);
+
+alter table public.app_config enable row level security;
+
+drop policy if exists app_config_service_only on public.app_config;
+create policy app_config_service_only on public.app_config
+  for all
+  using (false)
+  with check (false);
+-- 说明：service_role 绕过 RLS，策略写成"全部拒绝"即可；普通 JWT 与 anon 一律读写不到，
+-- 因为这里存的是数据池与 AI 的密钥明文（M5 安全红线：密钥只在服务端）。
 

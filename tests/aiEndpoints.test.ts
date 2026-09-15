@@ -244,18 +244,45 @@ test('设置页不把绝对地址预填进输入框（避免静默把所有请�
   assert(panel.includes('不保存、不记录') || panel.includes('不经过本站服务端'), '要如实说明 Key 的流向');
 });
 
-test('设置页是四步傻瓜式流程，且不再信息爆炸', () => {
-  const panel = read('src/components/AiSettingsPanel.tsx');
-  // 四步按顺序出现
-  const i1 = panel.indexOf('① 选 AI 供应商');
-  const i2 = panel.indexOf('② 填 API Key');
-  const i3 = panel.indexOf('③ 获取模型');
-  assert(i1 > 0 && i2 > i1 && i3 > i2, `三步顺序不对：${i1}/${i2}/${i3}`);
-  // Key 必须在"获取模型"之前（否则按钮永远是禁用状态，用户会以为坏了）
-  assert(panel.indexOf('placeholder={cfg.apiKeyPlaceholder}') < i3, 'Key 输入框必须在「获取模型」之前');
+test('设置页保持"三步傻瓜式"且不再信息爆炸（2026-09 用户又要求去掉步骤编号）', () => {
+  const raw = read('src/components/AiSettingsPanel.tsx');
+  /**
+   * 先剥掉注释再断言：源码注释里保留"① 选供应商"这类**历史说明**是对的
+   * （解释当初为什么这么分步、现在为什么删掉），不该被判成"编号又回来了"。
+   * 这个坑踩过一次（adminGate 那条断言也被注释绊过），所以统一口径：**只查真实文案**。
+   */
+  const panel = raw
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '') // JSX 注释 {/* ... */}
+    .replace(/\/\*[\s\S]*?\*\//g, '') // 块注释
+    .replace(/(^|[^:])\/\/.*$/gm, '$1'); // 行注释
+
+  // 用户明确要求删掉 ①②③ 步骤编号 —— 所以**可见文案里**不许再出现
+  for (const dead of ['① 选', '② 填', '③ 获取模型']) {
+    assert(!panel.includes(dead), `用户要求删掉的步骤编号又回到了可见文案里：${dead}`);
+  }
+
+  // 三块仍在，且顺序是 供应商 → Key → 模型
+  const iProvider = panel.indexOf('选 AI 供应商');
+  const iKey = panel.indexOf('placeholder={cfg.apiKeyPlaceholder}');
+  assert(iProvider > 0 && iKey > iProvider, `顺序不对：供应商(${iProvider}) 应在 Key(${iKey}) 之前`);
+
+  // 用户要求：按钮放在"模型名"前面 —— 获取模型 与 验证 都要在模型下拉之前
+  const iFetch = panel.indexOf('获取模型');
+  const iVerify = panel.indexOf('handleTest}');
+  const iSelect = panel.indexOf('aria-label="模型"');
+  assert(iFetch > 0 && iVerify > 0, '「获取模型」与「验证」按钮都必须在');
+  assert(iSelect > 0, '找不到模型下拉（aria-label="模型"）');
+  assert(iKey < iSelect, `Key 输入框必须在模型下拉之前：${iKey} vs ${iSelect}`);
+  assert(iFetch < iSelect, `「获取模型」必须在模型下拉之前：${iFetch} vs ${iSelect}`);
+  assert(iVerify < iSelect, `「验证」必须在模型下拉之前：${iVerify} vs ${iSelect}`);
+
+  // 用户要求删掉「手动添加模型名」
+  assert(!panel.includes('手动添加模型名'), '「手动添加模型名」已按用户要求删除，不得回归');
+
   // 进阶内容折叠起来
   assert(panel.includes('<details'), '高级设置应折叠（details/summary）');
   assert(panel.includes('高级设置（接第三方中转'), '折叠区要有明确标题');
+
   // 旧的冗长文案不得回归
   for (const dead of ['使用中转 API 时必填', '不同模型在速度、成本与能力上不同，请按供应商文档选择']) {
     assert(!panel.includes(dead), `应已删除的冗长文案又回来了：${dead}`);

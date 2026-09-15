@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Loader2, AlertTriangle, ClipboardList } from 'lucide-react';
 import { cn } from './ui/Card';
+import { InfoTip } from './ui/InfoTip';
 import { Card } from './ui/Card';
 import {
   loadSelfAssessment,
@@ -149,9 +150,20 @@ export function SelfAssessmentView({
           </div>
           <div>
             <h3 className="text-lg font-semibold text-[#1d1d1f]">看自己 · 背景信息 + 3 个拍板问题</h3>
+            {/* 2026-09 按用户指示收进 ⓘ 角标（PRD §15.24）：原文 2 行 64 字说明。
+                注意：正文**保留**了「结论用于机会卡的自身适配度与硬约束判定」这句 ——
+                它决定用户怎么理解这些答案的用途（会改变判断口径），不能藏进角标。 */}
             <p className="text-sm text-[#86868b] mt-0.5 max-w-xl">
-              能力/资源/经验/约束由「设置 → 背景信息」自动推导（可逐条覆盖）；这里只回答背景信息答不了、但决定拍板的 3 个问题。
-              结论用于机会卡的「自身适配度」与硬约束判定。
+              3 个拍板问题 → 机会卡适配度与硬约束判定
+              <InfoTip
+                title="这一页要你回答什么"
+                label="查看看自己说明"
+                wrapperClassName="ml-1"
+                paragraphs={[
+                  '能力 / 资源 / 经验 / 约束由「设置 → 背景信息」自动推导，可逐条覆盖。',
+                  '这里只回答背景信息答不了、但决定拍板的 3 个问题，其余不用你再点一遍。',
+                ]}
+              />
             </p>
           </div>
         </div>

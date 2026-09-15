@@ -3,7 +3,7 @@
  *
  * 设计意图（⏳4 修复）：下钻不只是「把 ASIN 带进竞品明细」，还要带上**看哪个视图**的意图：
  *   ⑦ 单竞对深度页  → Listing 详情页（单 ASIN 全量字段）
- *   ⑧ 主图逐张对比  → Listing 详情页（主图 1-7 张逐张对比）
+ *   ⑧ 主图逐张对比  → Listing 详情页（**整套图**：主图 + 附图，默认不含 A+）
  *   ⑨ 流量结构      → 流量（流量词 / 广告结构）
  *   ⑩ 评论与画像    → 走用户洞察（不在竞品明细内）
  * 之前 ⑦⑧⑨ 一律落在 Listing，点 ⑨ 流量结构也要手动再切一次，属于断链。
@@ -35,7 +35,7 @@ export const DRILLDOWN_ENTRIES: readonly DrilldownEntry[] = [
     id: 'images',
     label: '⑧ 主图逐张对比',
     tab: 'listing',
-    hint: '在竞品明细里逐张对比主图（第 1-7 张）',
+    hint: '在竞品明细里逐张对比 Listing 图库（主图 + 附图，默认不含 A+）',
   },
   {
     id: 'traffic',

@@ -13,6 +13,7 @@
 import { LISTING_FIELDS, type FieldGroup, type ListingDetail, type TrafficDetail } from './listingFields';
 import { DEFAULT_TTL_SECONDS, type PoolDataType } from './poolCache';
 import type { UsageTool } from './usageAccounting';
+import { LISTING_IMAGE_MAX, extractListingImages, listingImageFetchArgs } from './listingImages';
 
 export type FetchDepth = 'fast' | 'deep';
 
@@ -50,6 +51,12 @@ export interface FetchPlanInput {
   alreadyHave?: Record<string, string[]>;
   /** 只要这些字段组（默认全部） */
   groups?: FieldGroup[];
+  /**
+   * 是否连 A+ **模块图**一起抓（PRD §15.25）。
+   * 默认 false —— 用户指示："默认抓整套图（除了 A+）"。
+   * 注意：A+ 的**文案**（`aplus` 字段）一直是抓的，这里说的是 A+ 的图片模块。
+   */
+  includeAplusImages?: boolean;
 }
 
 /** 评论采样：按 §15.4 的口径算"锚点 + 头部"的次数 */
@@ -78,6 +85,8 @@ export function planListingFetch(input: FetchPlanInput): FetchStep[] {
   const marketplace = input.marketplace || 'US';
   const groups = new Set<FieldGroup>(input.groups ?? ['product', 'listing', 'traffic']);
   const anchor = (input.anchorAsin || asins[0] || '').toUpperCase();
+  /** A+ 模块图：默认不抓（用户口径）；只有调用方显式开启才带上 */
+  const includeAplusImages = input.includeAplusImages === true;
   const sampling = reviewSamplePlan(depth);
   const have = (asin: string, keys: string[]): boolean => {
     const got = new Set(input.alreadyHave?.[asin] ?? []);
@@ -96,7 +105,9 @@ export function planListingFetch(input: FetchPlanInput): FetchStep[] {
   };
 
   for (const asin of asins) {
-    // ① Listing 文本（标题/五点/A+/图片/变体）——最便宜且信息量最大
+    // ① Listing 文本（标题/五点/整套图/A+/变体）——最便宜且信息量最大
+    //    抓图口径（PRD §15.25）：默认**整套图**（Listing 图库第 1-N 张 = 主图 + 附图），默认**不含 A+ 模块图**。
+    //    成本口径不变：整套图仍是 asin_listing 这一次调用的返回内容，不是"每张图一次调用"。
     if (groups.has('listing')) {
       push({
         id: `listing:${asin}`,
@@ -104,11 +115,11 @@ export function planListingFetch(input: FetchPlanInput): FetchStep[] {
         usageTool: 'competitor_listing',
         provider: 'sellersprite',
         tool: 'asin_listing',
-        args: { asin, marketplace },
+        args: { asin, marketplace, ...listingImageFetchArgs({ includeAplus: includeAplusImages }) },
         fills: fieldKeysOf(['title', 'bullets', 'aplus', 'imageStrategy', 'mainImages', 'video', 'variants', 'attributes', 'qa', 'brandMaker', 'listPrice', 'ratingBreakdown']),
         asin,
         priority: 1,
-        label: `${asin} 的 Listing 全字段（标题/五点/A+/主图/变体/参数表/Q&A）`,
+        label: `${asin} 的 Listing 全字段（标题/五点/整套图 1-${LISTING_IMAGE_MAX} 张/变体/参数表/Q&A）`,
       });
     }
 
@@ -260,10 +271,16 @@ export function assembleListingDetails(plan: FetchStep[], results: FetchStepResu
 
     if (step.type === 'listing') {
       const target = (listing[step.asin] ??= {});
-      const images = pickArray(data.images ?? data.imageUrls ?? data.mainImages);
-      if (images.length > 0) {
-        target.images = images;
+      // 抓图口径（PRD §15.25）：整套图（主图 + 附图，第 1-N 张，上限 LISTING_IMAGE_MAX）；
+      // A+ 模块图默认**不采信**，只记"有多少张被按默认口径排除"，需要时用 includeAplusImages 显式开启。
+      const imgs = extractListingImages(data, { includeAplus: step.args?.includeAplusImages === true });
+      if (imgs.images.length > 0) {
+        target.images = imgs.images;
+        if (imgs.truncated > 0) target.imagesTruncatedByCap = imgs.truncated;
         fields.push('mainImages');
+      }
+      if (imgs.aplusImages.length > 0) {
+        target.aplusImages = imgs.aplusImages;
       }
       const videos = pickArray(data.videos ?? data.videoUrls);
       if (typeof data.videoCount === 'number' || videos.length > 0) {

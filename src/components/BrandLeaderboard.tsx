@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
 import { Product, HistoryRecord } from '../utils/parser';
-import { TrendingUp, TrendingDown, ChevronLeft, ChevronRight, HelpCircle, Download } from 'lucide-react';
+import { TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { DateRangeSelector } from './DateRangeSelector';
 import { ProductModal } from './ProductModal';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
+import { InfoTip } from './ui/InfoTip';
 
 interface BrandLeaderboardProps {
   products: Product[];
@@ -16,30 +17,11 @@ interface BrandLeaderboardProps {
   asinToSegment?: Record<string, string>;
 }
 
+/**
+ * 「有效ASIN数量」的口径（表头角标内容）。
+ * 原文一字未删，只是从"表头右下角一个手写浮层"改成全站统一的 InfoTip（PRD §15.24）。
+ */
 const EFFECTIVE_ASIN_HINT = '在所选时间段内，销量大于 0 的不重复 ASIN 数量。';
-
-function ColumnHeaderHint({ text }: { text: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="flex justify-center">
-      <span className="relative inline-block pr-3.5">
-        有效ASIN数量
-        <span
-          className="absolute -top-1.5 right-0 inline-flex"
-          onMouseEnter={() => setShow(true)}
-          onMouseLeave={() => setShow(false)}
-        >
-          <HelpCircle className="w-3 h-3 text-[#b0b0b8] hover:text-[#6366f1] cursor-help transition-colors" />
-          {show && (
-            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-black/10 rounded-2xl shadow-2xl p-3 w-56 text-xs text-[#1d1d1f] leading-relaxed text-left normal-case font-normal whitespace-normal pointer-events-none">
-              {text}
-            </div>
-          )}
-        </span>
-      </span>
-    </div>
-  );
-}
 
 // Product positioning classification based on price and sales
 function getPositionLabel(price: number, monthlySales: number, reviewCount: number): { label: string; color: string } {
@@ -258,7 +240,16 @@ export const BrandLeaderboard = React.memo(function BrandLeaderboard({ products,
                   <th scope="col" className="px-4 py-3 font-medium">品牌</th>
                   <th scope="col" className="px-4 py-3 font-medium text-right">ASIN数量</th>
                   <th scope="col" className="px-4 py-3 font-medium text-center">
-                    <ColumnHeaderHint text={EFFECTIVE_ASIN_HINT} />
+                    {/* 表头角标（PRD §15.24）：原本是本地手写的 ColumnHeaderHint（一个绝对定位浮层，
+                        表格 overflow-x-auto 里容易被裁、也不能被键盘聚焦）。统一改用 InfoTip，
+                        align="end" 是为了让它不掉出卡片右边缘。 */}
+                    有效ASIN数量
+                    <InfoTip
+                      content={EFFECTIVE_ASIN_HINT}
+                      label="查看有效ASIN数量的口径"
+                      align="end"
+                      wrapperClassName="ml-1"
+                    />
                   </th>
                   <th scope="col" className="px-4 py-3 font-medium text-right">销量</th>
                   <th scope="col" className="px-4 py-3 font-medium text-right">销售额</th>
