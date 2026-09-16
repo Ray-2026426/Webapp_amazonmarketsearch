@@ -189,5 +189,27 @@ test('数据库自检不得回显任何表内数据（只回状态）', () => {
   assert(!/return json\(res, 200, \{[\s\S]*rows/.test(api.split('async function tableStatus')[1]?.split('async function health')[0] ?? ''), '表自检不得返回行数据');
 });
 
+console.log('安全守卫：碰密钥的脚本必须只读、不落盘、不回显');
+
+test('check-db-status.mjs 是只读探针，且不打印密钥、不写文件', () => {
+  const src = read('scripts/check-db-status.mjs');
+  assert(!/method:\s*['"](POST|PUT|PATCH|DELETE)/i.test(src), '探针不得发任何写请求');
+  assert(!/writeFileSync|appendFileSync/.test(src), '探针不得写文件');
+  assert(!/console\.log\([^)]*\$\{key\}/i.test(src), '不得把密钥的值打印到 stdout');
+  assert(src.includes('PGRST205'), '必须用 PGRST205 区分"表不存在"与"表存在但 RLS 全拒"');
+  for (const t of ['projects', 'usage_events', 'app_config', 'user_provider_keys']) {
+    assert(src.includes(`'${t}'`), `探针的表清单缺少 ${t}`);
+  }
+  assert(/key_source/.test(src), '必须覆盖跨设备要用的 key_source 列');
+});
+
+test('run-migration.mjs 的 PAT 只从环境变量读，不写盘、不打印', () => {
+  const src = read('scripts/run-migration.mjs');
+  assert(/process\.env\.SUPABASE_PAT/.test(src), 'PAT 必须只从环境变量读');
+  assert(!/writeFileSync|appendFileSync/.test(src), '不得把 PAT 写盘');
+  assert(!/console\.(log|error)\([^)]*\$\{PAT\}/.test(src), '不得把 PAT 的值打印出来（打印变量名可以）');
+  assert(/Authorization: `Bearer \$\{PAT\}`/.test(src), 'PAT 只应出现在请求头里');
+});
+
 console.log(`\nresult: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

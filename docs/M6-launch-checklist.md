@@ -25,6 +25,7 @@
 | # | 检查项 | 怎么验 | 预期 |
 | --- | --- | --- | --- |
 | 2.0 | **一条命令跑迁移（推荐路线）** | 本机执行 `SUPABASE_PAT=<Supabase Personal Access Token> node scripts/run-migration.mjs`（PAT 生成：https://supabase.com/dashboard/account/tokens，**跑完立刻撤销**） | 脚本把 `all_in_one.sql` 整个执行一遍，并**逐表验证 7 张表 + 检查 RLS 是否都开着 + 检查 `usage_events.key_source` 是否存在**；缺哪项就 ❌ 指出来 |
+| 2.0b | **先看要不要跑（只读探针，不需要 PAT）** | 本机执行 `node scripts/check-db-status.mjs`（只用 anon key，只发 GET） | 逐表报 ✅/❌ 并给结论；**2026-09-16 实测线上状态：`projects`/`project_members` 在，`usage_events`/`audit_events`/`pool_cache`/`app_config`/`user_provider_keys` 与 `key_source` 列都还缺** → 需要跑一次迁移 |
 | 2.1 | 迁移已执行（手动路线） | **不用记表名**：设置 →「管理员后台 → 环境自检 → 数据库表（要不要跑迁移，看这里）」会逐表报 ✅/❌ 并给结论 | 显示"所有表齐全，无需迁移"；若缺表，按提示去 Supabase SQL Editor 跑 `supabase/migrations/all_in_one.sql`（可重复执行） |
 | 2.2 | RLS 正确 | 用 anon key 直接查 `usage_events` / `audit_events` | 查不到任何行（策略为全部拒绝，仅 service_role 可读写） |
 | 2.3 | 备份策略 | Supabase → Database → Backups | 至少保留日备；确认恢复流程演练过一次 |
