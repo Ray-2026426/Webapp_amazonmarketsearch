@@ -244,7 +244,11 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   };
 
   const updateProvider = (id: string, patch: Partial<McpProviderEntry>) => {
-    setMcpProviders((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    setMcpProviders((prev) => prev.map((p) => {
+      if (p.id !== id) return p;
+      const next = { ...p, ...patch };
+      return patch.mcpUrl !== undefined ? { ...next, mcpUrl: sanitizeBuiltinMcpUrl(next.kind, next.mcpUrl) } : next;
+    }));
     setMcpTestResults((prev) => {
       const next = { ...prev };
       delete next[id];
@@ -287,11 +291,16 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   };
 
   const persistMcp = () => {
-    const ss = mcpProviders.find((p) => p.kind === 'sellersprite') || mcpProviders[0];
+    const providers = mcpProviders.reduce<McpProviderEntry[]>(
+      (acc, p) => [...acc, { ...p, mcpUrl: sanitizeBuiltinMcpUrl(p.kind, p.mcpUrl) }],
+      []
+    );
+    setMcpProviders(providers);
+    const ss = providers.find((p) => p.kind === 'sellersprite') || providers[0];
     saveMcpSettings({
       secretKey: ss?.secretKey || '',
       mcpUrl: ss?.mcpUrl || '',
-      providers: mcpProviders,
+      providers,
     });
   };
 

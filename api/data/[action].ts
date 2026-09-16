@@ -312,6 +312,12 @@ function compactMcpError(status: number, text: string): string {
   return redactText(`MCP 请求失败（HTTP ${status}）：${message || '上游未返回错误详情'}`);
 }
 
+function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 12_000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 /**
  * 一次 JSON-RPC 请求。
  * `secret` 由调用方解析好传进来（密钥解析只在一个地方发生，避免散开）。
@@ -332,18 +338,24 @@ async function mcpPost(
     method,
     ...(params ? { params } : {}),
   };
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream',
-      ...(secret ? { 'secret-key': secret } : {}),
-      'MCP-Protocol-Version': '2025-03-26',
-      ...(method === 'tools/call' ? { 'Mcp-Method': 'tools/call', 'Mcp-Name': String(params?.name || '') } : {}),
-      ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
-    },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        ...(secret ? { 'secret-key': secret } : {}),
+        'MCP-Protocol-Version': '2025-03-26',
+        ...(method === 'tools/call' ? { 'Mcp-Method': 'tools/call', 'Mcp-Name': String(params?.name || '') } : {}),
+        ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    const aborted = e instanceof Error && e.name === 'AbortError';
+    throw new Error(aborted ? 'MCP 请求超时：上游 12 秒内没有响应' : (e instanceof Error ? redactText(e.message) : 'MCP 网络请求失败'));
+  }
   const text = await res.text();
   if (!res.ok) throw new Error(compactMcpError(res.status, text));
   const parsed = parseMcpHttpBody(text);
@@ -646,6 +658,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     return await fn(req, res, { ...auth, workspaceId: String((body as Record<string, unknown>).workspaceId || 'default') }, body as Record<string, unknown>);
   } catch (e) {
+    if (action === 'verify') {
+      const incoming = body as Record<string, unknown>;
+      const verifyKeySource = decideProviderKeySource(incoming.userKey).source;
+      return json(res, 200, {
+        ok: false,
+        keySource: verifyKeySource,
+        message: e instanceof Error ? redactText(e.message) : 'MCP 验证内部错误',
+      });
+    }
     return json(res, 500, { ok: false, error: e instanceof Error ? e.message : '数据池内部错误' });
   }
 }
