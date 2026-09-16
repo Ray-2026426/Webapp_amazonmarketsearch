@@ -1,22 +1,21 @@
 // M5 · 平台数据池网关（PRD §11.2「商用核心」）。
 //
 // 一次业务调用在这里完成四件事，顺序固定：
-//   1) 解析密钥（**用户自带的 Key 优先 → 平台 Key 兜底**，见 src/utils/mcpRequestKey.ts）
+//   1) 解析密钥（**必须用户自带 Key**，见 src/utils/mcpRequestKey.ts）
 //   2) 查缓存（按数据类型 TTL，命中直接返回并把 cacheHit 记进用量）
 //   3) 配额校验（超限直接拒绝，不浪费外部调用）
 //   4) 调外部 MCP → 写缓存 → 记一条用量事件（成功/失败都记，并带上 keySource 标签）
 //
 // 密钥口径（BYO Key，2026-09 用户决策变更："需要其他用户也能填 key"）：
 //   ① 本次请求携带的用户 Key（浏览器本机保存，随请求体带来）→ 只在**当次请求内**使用；
-//   ② 服务端 app_config / 环境变量里的平台 Key（团队共享兜底）；
-//   ③ 都没有 → 明确报"未配置"，不编造。
+//   ② 没有用户 Key → 明确报"请填写自己的 Key"，不再回退平台默认 Key。
 //
 // 安全红线（破了就是事故，逐条都有测试守着）：
 //   · 任何返回值里都不含密钥（连平台 Key 的指纹也不给：那是可暴力核对的信息）；
 //   · 用户 Key **绝不写库**（不写 app_config、不写任何表）、**绝不写日志**（含 console）、
 //     **绝不出现在任何响应体里**；上游把 Key 回显在报错里时统一过 redactText 抹掉；
 //   · 上游只把 Key 放**请求头**（secret-key），绝不拼进 URL query；
-//   · 非法用户 Key（空 / 超长 / 含控制字符）一律当作"没提供"，静默回退平台 Key，不报错泄露细节。
+//   · 非法用户 Key（空 / 超长 / 含控制字符）一律当作"没提供"，不报错泄露细节。
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getServiceSupabase, verifyToken, isAdminEmail, json } from '../auth/_shared.js';
@@ -93,10 +92,9 @@ async function resolvePlatformSecret(provider: ProviderName): Promise<string> {
 }
 
 /**
- * 本次请求用谁的 Key —— **唯一的解析入口**，顺序钉死为"用户 Key 优先 → 平台兜底"：
+ * 本次请求用谁的 Key —— **唯一的解析入口**，现在只接受用户自带 Key：
  *   ① `decideProviderKeySource`（纯函数）先看用户带来的 Key 是否可用；
- *   ② **只有不可用时才去读平台 Key**（最小暴露面：用户自带 Key 时一次都不碰 app_config）；
- *   ③ 两边都没有 → source='none'，调用方如实报"未配置"。
+ *   ② 没有用户 Key → source='none'，调用方如实报"请填写自己的 Key"。
  *
  * 返回的 key 只在本函数调用栈里往下传（→ 上游请求头），不落库、不落日志、不进响应体。
  */
@@ -105,8 +103,8 @@ async function resolveRequestSecret(
   userKeyRaw: unknown
 ): Promise<{ key: string; source: ProviderKeySource }> {
   const decision = decideProviderKeySource(userKeyRaw);
-  const platformKey = decision.source === 'platform' ? await resolvePlatformSecret(provider) : '';
-  return resolveProviderKey({ userKey: decision.userKey, platformKey });
+  void provider;
+  return resolveProviderKey({ userKey: decision.userKey });
 }
 
 function resolveProviderUrl(provider: ProviderName): string {
@@ -441,9 +439,15 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
   if (!tool) return json(res, 400, { ok: false, error: '缺少 tool' });
   if (!Object.keys(PROVIDER_ENV_KEY).includes(provider)) return json(res, 400, { ok: false, error: `未知 provider：${provider}` });
 
-  // ① 这次用的是谁的 Key（用户自带 → 平台兜底）。只在这里解析一次，往下传。
-  //    缓存命中时不读平台 Key（省一次库读），记账仍按"本次请求的来源"记标签。
-  const keyDecision = decideProviderKeySource(body.userKey);
+  // ① 必须先确认用户自带 Key，再允许读缓存或打上游。
+  const { key: secret, source: keySource } = await resolveRequestSecret(provider, body.userKey);
+  if (!secret) {
+    return json(res, 400, {
+      ok: false,
+      error: `${provider} 需要填写你自己的 Key：请在「设置 → MCP 数据」里填写（只存本机浏览器，不上传服务器保存）`,
+      keySource,
+    });
+  }
 
   // ② 配额
   const monthStart = new Date();
@@ -473,7 +477,7 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
         ok: true,
         cacheHit: true,
         calls: 0,
-        keySource: keyDecision.source,
+        keySource,
       })
     );
     return json(res, 200, {
@@ -481,21 +485,12 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
       cached: true,
       cacheReason: `缓存命中（创建于 ${bumped.createdAt}，命中 ${bumped.hits} 次）`,
       data: bumped.value,
-      keySource: keyDecision.source,
+      keySource,
       ttlSeconds: DEFAULT_TTL_SECONDS[type],
     });
   }
 
-  // ④ 解析密钥 → 调外部 → 写缓存 → 记账（成功失败都记，并带上"用的谁的 Key"）
-  const { key: secret, source: keySource } = await resolveRequestSecret(provider, body.userKey);
-  if (!secret) {
-    // 注意：这里**不回报**任何 Key 片段，也不区分"你没填"与"平台没配"以外的细节
-    return json(res, 400, {
-      ok: false,
-      error: `${provider} 没有可用的密钥：你可以在「设置 → MCP 数据」填自己的 Key（只存本机），或让管理员在配置中心配置平台 Key`,
-      keySource,
-    });
-  }
+  // ④ 调外部 → 写缓存 → 记账（成功失败都记，并带上"用的谁的 Key"）
   const started = Date.now();
   const result = await callMcp(provider, tool, args, secret);
   const durationMs = Date.now() - started;
@@ -564,8 +559,8 @@ async function handleStatus(_req: VercelRequest, res: VercelResponse, _auth: unk
     pruned: pruning,
     usage: describeUsage(summarizeUsage(USAGE, { limit: 20 })),
     note: usingDb
-      ? '平台 Key 只在服务端；用户自带的 Key 只在当次请求内使用（不落库、不落日志）；缓存持久化在 Supabase pool_cache'
-      : '平台 Key 只在服务端；用户自带的 Key 只在当次请求内使用（不落库、不落日志）；当前无 service_role，缓存退回进程内',
+      ? 'MCP 普通调用必须使用用户自带 Key；用户 Key 只在当次请求内使用（不落库、不落日志）；缓存持久化在 Supabase pool_cache'
+      : 'MCP 普通调用必须使用用户自带 Key；用户 Key 只在当次请求内使用（不落库、不落日志）；当前无 service_role，缓存退回进程内',
   });
 }
 
@@ -609,7 +604,7 @@ async function handleVerify(_req: VercelRequest, res: VercelResponse, _auth: unk
     return json(res, 200, {
       ok: false,
       keySource,
-      message: `${provider} 没有可用的密钥：填你自己的 Key（只存本机），或让管理员配置平台 Key`,
+      message: `${provider} 没有可用的密钥：请填写你自己的 Key（只存本机浏览器）`,
     });
   }
 
@@ -624,7 +619,7 @@ async function handleVerify(_req: VercelRequest, res: VercelResponse, _auth: unk
   return json(res, 200, {
     ok: true,
     keySource,
-    message: keySource === 'user' ? '连接成功（用的是你自己的 Key）' : keySource === 'platform' ? '连接成功（用的是平台 Key）' : '连接成功（自定义 MCP，未带 Key）',
+    message: keySource === 'user' ? '连接成功（用的是你自己的 Key）' : '连接成功（自定义 MCP，未带 Key）',
   });
 }
 

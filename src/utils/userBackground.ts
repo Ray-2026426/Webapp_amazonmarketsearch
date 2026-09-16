@@ -91,6 +91,8 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
           { value: 'dropship', label: '一件代发（不压库存）' },
           { value: 'wholesale_follow', label: '批发跟卖（跟现成品牌/链接）' },
           { value: 'aggregator', label: '品牌收购（买现成品牌）' },
+          { value: 'mixed_model', label: '混合模式（多种打法并行）' },
+          { value: 'not_sure', label: '还没定模式' },
         ],
       },
       {
@@ -104,7 +106,9 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
           { value: 'factory', label: '工厂型' },
           { value: 'trader', label: '贸易型' },
           { value: 'brand', label: '品牌型' },
+          { value: 'individual', label: '个人 / 小团队卖家' },
           { value: 'service', label: '服务商（代运营/供应链服务）' },
+          { value: 'mixed', label: '混合型' },
         ],
       },
       {
@@ -120,6 +124,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
           { value: 'fbm', label: 'FBM 自发货' },
           { value: 'overseas_wh', label: '海外仓' },
           { value: 'mixed', label: '混合（多条腿走）' },
+          { value: 'not_sure', label: '还没确定' },
         ],
       },
       {
@@ -133,6 +138,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
           { value: 'single', label: '单店' },
           { value: 's2_5', label: '2-5 家店' },
           { value: 's5p', label: '5 家店以上' },
+          { value: 'agency_managed', label: '代运营 / 合作方店铺' },
         ],
       },
       {
@@ -144,6 +150,9 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
         affects: '影响硬约束：站点决定哪些认证（CE/FCC/FDA/CPC）是必须的',
         options: [
           { value: 'US', label: 'US' },
+          { value: 'CA', label: 'CA' },
+          { value: 'MX', label: 'MX' },
+          { value: 'UK', label: 'UK' },
           { value: 'EU', label: 'EU' },
           { value: 'JP', label: 'JP' },
           { value: 'OTHER', label: '其他' },
@@ -176,6 +185,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
           { value: 'pending', label: '申请中（TM）' },
           { value: 'none', label: '没有商标' },
           { value: 'licensed', label: '用别人的授权' },
+          { value: 'not_sure', label: '不清楚 / 还没查' },
         ],
       },
       {
@@ -189,6 +199,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
           { value: 'in_progress', label: '备案中' },
           { value: 'none', label: '没备案' },
           { value: 'not_planned', label: '不打算做品牌' },
+          { value: 'not_sure', label: '不清楚' },
         ],
       },
       {
@@ -206,6 +217,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
           { value: 'CPC', label: 'CPC' },
           { value: 'EPR', label: 'EPR / 包装法' },
           { value: 'NONE', label: '暂无' },
+          { value: 'UNKNOWN', label: '不清楚需要哪些' },
         ],
       },
     ],
@@ -226,6 +238,8 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
           { value: 'own_factory', label: '自有工厂' },
           { value: 'partner_factory', label: '长期合作工厂' },
           { value: 'trading', label: '贸易商 / 中间商' },
+          { value: 'market_spot', label: '现货渠道（1688 / 批发市场）' },
+          { value: 'dropship_supplier', label: '代发供应商' },
           { value: 'no_stable', label: '还没有稳定供应链' },
         ],
       },
@@ -240,8 +254,10 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
           { value: '1688', label: '1688 选品' },
           { value: 'factory_direct', label: '工厂直供' },
           { value: 'trade_show', label: '展会' },
+          { value: 'domestic_platform', label: '国内电商热卖款' },
           { value: 'competitor_follow', label: '跟卖现成爆款' },
           { value: 'own_rnd', label: '自有研发' },
+          { value: 'customer_need', label: '客户需求 / 老客反馈' },
         ],
       },
       {
@@ -253,6 +269,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
         affects: '影响「看机会 → 人无我有」：只能贴牌时，差异化只能靠包装、套装与内容',
         options: [
           { value: 'mold_ok', label: '可以开模' },
+          { value: 'light_custom', label: '轻定制（颜色/包装/配件）' },
           { value: 'oem_only', label: '只能贴牌 / 改包装' },
           { value: 'none', label: '都不行（只能拿现货）' },
           { value: 'unknown', label: '还没问过供应商' },
@@ -267,6 +284,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
         affects: '影响硬约束（MOQ）与首批现金流：一次压多少货直接吃掉预算',
         options: [
           { value: 'lte500', label: '500 件以内' },
+          { value: 'm500', label: '500 件左右' },
           { value: 'm500_1000', label: '500-1000 件' },
           { value: 'm1000_3000', label: '1000-3000 件' },
           { value: 'gt3000', label: '3000 件以上' },
@@ -296,6 +314,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
           { value: 'yes', label: '有' },
           { value: 'partial', label: '部分有' },
           { value: 'no', label: '没有' },
+          { value: 'unknown', label: '还没谈过' },
         ],
       },
     ],
@@ -314,6 +333,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
         affects: '影响「看自己 → 启动资金」与前置资源缺口：预算直接决定首批备货与验证动作的上限',
         options: [
           { value: 'lt5w', label: '5 万以内' },
+          { value: 'w5_10', label: '5-10 万' },
           { value: 'w5_20', label: '5-20 万' },
           { value: 'w20_50', label: '20-50 万' },
           { value: 'g50w', label: '50 万以上' },
@@ -328,6 +348,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
         affects: '影响「看自己 → 广告预算」：广告盘子决定能不能靠付费把自然位冲出来',
         options: [
           { value: 'none', label: '不投广告' },
+          { value: 'lt200', label: '低于 $200' },
           { value: 'lt500', label: '低于 $500' },
           { value: 'x500_2000', label: '$500-2000' },
           { value: 'x2000_10000', label: '$2000-1 万' },
@@ -355,6 +376,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
         affects: '影响「看自己 → 库存风险与亏损承受」：保守的人不该被推去压一批重货',
         options: [
           { value: 'conservative', label: '保守' },
+          { value: 'small_test', label: '小批量测试优先' },
           { value: 'balanced', label: '稳健' },
           { value: 'aggressive', label: '进取' },
         ],
@@ -375,6 +397,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
         affects: '影响「看自己 → 运营与广告能力」：1-2 人团队做不了需要日盯的品类',
         options: [
           { value: 's1_2', label: '1-2 人' },
+          { value: 'part_time', label: '兼职 / 副业' },
           { value: 's3_9', label: '3-9 人' },
           { value: 's10_49', label: '10-49 人' },
           { value: 's50p', label: '50 人以上' },
@@ -393,6 +416,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
           { value: 'in_house', label: '自建摄影设计' },
           { value: 'outsourced_ok', label: '外包可控' },
           { value: 'basic_only', label: '只有基础图（供应商图修一修）' },
+          { value: 'ai_assisted', label: 'AI + 外包轻量制作' },
           { value: 'none', label: '没有' },
         ],
       },
@@ -407,8 +431,10 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
         affects: '影响「看机会 → 冷启动路径」与「看自己 → 评论资源」：没有测评资源时，新品只能靠 Vine 与站内合规手段慢慢攒',
         options: [
           { value: 'stable', label: '有稳定的合规测评渠道（Vine / 站外真人）' },
+          { value: 'vine_only', label: '只有 Vine / 早期评论人计划' },
           { value: 'few_customers', label: '只有少量真实客户' },
           { value: 'none', label: '完全没有' },
+          { value: 'not_sure', label: '不清楚怎么做合规' },
         ],
       },
     ],
@@ -426,6 +452,7 @@ export const BACKGROUND_GROUPS: BackgroundGroup[] = [
         affects: '影响「看自己 → 类目经验」：没做过的类目踩坑成本明显更高',
         options: [
           { value: 'none', label: '没做过' },
+          { value: 'similar', label: '做过相近类目' },
           { value: 'lt1', label: '不到 1 年' },
           { value: 'y1_3', label: '1-3 年' },
           { value: 'y3_5', label: '3-5 年' },
@@ -457,6 +484,8 @@ function ABILITY_OPTIONS(): BackgroundOption[] {
   return [
     { value: 'in_house', label: '自建团队' },
     { value: 'outsourced_ok', label: '外包可控' },
+    { value: 'owner_part_time', label: '老板 / 运营自己兼着做' },
+    { value: 'building', label: '正在搭建能力' },
     { value: 'outsourced_risky', label: '外包不可控' },
     { value: 'none', label: '无' },
   ];

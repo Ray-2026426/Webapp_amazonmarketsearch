@@ -3,7 +3,7 @@
 // 密钥流向（这里是最关键的一段，别改成假功能）：
 //   1) 用户可能在设置页给某个数据源填了自己的 Key → 只存在他的 localStorage（mcpConfig）；
 //   2) 需要外部数据时，把**该数据源的用户 Key** 随请求体带给同源网关 `/api/data/*`；
-//   3) 网关解析顺序：① 本次请求携带的用户 Key → ② 服务端 app_config / 环境变量里的平台 Key；
+//   3) 网关解析顺序：① 本次请求携带的用户 Key → ② 没有用户 Key 就明确拒绝；
 //   4) 用户 Key 只在当次请求内使用：不落库、不落日志、不进任何返回体。
 //
 // 硬约束：
@@ -12,7 +12,7 @@
 //   - 未登录时不抛错，返回 viaGateway=false，让调用方自己决定回退策略。
 //
 // 与旧路径的关系（迁移期）：旧实现是浏览器直接用 MCP 密钥调用（密钥存在浏览器里）。
-// 现在规则是"**能走网关就走网关**"：登录用户一律走网关，网关负责选 Key（自己的还是平台的）。
+// 现在规则是"**能走网关就走网关**"：登录用户一律走网关，网关只接受用户自己的 Key。
 
 import { getAuthToken } from './auth';
 import { getUserKeyForProvider, type McpProviderKind } from './mcpConfig';
@@ -21,7 +21,7 @@ import type { UsageTool } from './usageAccounting';
 
 export type DataPoolProvider = 'sellersprite' | 'xydc' | 'lingxing' | 'sorftime';
 
-/** 取本机为该数据源填的 Key（读不到就返回空串 = 走平台兜底） */
+/** 取本机为该数据源填的 Key（读不到就返回空串，网关会要求用户填写） */
 function localUserKey(provider: McpProviderKind): string {
   try {
     return getUserKeyForProvider(provider);
@@ -69,7 +69,7 @@ export function canUseDataPool(): boolean {
  * 给发往 `/api/data/*` 的请求体补上"本机为该 provider 填的 Key"（没填就不加字段）。
  *
  * 单独导出的原因：Listing 抓取执行器等调用点自己拼请求体，必须走**同一个**函数，
- * 否则会出现"有的路径用了用户自己的 Key、有的路径偷偷用了平台 Key"这种最难查的账。
+ * 否则会出现"有的路径用了用户自己的 Key、有的路径没带 Key"这种最难查的账。
  */
 export function withUserKey<T extends Record<string, unknown>>(provider: McpProviderKind, payload: T): T {
   const userKey = localUserKey(provider);
@@ -186,20 +186,20 @@ export async function fetchMyUsage(fromIso?: string): Promise<{ ok: boolean; des
 
 export interface ProviderVerifyResult {
   ok: boolean;
-  /** 这次验证用的是谁的 Key（填了自己的就是 user，没填就是 platform） */
+  /** 这次验证用的是谁的 Key（普通 MCP 调用必须是 user；没填就是 none） */
   keySource: 'user' | 'platform' | 'none';
   /** 给用户看的一句话（不含任何 Key 片段） */
   message: string;
 }
 
 /**
- * 「验证」按钮的唯一实现：**按密钥来源分别验证**。
+ * 「验证」按钮的唯一实现：验证用户本机填写的 Key。
  *
  * 为什么不能沿用旧实现：以前的 `testMcpProvider` → `checkDataPoolReady` 只查"服务端数据池
  * 配没配卖家精灵"，既不看你在界面上填了什么，也不看这个数据源是谁。BYO Key 之后必须回答
  * "这次用的是谁的 Key、它到底能不能用"，所以统一走网关的 `verify`：
  *   - 本机填了 Key → 网关用**你的** Key 做一次 MCP 握手（只握手，不调业务工具、不记用量、不占配额）；
- *   - 没填 → 网关用平台 Key 握手，界面据此显示"用的是平台 Key"；
+ *   - 没填 → 网关明确提示先填写自己的 Key；
  *   - 自定义 MCP → 连地址一起交给网关（服务端会校验目标地址，避免把网关变成内网探测器）。
  *
  * 明文 Key 只在这一次请求体里出现（同源），返回体只有 `keySource` 与一句话。
@@ -233,13 +233,13 @@ export async function verifyDataPoolProvider(input: {
       message?: string;
       error?: string;
     };
-    const keySource = body.keySource ?? (userKey ? 'user' : 'platform');
+    const keySource = body.keySource ?? (userKey ? 'user' : 'none');
     return {
       ok: Boolean(body.ok) && res.ok,
       keySource,
       message: body.message || body.error || `验证失败（HTTP ${res.status}）`,
     };
   } catch (e) {
-    return { ok: false, keySource: userKey ? 'user' : 'platform', message: e instanceof Error ? e.message : '网络错误' };
+    return { ok: false, keySource: userKey ? 'user' : 'none', message: e instanceof Error ? e.message : '网络错误' };
   }
 }

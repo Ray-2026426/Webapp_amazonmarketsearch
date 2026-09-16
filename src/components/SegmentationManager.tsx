@@ -23,6 +23,7 @@ import {
   productMatchesSegmentFilter,
   type SegmentDepth,
 } from '../utils/subSegments';
+import { ProductImageZoom } from './ProductImageZoom';
 
 /** 仅用于筛选态：与真实细分市场名称区分，表示「尚未打标」 */
 const UNCATEGORIZED_FILTER_KEY = '__uncategorized__';
@@ -1625,7 +1626,7 @@ ${batchInfo}`;
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-4">
-                          <img src={p.image} alt="" className="w-12 h-12 object-cover rounded-lg shadow-sm" referrerPolicy="no-referrer" />
+                          <ProductImageZoom src={p.image} className="w-12 h-12 object-cover rounded-lg border border-black/5 shadow-sm shrink-0" />
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="font-mono text-xs text-indigo-600">{p.asin}</span>

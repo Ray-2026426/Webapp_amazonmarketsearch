@@ -5,7 +5,7 @@
 // 换成计费模式。」 → 旧的**决策 A**（"数据池密钥只在服务端，浏览器不保存任何密钥"，
 // 以及配套的"MCP 面板不得有密钥输入框"）被用户推翻，改为 **BYO Key**：
 //   · 所有用户都可以在 MCP 面板填**自己的** Key（名称 / 地址 / Key / 验证 四样，人人都有）；
-//   · 平台仍然保留服务端默认 Key 作兜底（没填自己 Key 的人走平台 Key，团队共享）；
+//   · 普通 MCP 调用必须使用用户自己的 Key，不再走服务端平台 Key 兜底；
 //   · 以后进入付费阶段再关闭 MCP 入口、改成计费模式（现在不做）。
 //
 // 因此本文件的断言从「面板里不许有 Key 输入框」改成「Key 输入框必须有，且**每一家**都有」，
@@ -19,7 +19,7 @@
 //   7) 用户 Key **不得写日志**（含 console）、上游报错必须脱敏后才准往外抛；
 //   8) 用户 Key **不得进任何响应体**（返回体里连平台 Key 的指纹都不给）；
 //   9) 用户 Key **不得进 URL query**（只能进同源 POST 请求体或请求头）；
-//  10) 网关的解析顺序必须是「用户 Key 优先、平台兜底」，且有可单测的纯函数。
+//  10) 网关的解析顺序必须是「用户 Key，否则 none」，且有可单测的纯函数。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,7 +62,7 @@ const POOL_CLIENT_FILES = [
   'src/components/AiSettingsPanel.tsx',
 ];
 
-console.log('security guard (BYO key：用户自带 Key 只存本机，平台 Key 只在服务端)');
+console.log('security guard (BYO key：用户自带 Key 只存本机，普通 MCP 不走平台兜底)');
 
 test('api/settings 只回"状态 + 指纹"，不得把密钥值放进返回体', () => {
   const src = read('api/settings/[action].ts');
@@ -161,9 +161,9 @@ test('BYO：每个数据源都有「名称 / 地址 / Key / 验证」——不�
   assert.ok(/updateProvider\(p\.id,\s*\{\s*mcpUrl:/.test(region), '每一家都要能改地址');
   // ③ 验证按钮
   assert.ok(region.includes('handleTestMcpProvider(p)'), '每一家都要有「验证」按钮');
-  // ④ 留空与填了的差别必须写在占位符里
-  assert.ok(region.includes('留空'), '占位符必须说清"留空会怎样"');
-  assert.ok(region.includes('平台 Key'), '占位符必须说清留空走平台 Key');
+  // ④ 必须说清 Key 是用户自己的，不能暗示留空走平台兜底
+  assert.ok(region.includes('你自己的 Key'), '占位符必须说清要填写自己的 Key');
+  assert.ok(!region.includes('平台 Key'), 'Key 输入区不得再暗示留空走平台 Key');
   assert.ok(region.includes('只存在本机'), '占位符必须说清填了只存在本机');
   // ⑤ 已填时掩码显示 + 清除按钮
   assert.ok(region.includes('maskKey(p.secretKey)'), '已填 Key 必须掩码显示（复用 keyMasking 的 maskKey）');
@@ -239,7 +239,7 @@ test('用户 Key 不得进 URL query：只能进同源 POST 的请求体', () =>
   // 说明：AI 那边的 Gemini 走 `?key=` 是它自己的协议（AI tab，不是数据池这条路），不在本条的红线范围内。
 });
 
-test('解析顺序：用户 Key 优先、平台兜底（纯函数）', () => {
+test('解析顺序：用户 Key，否则 none（纯函数）', () => {
   assert.equal(sanitizeUserKey('  sk-user-123  '), 'sk-user-123', '首尾空白要去掉');
   assert.equal(sanitizeUserKey(''), '', '空 = 未提供');
   assert.equal(sanitizeUserKey('   '), '', '只有空白 = 未提供');
@@ -250,17 +250,17 @@ test('解析顺序：用户 Key 优先、平台兜底（纯函数）', () => {
   assert.equal(sanitizeUserKey('sk-a\nb'), '', '含控制字符 = 未提供（拒绝 header 注入）');
 
   assert.deepEqual(decideProviderKeySource('user-key'), { source: 'user', userKey: 'user-key' });
-  assert.deepEqual(decideProviderKeySource('  '), { source: 'platform', userKey: '' }, '没有用户 Key 才轮到平台');
+  assert.deepEqual(decideProviderKeySource('  '), { source: 'none', userKey: '' }, '没有用户 Key 就不能兜底平台');
 
   assert.deepEqual(resolveProviderKey({ userKey: 'u', platformKey: 'p' }), { key: 'u', source: 'user' }, '用户 Key 优先');
-  assert.deepEqual(resolveProviderKey({ userKey: '  ', platformKey: 'p' }), { key: 'p', source: 'platform' }, '无效用户 Key → 平台兜底');
-  assert.deepEqual(resolveProviderKey({ userKey: 'x'.repeat(600), platformKey: 'p' }), { key: 'p', source: 'platform' }, '超长 → 平台兜底');
-  assert.deepEqual(resolveProviderKey({ platformKey: 'p' }), { key: 'p', source: 'platform' });
+  assert.deepEqual(resolveProviderKey({ userKey: '  ', platformKey: 'p' }), { key: '', source: 'none' }, '无效用户 Key → none，不兜底平台');
+  assert.deepEqual(resolveProviderKey({ userKey: 'x'.repeat(600), platformKey: 'p' }), { key: '', source: 'none' }, '超长 → none，不兜底平台');
+  assert.deepEqual(resolveProviderKey({ platformKey: 'p' }), { key: '', source: 'none' }, '只有平台 Key 也不能给普通 MCP 用');
   assert.deepEqual(resolveProviderKey({}), { key: '', source: 'none' }, '两边都没有 → none（如实报"未配置"）');
   assert.deepEqual(resolveProviderKey({ userKey: 'u' }), { key: 'u', source: 'user' }, '没有平台 Key 也不影响用用户 Key');
 });
 
-test('解析顺序：用户 Key 优先、平台兜底（源码级：平台 Key 只在用户没带时才读）', () => {
+test('解析顺序：用户 Key，否则 none（源码级：普通 MCP 不读平台 Key）', () => {
   const gw = read('api/data/[action].ts');
   assert.ok(gw.includes('decideProviderKeySource('), '来源判定必须走统一的纯函数');
   assert.ok(gw.includes('resolveProviderKey({'), '最终取值必须走同一个纯函数（服务端与前端同一份口径）');
@@ -269,15 +269,13 @@ test('解析顺序：用户 Key 优先、平台兜底（源码级：平台 Key �
   assert.ok(fnStart > 0, '找不到统一的密钥解析入口 resolveRequestSecret');
   const fnBody = gw.slice(fnStart, gw.indexOf('function resolveProviderUrl', fnStart));
   const userIdx = fnBody.indexOf('decideProviderKeySource(');
-  const platformIdx = fnBody.indexOf('await resolvePlatformSecret(');
   assert.ok(userIdx > 0, '解析入口必须先看用户 Key');
-  assert.ok(platformIdx > userIdx, '顺序必须是"先看用户 Key、再兜底平台 Key"');
-  assert.ok(
-    /decision\.source === 'platform'\s*\?\s*await resolvePlatformSecret\(/.test(fnBody),
-    '平台 Key 只能在"用户没带 Key"时才去读（用户自带 Key 时一次都不碰 app_config）'
-  );
+  assert.ok(!fnBody.includes('resolvePlatformSecret'), '普通 MCP 密钥解析入口不得读取平台 Key');
   assert.ok(gw.includes('resolveRequestSecret(provider, body.userKey)'), '调用点必须把请求体里的用户 Key 交给统一解析');
   assert.ok(!/userKey[\s\S]{0,60}(upsert|insert)/.test(gw), '用户 Key 不得进入任何写库语句');
+  const mcpStart = gw.indexOf('async function handleMcp');
+  const mcpBody = gw.slice(mcpStart, gw.indexOf('/** 状态', mcpStart));
+  assert.ok(mcpBody.indexOf('resolveRequestSecret(') < mcpBody.indexOf('readCacheEntry('), '必须先校验用户 Key，再允许读共享缓存');
 });
 
 test('BYO 的用量记账：只记字面量标签，不记 Key', () => {
@@ -288,7 +286,7 @@ test('BYO 的用量记账：只记字面量标签，不记 Key', () => {
     assert.ok(/keySource/.test(call), '每条用量事件都要带 keySource 标签');
     assert.ok(!/\b(secret|userKey)\b/.test(call), '用量事件里不得出现密钥字段');
   }
-  assert.ok(/keySource:\s*keyDecision\.source/.test(gw), '缓存命中也要记来源标签（缓存共享，但来源要说清楚）');
+  assert.ok(/cacheHit:\s*true[\s\S]{0,120}\bkeySource\b/.test(gw), '缓存命中也要记来源标签（缓存共享，但来源要说清楚）');
 
   const usage = read('src/utils/usageAccounting.ts');
   assert.ok(/keySource\?: UsageKeySource/.test(usage), 'UsageEvent 必须有 keySource 字段');

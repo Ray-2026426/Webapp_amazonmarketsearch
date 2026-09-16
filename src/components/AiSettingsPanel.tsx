@@ -244,13 +244,19 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
    * 它只查"服务端数据池配没配卖家精灵"——既不看你在界面上填了什么，也不看是哪个数据源。
    * 现在统一走 `verifyDataPoolProvider`（→ 网关 `/api/data/verify`）：
    *   - 本机填了自己的 Key → 网关用**你的** Key 做一次 MCP 握手；
-   *   - 没填 → 用平台 Key 握手，并如实告诉用户"这次用的是平台 Key"；
+   *   - 没填 → 不再回退平台 Key，提示先填写自己的 Key；
    *   - 只握手，不调业务工具、不记用量、不占配额。
    * 明文 Key 只在这一次同源请求的**请求体**里出现（绝不进 URL query、不进日志、不进返回体）。
    */
   const handleTestMcpProvider = async (provider: McpProviderEntry) => {
     if (provider.kind === 'custom' && !provider.mcpUrl.trim()) {
       toast.error('自定义 MCP 需要填写地址');
+      return;
+    }
+    if (!provider.secretKey.trim()) {
+      const note = '请先填写你自己的 Key（只存本机浏览器）';
+      setMcpTestResults((prev) => ({ ...prev, [provider.id]: { state: 'fail', note } }));
+      toast.error(`「${provider.name}」${note}`);
       return;
     }
     setTestingProviderId(provider.id);
@@ -484,38 +490,22 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                 </p>
               </div>
 
-              {/* 用户要求：不要步骤编号；按钮放在"模型名"前面（获取模型 / 验证 → 再选模型） */}
+              {/* 模型区只负责拉取与选择模型；验证按钮保留在 API Key 行，避免重复。 */}
               <div className="space-y-2">
-                <label className="text-sm font-bold text-[#1d1d1f]">模型</label>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-sm font-bold text-[#1d1d1f]">模型</label>
                   <button
                     type="button"
                     onClick={handleFetchModels}
                     disabled={fetchingModels || !apiKey.trim()}
                     title={!apiKey.trim() ? '请先填 API Key' : '用这个 Key 去问供应商有哪些可用模型'}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {fetchingModels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                     {fetchingModels ? '获取中…' : '获取模型'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleTest}
-                    disabled={isTesting || !apiKey.trim()}
-                    title={!apiKey.trim() ? '请先填 API Key' : '用当前 Key 发一次真实请求，确认能不能用'}
-                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                      testResult === 'ok'
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : testResult === 'fail'
-                          ? 'border-rose-200 bg-rose-50 text-rose-700'
-                          : 'border-black/10 bg-white text-[#424245] hover:border-indigo-300 hover:text-indigo-700'
-                    }`}
-                  >
-                    {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : testResult === 'ok' ? <Check className="w-3.5 h-3.5" /> : testResult === 'fail' ? <AlertCircle className="w-3.5 h-3.5" /> : null}
-                    {isTesting ? '验证中…' : testResult === 'ok' ? '验证通过' : testResult === 'fail' ? '验证失败' : '验证'}
-                  </button>
-                  {!apiKey.trim() && <span className="text-[11px] text-[#86868b]">先填 Key，再点上面两个按钮</span>}
                 </div>
+                {!apiKey.trim() && <p className="text-[11px] text-[#86868b]">先填 API Key，再获取可用模型。</p>}
 
                 {modelsError && (
                   <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl">
@@ -566,8 +556,8 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                   </div>
                 )}
 
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <span className="text-[11px] text-[#86868b] shrink-0">当前使用</span>
+                <div className="grid grid-cols-1 sm:grid-cols-[5rem_1fr] items-center gap-2 pt-1">
+                  <span className="text-[11px] text-[#86868b]">当前使用</span>
                   <Select
                     value={model}
                     onChange={(v) => { setModel(v); setTestResult(null); }}
@@ -828,10 +818,11 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                 那时候再关闭 mcp 入口，换成计费模式。"）：
                 旧的「决策 A（浏览器不保存任何密钥、密钥只在服务端）」被推翻 —— 现在**每个数据源**
                 （卖家精灵 / 西柚洞察 / 领星 / Sorftime / 自定义）都有 名称 / 地址 / Key / 验证 四样。
-                Key 留空 = 用服务端平台 Key（团队共享）；填了 = 用你自己的，**只存在本机浏览器**。
+                Key 必须填写你自己的，**只存在本机浏览器**；不再使用服务端平台 Key 兜底。
               */}
               <p className="text-xs text-[#86868b] leading-relaxed">
-                你自己的 Key 只存在本机浏览器，不上传服务器保存。
+                你自己的 Key 只存在本机。<br />
+                未填写 Key 不会使用平台默认 Key。
               </p>
 
               <div className="space-y-2">
@@ -924,7 +915,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                             autoCorrect="off"
                             autoCapitalize="none"
                             spellCheck={false}
-                            placeholder="留空 = 用平台 Key（团队共享）；填了 = 用你自己的（只存在本机）"
+                            placeholder="填写你自己的 Key（只存在本机浏览器）"
                             className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                         </div>
