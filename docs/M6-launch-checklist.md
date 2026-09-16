@@ -24,7 +24,8 @@
 
 | # | 检查项 | 怎么验 | 预期 |
 | --- | --- | --- | --- |
-| 2.1 | 迁移已执行 | **不用记表名**：设置 →「管理员后台 → 环境自检 → 数据库表（要不要跑迁移，看这里）」会逐表报 ✅/❌ 并给结论 | 显示"所有表齐全，无需迁移"；若缺表，按提示去 Supabase SQL Editor 跑 `supabase/migrations/all_in_one.sql`（可重复执行） |
+| 2.0 | **一条命令跑迁移（推荐路线）** | 本机执行 `SUPABASE_PAT=<Supabase Personal Access Token> node scripts/run-migration.mjs`（PAT 生成：https://supabase.com/dashboard/account/tokens，**跑完立刻撤销**） | 脚本把 `all_in_one.sql` 整个执行一遍，并**逐表验证 7 张表 + 检查 RLS 是否都开着 + 检查 `usage_events.key_source` 是否存在**；缺哪项就 ❌ 指出来 |
+| 2.1 | 迁移已执行（手动路线） | **不用记表名**：设置 →「管理员后台 → 环境自检 → 数据库表（要不要跑迁移，看这里）」会逐表报 ✅/❌ 并给结论 | 显示"所有表齐全，无需迁移"；若缺表，按提示去 Supabase SQL Editor 跑 `supabase/migrations/all_in_one.sql`（可重复执行） |
 | 2.2 | RLS 正确 | 用 anon key 直接查 `usage_events` / `audit_events` | 查不到任何行（策略为全部拒绝，仅 service_role 可读写） |
 | 2.3 | 备份策略 | Supabase → Database → Backups | 至少保留日备；确认恢复流程演练过一次 |
 | 2.4 | 缺表时的表现（2026-09 修） | 故意在未迁移的环境打开管理员后台 | 应显示**琥珀色「数据库还没迁移（不是故障，跑一次就好）」**，而不是红色的 HTTP 500 —— 以前是 500，因为缺表被当成了服务器错误 |
