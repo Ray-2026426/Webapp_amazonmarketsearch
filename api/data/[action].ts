@@ -67,7 +67,7 @@ const PROVIDER_ENV_URL: Record<ProviderName, string> = {
 const PROVIDER_DEFAULT_URL: Record<ProviderName, string> = {
   sellersprite: 'https://mcp.sellersprite.com/mcp',
   xydc: 'https://mcp.xydc.com/mcp',
-  lingxing: 'https://mcp.lingxing.com/mcp',
+  lingxing: 'https://openmcp.lingxing.com/mcp-servers/lingxing-mcp',
   sorftime: 'https://mcp.sorftime.com/mcp',
 };
 
@@ -366,6 +366,21 @@ async function mcpHandshake(endpoint: string, secret: string): Promise<{ ok: boo
   }
 }
 
+/** 验证用：优先标准握手；如果服务端不吃纯握手，再用只读 tools/list 探测端点是否可用 */
+async function mcpVerifyConnection(endpoint: string, secret: string): Promise<{ ok: boolean; error?: string }> {
+  const handshake = await mcpHandshake(endpoint, secret);
+  if (handshake.ok) return handshake;
+  try {
+    const listed = await mcpPost(endpoint, secret, 'tools/list', undefined, 9);
+    if (listed?.error) return { ok: false, error: redactText(listed.error.message || 'MCP tools/list 失败') };
+    if (listed?.result !== undefined) return { ok: true };
+  } catch (e) {
+    const listError = e instanceof Error ? redactText(e.message) : '';
+    return { ok: false, error: handshake.error || listError || 'MCP 验证失败' };
+  }
+  return handshake;
+}
+
 /** 握手 + 调业务工具 */
 async function callMcp(
   provider: ProviderName,
@@ -586,8 +601,8 @@ async function handleVerify(_req: VercelRequest, res: VercelResponse, _auth: unk
     });
   }
 
-  // 自定义 MCP 可能本来就不需要 Key（公开端点）：不带凭证也握一次手，如实回报结果
-  const handshake = await mcpHandshake(endpointOverride || resolveProviderUrl(provider), secret);
+  // 自定义 MCP 可能本来就不需要 Key（公开端点）：不带凭证也验证一次，如实回报结果
+  const handshake = await mcpVerifyConnection(endpointOverride || resolveProviderUrl(provider), secret);
   if (!handshake.ok) {
     if (isCustom && !secret && /HTTP 40[13]/.test(handshake.error ?? '')) {
       return json(res, 200, { ok: false, keySource, message: '端点要求鉴权：请填一个你自己的 Key（只存本机）再验证' });

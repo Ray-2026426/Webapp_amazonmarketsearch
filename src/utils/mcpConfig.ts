@@ -331,7 +331,7 @@ export function getActiveSorftimeProvider(settings?: McpSettings | null): McpPro
 export function isOfficialLingXingMcpUrl(url: string): boolean {
   const u = url.trim().toLowerCase().replace(/\/+$/, '');
   if (!u) return true;
-  return /openmcp\.lingxing\.com/i.test(u);
+  return /openmcp\.lingxing\.com/i.test(u) || /mcp\.lingxing\.com/i.test(u);
 }
 
 /** 领星实际请求 endpoint：官方地址一律走同源反代 */

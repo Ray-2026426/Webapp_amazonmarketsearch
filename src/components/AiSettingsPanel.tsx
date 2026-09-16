@@ -79,6 +79,18 @@ function mcpKindLabel(kind: McpProviderEntry['kind']): string {
   return '自定义';
 }
 
+function sanitizeBuiltinMcpUrl(kind: McpProviderEntry['kind'], url: string): string {
+  const v = url.trim();
+  if (kind === 'custom') return v;
+  if (!v) return '';
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return '';
+  if (/mcp\.sellersprite\.com/i.test(v)) return '';
+  if (/mcp\.xydc\.com/i.test(v)) return '';
+  if (/openmcp\.lingxing\.com/i.test(v) || /mcp\.lingxing\.com/i.test(v)) return '';
+  if (/mcp\.sorftime\.com/i.test(v)) return '';
+  return v;
+}
+
 interface AiSettingsPanelProps {
   settings: AiSettings | null;
   onSave: (settings: AiSettings) => void;
@@ -119,10 +131,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     const loaded = loadMcpSettings().providers;
     return loaded.map((p) => ({
       ...p,
-      mcpUrl:
-        /mcp\.sellersprite\.com/i.test(p.mcpUrl) || /mcp\.xydc\.com/i.test(p.mcpUrl)
-          ? ''
-          : p.mcpUrl,
+      mcpUrl: sanitizeBuiltinMcpUrl(p.kind, p.mcpUrl),
     }));
   });
   const [testingProviderId, setTestingProviderId] = useState<string | null>(null);
@@ -855,6 +864,10 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                         <input
                           value={p.name}
                           onChange={(e) => updateProvider(p.id, { name: e.target.value })}
+                          name={`mcp-name-${p.id}`}
+                          autoComplete="off"
+                          autoCorrect="off"
+                          spellCheck={false}
                           className="flex-1 min-w-[8rem] px-2 py-1 bg-transparent border border-transparent hover:border-black/10 focus:border-indigo-300 rounded-lg text-sm font-medium text-[#1d1d1f] focus:outline-none"
                           placeholder="名称"
                         />
@@ -906,6 +919,11 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                             type="text"
                             value={p.mcpUrl}
                             onChange={(e) => updateProvider(p.id, { mcpUrl: e.target.value })}
+                            name={`mcp-endpoint-${p.id}`}
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="none"
+                            spellCheck={false}
                             placeholder={mcpUrlPlaceholder(p.kind)}
                             className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
@@ -916,6 +934,11 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                             type="password"
                             value={p.secretKey}
                             onChange={(e) => updateProvider(p.id, { secretKey: e.target.value })}
+                            name={`mcp-token-${p.id}`}
+                            autoComplete="new-password"
+                            autoCorrect="off"
+                            autoCapitalize="none"
+                            spellCheck={false}
                             placeholder="留空 = 用平台 Key（团队共享）；填了 = 用你自己的（只存在本机）"
                             className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
