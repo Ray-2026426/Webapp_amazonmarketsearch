@@ -59,6 +59,7 @@ const EXPECTED_TABLES = [
   { name: 'projects', migration: '001', required: true, kind: 'table', why: '项目与五看数据（缺了项目存不下来）' },
   { name: 'project_members', migration: '002/006', required: true, kind: 'table', why: '项目成员与权限（缺了协作与权限判断失效）' },
   { name: 'app_config', migration: '010', required: false, kind: 'table', why: '管理员「配置中心」的密钥表（缺了只能用环境变量配密钥，界面上改不了）' },
+  { name: 'user_provider_keys', migration: '011', required: false, kind: 'table', why: '用户自己的数据池密钥（缺了"密钥跟着账号走"不生效：换设备登录得重新填 Key）' },
   { name: 'usage_events', migration: '008', required: false, kind: 'table', why: '用量记账（缺了用量统计为空，只剩进程内统计、重启归零）' },
   { name: 'audit_events', migration: '008', required: false, kind: 'table', why: '审计日志（缺了审计列表为空，操作不留痕）' },
   { name: 'pool_cache', migration: '009', required: false, kind: 'table', why: '数据池缓存（缺了退化为进程内缓存，实例回收即丢，外部调用成本变高）' },

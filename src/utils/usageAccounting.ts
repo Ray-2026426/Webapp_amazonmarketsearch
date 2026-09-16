@@ -8,7 +8,7 @@
 //     因为要能回答"这个月有多少次本来会花钱的调用被缓存省掉了"；
 //   - BYO Key（2026-09 用户决策变更）：多记一个 `keySource` 字面量 —— 这次用的是**谁的** Key。
 //     只记标签（user / platform / none），**绝不记 Key 本身**；付费阶段据此把成本归到
-//     "用户自付"还是"平台承担"。
+//     "用户自付"还是"平台承担"。（§15.28 之后 user 指的是"账号里存的他自己的 Key"。）
 
 export type UsageTool =
   | 'market'
@@ -31,9 +31,9 @@ export const USAGE_TOOL_LABELS: Record<UsageTool, string> = {
 
 /**
  * 这次外部调用花的是**谁的** Key（成本归因用；**不是** Key 本身，也永远不是）。
- *   user     = 调用者自己在界面上填的 Key（只存他的本机浏览器）
- *   platform = 历史/管理员口径保留；普通 MCP 调用不再走平台兜底
- *   none     = 两边都没有，本次调用必然失败（如实记账，便于区分"没配 Key"与"Key 不好用"）
+ *   user     = 调用者自己配的 Key（§15.28 之后按账号存在服务端 user_provider_keys）
+ *   platform = 历史口径保留；普通 MCP 调用**不再**走平台兜底（政策 A，代码里已无这条路径）
+ *   none     = 当前用户没配 Key，本次调用必然失败（如实记账，便于区分"没配 Key"与"Key 不好用"）
  */
 export type UsageKeySource = 'user' | 'platform' | 'none';
 

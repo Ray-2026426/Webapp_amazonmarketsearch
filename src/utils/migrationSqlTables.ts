@@ -6,7 +6,7 @@
 export const SOURCE_MIGRATION_FILE = 'supabase/migrations/all_in_one.sql';
 
 /** 表名（复制 SQL 时的执行顺序：被引用的表在前） */
-export const MIGRATION_TABLE_NAMES = ['projects', 'project_members', 'usage_events', 'audit_events', 'pool_cache', 'app_config'] as const;
+export const MIGRATION_TABLE_NAMES = ['projects', 'project_members', 'usage_events', 'audit_events', 'pool_cache', 'app_config', 'user_provider_keys'] as const;
 
 export type MigrationTableName = (typeof MIGRATION_TABLE_NAMES)[number];
 
@@ -403,4 +403,21 @@ create policy app_config_service_only on public.app_config
   with check (false);
 -- 说明：service_role 绕过 RLS，策略写成"全部拒绝"即可；普通 JWT 与 anon 一律读写不到，
 -- 因为这里存的是数据池与 AI 的密钥明文（M5 安全红线：密钥只在服务端）。`,
+  user_provider_keys: `create table if not exists public.user_provider_keys (
+  user_id     text not null,                       -- JWT 的 sub（verifyToken 返回的 userId），不是客户端传的
+  provider    text not null,                       -- sellersprite / xydc / lingxing / sorftime / custom
+  value       text not null,                       -- 密钥明文（只允许服务端读写，永不进浏览器）
+  updated_at  timestamptz not null default now(),  -- 最后一次替换的时间（清除是删行，不留空串行）
+  primary key (user_id, provider)                   -- 一个用户一个数据源只留一条：换 Key 是 upsert，不是追加
+);
+
+alter table public.user_provider_keys enable row level security;
+
+drop policy if exists user_provider_keys_service_only on public.user_provider_keys;
+create policy user_provider_keys_service_only on public.user_provider_keys
+  for all
+  using (false)
+  with check (false);
+-- 说明：service_role 绕过 RLS，策略写成"全部拒绝"即可；普通 JWT 与 anon 一律读写不到。
+-- 跨账号隔离不能靠"前端自觉"：这里存的是别人的密钥，读到一个就等于拿到了别人的数据池额度。`,
 };

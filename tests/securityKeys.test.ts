@@ -1,25 +1,28 @@
 // M5 · 安全守卫：密钥不得离开"它该待的地方"。
 //
-// ── 口径变更记录（重要：这不是放松约束，是用户决策变了） ───────────────────────────────
-// 用户 2026-09 原话：「需要其他用户也能填key，后续我们再考虑做付费，那时候再关闭mcp入口，
-// 换成计费模式。」 → 旧的**决策 A**（"数据池密钥只在服务端，浏览器不保存任何密钥"，
-// 以及配套的"MCP 面板不得有密钥输入框"）被用户推翻，改为 **BYO Key**：
-//   · 所有用户都可以在 MCP 面板填**自己的** Key（名称 / 地址 / Key / 验证 四样，人人都有）；
-//   · 普通 MCP 调用必须使用用户自己的 Key，不再走服务端平台 Key 兜底；
-//   · 以后进入付费阶段再关闭 MCP 入口、改成计费模式（现在不做）。
+// ── 口径变更记录（重要：这不是放松约束，是用户决策又变了一次） ─────────────────────────────
+// 2026-09 第一版（§15.26 BYO Key）：所有用户填**自己的** Key → 只存浏览器 localStorage +
+// 随同源请求体 `userKey` 带给网关；平台 Key 仍可兜底。
+// 2026-09 第二版（§15.28，用户原话「我的mcp没有跟着账号走吗，需要跟着账号」）：
+//   · 用户 Key 的**唯一真相**改成服务端表 `public.user_provider_keys`（主键 user_id + provider），
+//     跨设备跟着账号走；客户端**不再保存、也不传送**明文；
+//   · **政策 A**：平台 Key 不再作为 MCP 数据的兜底（`resolvePlatformSecret` 整段删除）；
+//   · user_id 一律取自 JWT，绝不接受客户端传来的 userId（跨账号隔离）。
 //
-// 因此本文件的断言从「面板里不许有 Key 输入框」改成「Key 输入框必须有，且**每一家**都有」，
-// 同时把原来隐含在"没有输入框"里的安全承诺**逐条显式化**（下面 6/7/8/9 条）：
+// 断言因此从"用户 Key 不许写库"变成"用户 Key **只许**写进 user_provider_keys，且只有 service_role 能读"，
+// 并逐条显式化下面这些承诺：
 //   1) /api/settings 只回状态与指纹，不得回显密钥；
 //   2) 前端不得保存**平台**密钥明文（saveServerKeys / amzdev_admin_keys 必须消失）；
 //   3) 掩码逻辑只允许有一个实现（src/utils/keyMasking.ts）；
-//   4) 浏览器永不持有、永不解析平台密钥（平台 Key 不进浏览器）；
-//   5) 每个数据源都有 Key 输入框 + 掩码显示 + 清除按钮 + 一行"只存本机"提示；
-//   6) 用户 Key **不得写库**（不写 app_config、不写任何表、浏览器不再 push 到服务端）；
-//   7) 用户 Key **不得写日志**（含 console）、上游报错必须脱敏后才准往外抛；
-//   8) 用户 Key **不得进任何响应体**（返回体里连平台 Key 的指纹都不给）；
-//   9) 用户 Key **不得进 URL query**（只能进同源 POST 请求体或请求头）；
-//  10) 网关的解析顺序必须是「用户 Key，否则 none」，且有可单测的纯函数。
+//   4) 浏览器永不持有、永不解析平台密钥；网关也不再读写 app_config（平台 Key 不作兜底）；
+//   5) 每个数据源都有 名称 / 地址 / Key / 验证 四样；已配置只显示"指纹 + 替换 + 清除"，页面永不出现明文；
+//   6) 用户密钥只能写进 user_provider_keys（RLS 全部拒绝，只有 service_role）；
+//   7) 用户密钥不得写日志（含 console）、错误信息必须脱敏后才准往外抛；
+//   8) 任何响应体里都不得出现明文（只给 configured + maskKey 指纹）；
+//   9) 密钥不得进 URL query；
+//  10) 网关解析顺序必须是「库里该用户的 Key → 请求体（迁移期）→ none」，且有可单测的纯函数；
+//  11) userId 只认 JWT：A 读不到 / 改不了 / 清不掉 B 的密钥；
+//  12) 本机旧明文迁移成功后必须删除本机副本（不留两处真相）。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,7 +65,12 @@ const POOL_CLIENT_FILES = [
   'src/components/AiSettingsPanel.tsx',
 ];
 
-console.log('security guard (BYO key：用户自带 Key 只存本机，普通 MCP 不走平台兜底)');
+/** 所有 `json(res, <status>, { ... })` 的返回体（只需覆盖到第一个 `})`，够守卫用） */
+function responseBodies(src: string): string[] {
+  return [...src.matchAll(/json\(res,\s*\d+,\s*\{[\s\S]{0,700}?\n?\s*\}\)/g)].map((m) => m[0]);
+}
+
+console.log('security guard（§15.28：用户密钥按账号存服务端，只回指纹）');
 
 test('api/settings 只回"状态 + 指纹"，不得把密钥值放进返回体', () => {
   const src = read('api/settings/[action].ts');
@@ -115,10 +123,12 @@ test('掩码只有一个实现：api 层不得自己写一份 maskKey', () => {
     if (/function maskKey\s*\(/.test(text)) offenders.push(f);
   }
   assert.deepEqual(offenders, [], `api 层重写了 maskKey（应统一用 src/utils/keyMasking）：${offenders.join(', ')}`);
-  assert.ok(read('src/utils/keyMasking.ts').includes('export function maskKey'));
+  const masking = read('src/utils/keyMasking.ts');
+  assert.ok(masking.includes('export function maskKey'));
+  assert.ok(/if \(v\.length <= 8\)[\s\S]{0,120}?…/.test(masking), '短 key 也要给"前 2 末 2"的掩码（不许原样回显）');
 });
 
-test('浏览器永不持有/解析平台密钥（BYO 之后这条仍然是红线）', () => {
+test('浏览器永不持有/解析平台密钥，网关也不再读 app_config（政策 A）', () => {
   const offenders: string[] = [];
   for (const f of walk('src')) {
     const text = read(f);
@@ -130,15 +140,36 @@ test('浏览器永不持有/解析平台密钥（BYO 之后这条仍然是红线
     }
   }
   assert.deepEqual(offenders, [], `仍存在浏览器侧平台密钥路径：\n${offenders.join('\n')}`);
-  // 客户端往 MCP 打请求头的那种写法，一律不许再长回来（用户 Key 也只走同源请求体）
+  // 客户端往 MCP 打请求头的那种写法，一律不许再长回来（用户 Key 也不许出现在客户端）
   for (const f of POOL_CLIENT_FILES) {
     const text = read(f);
     assert.ok(!/'secret-key'[ \t]*:[ \t]*[A-Za-z_$]/.test(text), `${f}: 不得往请求头塞 secret-key`);
     assert.ok(!/'X-Mcp-Key'[ \t]*:[ \t]*[A-Za-z_$]/.test(text), `${f}: 不得往请求头塞 X-Mcp-Key`);
   }
+  // 政策 A：网关既不读也不写 app_config（平台 Key 不再作 MCP 数据的兜底）
+  const gw = read('api/data/[action].ts');
+  assert.ok(!/from\('app_config'\)/.test(gw), '网关不得再碰 app_config：平台 Key 不再是 MCP 兜底');
+  assert.ok(!/resolvePlatformSecret/.test(gw), '平台 Key 解析入口必须整段删除，不留死代码');
 });
 
-test('BYO：每个数据源都有「名称 / 地址 / Key / 验证」——不再按 kind 分支', () => {
+test('用户密钥只能写进 user_provider_keys（只有 service_role 能读写）', () => {
+  const gw = read('api/data/[action].ts');
+  const writes = [...gw.matchAll(/from\('([a-z_]+)'\)[\s\S]{0,40}?\.\s*(upsert|insert|update|delete)\b/g)].map((m) => m[1]);
+  assert.ok(writes.includes('user_provider_keys'), '密钥必须写进 user_provider_keys（跨设备跟随账号）');
+  const nonBookkeeping = [...new Set(writes.filter((t) => t !== 'pool_cache' && t !== 'usage_events'))];
+  assert.deepEqual(nonBookkeeping, ['user_provider_keys'], `除缓存/记账外只允许写密钥表：${nonBookkeeping.join(',')}`);
+
+  const sql = read('supabase/migrations/all_in_one.sql');
+  assert.ok(/create table if not exists public\.user_provider_keys/.test(sql), '迁移里必须建这张表');
+  assert.ok(/primary key \(user_id, provider\)/.test(sql), '主键必须是 (user_id, provider)：一个用户一个数据源一条');
+  assert.ok(
+    /drop policy if exists user_provider_keys_service_only on public\.user_provider_keys;[\s\S]{0,160}?using \(false\)[\s\S]{0,80}?with check \(false\)/.test(sql),
+    'RLS 必须"全部拒绝"（只有 service_role 绕得过）'
+  );
+  assert.ok(/user_id\s+text not null/.test(sql), 'user_id 必须是 not null 的 text（JWT 的 sub 原样存）');
+});
+
+test('BYO：每个数据源都有「名称 / 地址 / Key / 验证」——Key 只显示指纹，且能替换/清除', () => {
   const panel = read('src/components/AiSettingsPanel.tsx');
   const mapStart = panel.indexOf('mcpProviders.map(');
   assert.ok(mapStart > 0, '找不到数据源列表的渲染入口');
@@ -152,7 +183,7 @@ test('BYO：每个数据源都有「名称 / 地址 / Key / 验证」——不�
     1,
     '数据源行里应当只有一处 Key 输入框（统一渲染），多了说明又按 kind 分叉了'
   );
-  assert.ok(/type="password"[\s\S]{0,400}?updateProvider\(p\.id,\s*\{\s*secretKey/.test(region), 'Key 输入框必须写回 secretKey');
+  assert.ok(/type="password"[\s\S]{0,700}?setKeyDrafts\(/.test(region), 'Key 输入框只能写进"待保存草稿"');
   // 四样（名称/地址/Key/验证）必须是**同一段 JSX**：行内不得再按 kind 走三元分支
   assert.ok(!/p\.kind === '[a-z]+'\s*\?/.test(region), '名称/地址/Key 不得再按 kind 分支（那会让平台数据源没有输入框）');
   assert.ok(!/mcpProviders\.filter\(/.test(region), '不得先过滤掉某些数据源再渲染（每一家都要有这四样）');
@@ -164,62 +195,83 @@ test('BYO：每个数据源都有「名称 / 地址 / Key / 验证」——不�
   // ④ 必须说清 Key 是用户自己的，不能暗示留空走平台兜底
   assert.ok(region.includes('你自己的 Key'), '占位符必须说清要填写自己的 Key');
   assert.ok(!region.includes('平台 Key'), 'Key 输入区不得再暗示留空走平台 Key');
-  assert.ok(region.includes('只存在本机'), '占位符必须说清填了只存在本机');
-  // ⑤ 已填时掩码显示 + 清除按钮
-  assert.ok(region.includes('maskKey(p.secretKey)'), '已填 Key 必须掩码显示（复用 keyMasking 的 maskKey）');
-  assert.ok(region.includes('清除本机密钥'), '必须给「清除本机密钥」按钮');
-  // ⑥ 一行提示：你自己的 Key 只存在本机（≤30 字，别又写成长篇大论）
-  const hint = (/你自己的 Key 只存在[^\n<]*/.exec(panel)?.[0] ?? '').trim();
-  assert.ok(hint.length > 0, '必须有一行"只存本机"的提示');
+  // ⑤ 已配置：只显示指纹 + 替换 / 清除（**不回显明文**）
+  assert.ok(region.includes('已配置（'), '已配置必须显示成「已配置（指纹）」');
+  assert.ok(region.includes('{keyFingerprint}'), '指纹必须来自服务端状态，而不是本地明文');
+  assert.ok(region.includes('handleSaveUserKey(p)'), '必须有「保存」按钮');
+  assert.ok(region.includes('handleClearUserKey(p)'), '必须有「清除」按钮');
+  assert.ok(region.includes('替换'), '必须有「替换」按钮');
+  assert.ok(region.includes('setReplacingKeyId(p.id)'), '「替换」要能切换回输入框');
+  // ⑥ 页面不得再持有明文：整份设置页里不该有 secretKey 这种字段
+  assert.ok(!/secretKey/.test(panel), '设置页不得再持有密钥字段（明文只能活在输入框草稿里）');
+  // ⑦ 一行提示：密钥跟着账号走（≤30 字，别又写成长篇大论）
+  const hint = (/密钥存在你的账号里[^\n<]*/.exec(panel)?.[0] ?? '').trim();
+  assert.ok(hint.length > 0, '必须有一行"密钥跟着账号走"的提示');
   assert.ok(hint.length <= 30, `这行提示太长了（${hint.length} 字）：${hint}`);
 });
 
-test('用户 Key 不得写库：浏览器不再 push，网关对 app_config 只读不写', () => {
-  const mcp = read('src/utils/mcpConfig.ts');
-  assert.ok(!/pushServerKeys\s*\(/.test(mcp), 'BYO 之后保存只写 localStorage：不得再把本机 Key 推给服务端');
-  assert.ok(!/\/api\/settings\/save/.test(mcp), '不得调用服务端密钥保存接口');
-  assert.ok(mcp.includes('绝不写库'), '必须写明"用户 Key 绝不写库"这条红线');
-
-  const panel = read('src/components/AiSettingsPanel.tsx');
-  assert.ok(!/pushServerKeys/.test(panel), '设置页不得把面板里的 Key 推到服务端');
-
+test('userId 只认 JWT：三个密钥动作都不接受客户端传来的 userId（A 动不了 B 的密钥）', () => {
   const gw = read('api/data/[action].ts');
-  // 网关只能**读**平台 Key；任何写操作都意味着用户带来的 Key 可能被持久化
+  // userId 的唯一来源：verifyToken（JWT 的 sub）
+  assert.ok(/const auth = await verifyToken\(token\)/.test(gw), 'userId 必须来自 verifyToken');
+  assert.ok(!/(body|req\.body|req\.query)\s*\.\s*userId/.test(gw), '任何地方都不得读客户端传来的 userId');
+  assert.ok(!/String\(body\.userId/.test(gw), '不得把请求体里的 userId 转成字符串使用');
+
+  const keyStart = gw.indexOf('async function handleKeyList');
+  const keyEnd = gw.indexOf('interface GatewayAuth');
+  assert.ok(keyStart > 0 && keyEnd > keyStart, '找不到三个密钥动作的实现区段');
+  const keyRegion = gw.slice(keyStart, keyEnd);
+  assert.ok((keyRegion.match(/auth\.userId/g) || []).length >= 4, '三个动作都必须用 auth.userId（JWT）过滤');
+  assert.ok(!/body\.userId/.test(keyRegion), '密钥动作里不得出现客户端传来的 userId');
+  // 读只读自己那一行
   assert.ok(
-    !/from\('app_config'\)\s*\.\s*(upsert|insert|update|delete)/.test(gw),
-    '数据池网关不得写 app_config（用户 Key 绝不落库）'
+    /from\('user_provider_keys'\)[\s\S]{0,160}?\.eq\('user_id',\s*auth\.userId\)/.test(keyRegion),
+    'keyList 必须按 user_id 过滤（否则能读到别人的密钥状态）'
   );
-  assert.ok(/from\('app_config'\)\s*\.select\('value'\)/.test(gw), '网关对 app_config 只允许 select 平台 Key');
-  // 用量表里只能记 keySource 标签，不能记 Key 值：把 insert 对象的**字段名**列出来逐个查
-  const inserts = [...gw.matchAll(/\.insert\(\{[\s\S]{0,400}?\}\)/g)].map((m) => m[0]);
-  assert.ok(inserts.length >= 1, '找不到 usage_events 的写入语句（守卫拦不住）');
-  const fields = inserts.flatMap((ins) => [...ins.matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*:/g)].map((m) => m[1]));
-  const badFields = fields.filter((f) => /secret|userkey|user_key|password|apikey|api_key/i.test(f));
-  assert.deepEqual(badFields, [], `usage_events 的写入里出现了密钥字段：${badFields.join(', ')}`);
-  assert.ok(fields.includes('key_source'), '用量记录要带 key_source 标签（成本归因）');
+  // 写只写自己那一行（upsert 的 user_id 取自 JWT）
+  assert.ok(
+    /from\('user_provider_keys'\)[\s\S]{0,80}?\.upsert\(\{\s*user_id:\s*auth\.userId/.test(keyRegion),
+    'keySet 必须把 user_id 写成 JWT 的 userId'
+  );
+  assert.ok(
+    /from\('user_provider_keys'\)[\s\S]{0,80}?\.delete\(\)\s*\.eq\('user_id',\s*auth\.userId\)/.test(keyRegion),
+    'keyClear 必须只能删自己的那一行'
+  );
+  // 网关自身取 Key 也必须按 JWT 的 userId
+  assert.ok(/readUserProviderKey\(auth\.userId/.test(gw), '状态接口只能回报"自己"的密钥状态');
+  assert.ok(!/readUserProviderKey\([^)]*body/.test(gw), '取密钥时不得用请求体里的任何标识');
 });
 
-test('用户 Key 不得写日志：网关零 console，上游报错必须先脱敏', () => {
+test('用户密钥不得写日志：网关零 console，错误信息必须先脱敏', () => {
   const gw = read('api/data/[action].ts');
   assert.ok(
     !/console\./.test(gw),
-    '数据池网关不得有任何 console 输出：Key 就在局部变量里，日志是泄密第一现场'
+    '数据池网关不得有任何 console 输出：密钥就在局部变量里，日志是泄密第一现场'
   );
-  assert.ok(gw.includes('redactText('), '上游报错文本必须先过 redactText（外部服务经常把 Key 原样回显在错误里）');
+  assert.ok(gw.includes('redactText('), '错误文本必须先过 redactText（外部服务经常把 Key 原样回显在错误里）');
+  assert.ok((gw.match(/redactText\(/g) || []).length >= 3, '密钥动作的错误路径也要脱敏，不能只脱一处');
   assert.ok(!/throw new Error\(`MCP HTTP/.test(gw), '不得再把上游原文直接抛出去（会连 Key 一起抛）');
+  assert.ok(/JSON.stringify|const base = \{/.test(gw), '记账仍是字段白名单式写入（不做整对象透传）');
 });
 
-test('用户 Key 不得进响应体：返回体里连指纹都不给', () => {
+test('任何响应体都不得出现明文：只给 configured + maskKey 指纹', () => {
   const gw = read('api/data/[action].ts');
-  const returned = [...gw.matchAll(/json\(res,\s*\d+,\s*\{[^}]*\b(secret|userKey|user_key)\b[^}]*\}/g)];
-  assert.deepEqual(returned.map((m) => m[0].slice(0, 80)), [], '返回体里出现了密钥字段');
-  assert.ok(!/fingerprint:\s*secret/.test(gw), '不得把平台 Key 的指纹回给普通用户');
+  const bodies = responseBodies(gw);
+  assert.ok(bodies.length >= 8, `返回体至少要能扫到 8 处，实际 ${bodies.length}（守卫拦不住就要先修守卫）`);
+  for (const body of bodies) {
+    const masked = body.replace(/maskKey\(\s*[A-Za-z_$][\w$]*\s*\)/g, '<masked>');
+    assert.ok(!/\b(secret|userKey|user_key|plaintext|rawValue)\b/.test(masked), `返回体里出现密钥字段：${body.slice(0, 120)}`);
+    // 只拦"直接的密钥值"：`bumped.value`（缓存数据）这种字段访问不算，`value,` / `value }` 才算
+    assert.ok(!/(?<![.\w])value\s*[,}]/.test(masked), `返回体里不得直接回传密钥值：${body.slice(0, 120)}`);
+  }
+  // 指纹只允许两种形态：maskKey(...) 或空串（只看返回体里的，避免误伤类型标注）
+  const fingerprints = bodies.flatMap((b) => [...b.matchAll(/fingerprint:\s*([^,}\n]+)/g)].map((m) => m[1].trim()));
+  assert.ok(fingerprints.length >= 2, `必须能扫到指纹字段，实际 ${fingerprints.length}`);
+  for (const fp of fingerprints) {
+    assert.ok(fp === "''" || fp.startsWith('maskKey('), `指纹只能是 maskKey 产物或空串，实际：${fp}`);
+  }
   assert.ok(!/secret\.slice\(/.test(gw), '不得对密钥做任何切片回显');
-  // 数据池状态是给所有登录用户看的：只回布尔
-  assert.ok(
-    /providers\[p\]\s*=\s*\{[\s\S]{0,400}?configured:/.test(gw) && !/configured:[^,]*,\s*fingerprint/.test(gw),
-    '状态接口只允许回 configured / hasCustomUrl'
-  );
+  assert.ok(!/body\.value\s*[,}]/.test(gw), '不得把请求体里的密钥值直接放进返回体');
 });
 
 test('用户 Key 不得进 URL query：只能进同源 POST 的请求体', () => {
@@ -234,12 +286,20 @@ test('用户 Key 不得进 URL query：只能进同源 POST 的请求体', () =>
   const client = read('src/utils/dataPoolClient.ts');
   assert.ok(client.includes("fetch('/api/data/mcp'"), '数据池调用必须走同源相对路径');
   assert.ok(client.includes("fetch('/api/data/verify'"), '验证必须走同源相对路径');
-  assert.ok(/withUserKey\(/.test(client), '用户 Key 只能通过唯一的 withUserKey 通道附加到请求体');
-  assert.ok(read('src/utils/listingFetchExecutor.ts').includes('withUserKey('), 'Listing 抓取也必须走同一个通道（否则会偷偷用平台 Key）');
+  // §15.28：客户端不再把 Key 随请求体发送 —— 那条通道已删除（定义与调用点都不得再出现）
+  assert.ok(!/withUserKey\s*\(/.test(client), 'withUserKey 通道必须删除（服务端按 JWT 自己取 Key）');
+  assert.ok(!/export function withUserKey/.test(client), '不得再导出"把 Key 塞进请求体"的工具函数');
+  assert.ok(!/withUserKey\s*\(/.test(read('src/utils/listingFetchExecutor.ts')), 'Listing 抓取也不得再带 Key');
+  assert.ok(client.includes('客户端不传 Key') || client.includes('客户端**不传 Key**'), '文件头必须写明"客户端不传 Key"');
+  // 密钥的读写只走 mcpConfig 的三个动作（同源 POST）
+  const mcp = read('src/utils/mcpConfig.ts');
+  assert.ok(/postKeyAction\('keySet'/.test(mcp) && /postKeyAction\('keyClear'/.test(mcp) && /postKeyAction\('keyList'/.test(mcp));
+  assert.ok(!/export function getUserKeyForProvider/.test(mcp), '不得再提供"读本机明文 Key 当真相"的函数');
+  assert.ok(!/localStorage\.setItem\([^)]*secretKey/i.test(mcp), '密钥绝不写 localStorage（迁移期例外只保留旧值）');
   // 说明：AI 那边的 Gemini 走 `?key=` 是它自己的协议（AI tab，不是数据池这条路），不在本条的红线范围内。
 });
 
-test('解析顺序：用户 Key，否则 none（纯函数）', () => {
+test('解析顺序：库里该用户的 Key → 请求体（迁移期）→ none（纯函数）', () => {
   assert.equal(sanitizeUserKey('  sk-user-123  '), 'sk-user-123', '首尾空白要去掉');
   assert.equal(sanitizeUserKey(''), '', '空 = 未提供');
   assert.equal(sanitizeUserKey('   '), '', '只有空白 = 未提供');
@@ -260,25 +320,38 @@ test('解析顺序：用户 Key，否则 none（纯函数）', () => {
   assert.deepEqual(resolveProviderKey({ userKey: 'u' }), { key: 'u', source: 'user' }, '没有平台 Key 也不影响用用户 Key');
 });
 
-test('解析顺序：用户 Key，否则 none（源码级：普通 MCP 不读平台 Key）', () => {
+test('解析顺序：库里该用户的 Key → 请求体 → none（源码级：不得再读平台 Key）', () => {
   const gw = read('api/data/[action].ts');
   assert.ok(gw.includes('decideProviderKeySource('), '来源判定必须走统一的纯函数');
-  assert.ok(gw.includes('resolveProviderKey({'), '最终取值必须走同一个纯函数（服务端与前端同一份口径）');
+  assert.ok(gw.includes('resolveProviderKey({'), '最终取值必须走同一个纯函数（服务端与客户端同一份口径）');
   // 关键顺序断言放在解析函数**体内**看（函数定义在调用点之前，按整文件 indexOf 比会误判）：
   const fnStart = gw.indexOf('async function resolveRequestSecret');
   assert.ok(fnStart > 0, '找不到统一的密钥解析入口 resolveRequestSecret');
   const fnBody = gw.slice(fnStart, gw.indexOf('function resolveProviderUrl', fnStart));
-  const userIdx = fnBody.indexOf('decideProviderKeySource(');
-  assert.ok(userIdx > 0, '解析入口必须先看用户 Key');
-  assert.ok(!fnBody.includes('resolvePlatformSecret'), '普通 MCP 密钥解析入口不得读取平台 Key');
-  assert.ok(gw.includes('resolveRequestSecret(provider, body.userKey)'), '调用点必须把请求体里的用户 Key 交给统一解析');
-  assert.ok(!/userKey[\s\S]{0,60}(upsert|insert)/.test(gw), '用户 Key 不得进入任何写库语句');
+  const storedIdx = fnBody.indexOf('readUserProviderKey(');
+  const legacyIdx = fnBody.indexOf('resolveProviderKey(');
+  assert.ok(storedIdx > 0, '解析入口必须先去库里取该用户自己的 Key');
+  assert.ok(legacyIdx > storedIdx, '顺序必须是：先查库里的（按 JWT 的 userId）→ 再兼容请求体里的旧 Key');
+  assert.ok(!fnBody.includes('resolvePlatformSecret'), '解析入口不得读取平台 Key');
+  assert.ok(!fnBody.includes('app_config'), '解析入口不得读 app_config（政策 A）');
+  assert.ok(gw.includes('resolveRequestSecret(provider, auth.userId, body.userKey)'), '调用点必须把 JWT 的 userId 交给统一解析');
   const mcpStart = gw.indexOf('async function handleMcp');
   const mcpBody = gw.slice(mcpStart, gw.indexOf('/** 状态', mcpStart));
   assert.ok(mcpBody.indexOf('resolveRequestSecret(') < mcpBody.indexOf('readCacheEntry('), '必须先校验用户 Key，再允许读共享缓存');
 });
 
-test('BYO 的用量记账：只记字面量标签，不记 Key', () => {
+test('本机旧明文迁移：成功后删除本机副本，失败则保留并如实提示', () => {
+  const mcp = read('src/utils/mcpConfig.ts');
+  assert.ok(/export async function migrateLegacyLocalKeys/.test(mcp), '必须提供一次性迁移入口');
+  assert.ok(/dropLegacyLocalKeys\(migrated\)/.test(mcp), '迁移成功（migrated 非空）时必须删掉本机副本');
+  assert.ok(/if \(failed\.length > 0\)[\s\S]{0,400}?本机副本已保留/.test(mcp), '失败必须如实告知且保留副本（不静默丢密钥）');
+  assert.ok(!/export function getUserKeyForProvider/.test(mcp), '旧的"读本机 Key"入口必须消失（否则又是两处真相）');
+  // 数据池链路会自动补跑一次迁移（老设备不打开设置也能用）
+  assert.ok(read('src/utils/dataPoolClient.ts').includes('migrateLegacyLocalKeys()'), '调数据池前要先补跑迁移');
+  assert.ok(read('src/utils/listingFetchExecutor.ts').includes('migrateLegacyLocalKeys()'), 'Listing 抓取同理');
+});
+
+test('密钥记账：只记字面量标签，不记 Key', () => {
   const gw = read('api/data/[action].ts');
   const usageCalls = [...gw.matchAll(/createUsageEvent\(\{[\s\S]{0,700}?\}\)/g)].map((m) => m[0]);
   assert.equal(usageCalls.length, 2, `用量事件应恰好 2 条（缓存命中 / 真实调用），实际 ${usageCalls.length}`);
@@ -294,7 +367,7 @@ test('BYO 的用量记账：只记字面量标签，不记 Key', () => {
   assert.ok(!/keySource[\s\S]{0,40}(secret|Key 值)/.test(usage), 'keySource 只能记标签，不得夹带 Key');
 });
 
-test('游客（未登录）被明确拦下，且理由指向示例数据与登录', async () => {
+test('游客（未登录）被明确拦下，且理由指向示例数据与登录', () => {
   const routing = read('src/utils/dataPoolRouting.ts');
   assert.ok(routing.includes("route: 'blocked'"), '未登录必须返回 blocked');
   assert.ok(routing.includes('只对登录用户开放'), '必须写明这条口径');
@@ -302,6 +375,7 @@ test('游客（未登录）被明确拦下，且理由指向示例数据与登�
   const seller = read('src/utils/sellerspriteApi.ts');
   assert.ok(seller.includes('只走服务端数据池'), '取数入口必须写明只走服务端');
   assert.ok(!seller.includes("'secret-key'"), '取数入口不得再出现密钥请求头');
+  assert.ok(!/secretKey/.test(seller), '取数入口不得再从本机配置读密钥（密钥在服务端）');
 });
 
 console.log(`\nresult: ${passed} passed, ${failed} failed`);

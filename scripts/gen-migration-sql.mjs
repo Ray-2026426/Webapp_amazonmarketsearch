@@ -69,7 +69,11 @@ const TABLES = [
   },
   {
     name: 'app_config',
-    chunks: [['create table if not exists public.app_config (', null, 'app_config/建表+RLS']],
+    chunks: [['create table if not exists public.app_config (', '-- ============================================================\n-- 011 · user_provider_keys', 'app_config/建表+RLS']],
+  },
+  {
+    name: 'user_provider_keys',
+    chunks: [['create table if not exists public.user_provider_keys (', null, 'user_provider_keys/建表+RLS']],
   },
 ];
 

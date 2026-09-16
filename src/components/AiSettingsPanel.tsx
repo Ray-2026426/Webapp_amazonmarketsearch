@@ -25,7 +25,14 @@ import {
   createLingXingProvider,
   createSorftimeProvider,
   createCustomProvider,
+  loadUserKeyStatuses,
+  saveUserKey,
+  clearUserKey,
+  getUserKeyStatus,
+  cachedUserKeyStatuses,
+  migrateLegacyLocalKeys,
   type McpProviderEntry,
+  type UserKeyStatuses,
   type AppFeatureFlags,
 } from '../utils/mcpConfig';
 import {
@@ -43,7 +50,6 @@ import {
   type UserBackgroundProfile,
 } from '../utils/userBackground';
 import { verifyDataPoolProvider } from '../utils/dataPoolClient';
-import { maskKey } from '../utils/keyMasking';
 import { toast } from 'sonner';
 import { AiPromptManager } from './AiPromptManager';
 import { SystemDiagnosticsPanel } from './SystemDiagnosticsPanel';
@@ -122,6 +128,19 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   const [testingProviderId, setTestingProviderId] = useState<string | null>(null);
   /** 每个数据源上一次「验证」的结果：状态 + 一句人话（含"用的谁的 Key"） */
   const [mcpTestResults, setMcpTestResults] = useState<Record<string, { state: 'ok' | 'fail'; note: string }>>({});
+  /**
+   * 密钥状态（§15.28）：**只有"配没配 + 指纹"**，来自服务端 `keyList`。
+   * 页面上永远不出现明文：已配置只显示指纹，输入框在保存成功的那一刻清空。
+   */
+  const [keyStatuses, setKeyStatuses] = useState<UserKeyStatuses>(() => cachedUserKeyStatuses());
+  /** 每个数据源"正在输入的新 Key"（只活在这一次输入里，保存成功即删） */
+  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
+  /** 正在「替换」哪一个数据源的 Key（未配置时输入框总是显示） */
+  const [replacingKeyId, setReplacingKeyId] = useState<string | null>(null);
+  const [keySavingId, setKeySavingId] = useState<string | null>(null);
+  const [keyError, setKeyError] = useState('');
+  /** 上面的错误是"缺表/没跑迁移"（琥珀色，可照做）还是真失败（红色） */
+  const [keyNeedsMigration, setKeyNeedsMigration] = useState(false);
 
   const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(() => loadFeatureFlags());
   const [userBackground, setUserBackground] = useState<UserBackgroundProfile>(() => loadUserBackground());
@@ -145,6 +164,29 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     setCustomModels(settings?.customModels ?? {});
     setTestResult(null);
   }, [settings]);
+
+  /**
+   * 切到「MCP 数据」时拉一次各数据源的密钥状态（服务端按账号存，只回"配没配 + 指纹"）。
+   * 顺手把本机残留的旧明文 Key 迁到账号里 —— 这也是"换了设备也能用"里那台老设备的收口动作：
+   * 迁移成功才删本机副本；没成功就如实提示（不静默丢密钥）。
+   */
+  useEffect(() => {
+    if (tab !== 'mcp') return;
+    let alive = true;
+    (async () => {
+      const migration = await migrateLegacyLocalKeys();
+      if (alive && migration.migrated.length > 0) toast.success(migration.message);
+      if (alive && migration.failed.length > 0) toast.error(migration.message);
+      const res = await loadUserKeyStatuses();
+      if (!alive) return;
+      setKeyStatuses(res.keys);
+      setKeyNeedsMigration(Boolean(res.needsMigration));
+      setKeyError(!res.ok && res.error ? res.error : '');
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [tab]);
 
   const cfg = getProviderConfig(provider);
   const currentApiUrl = apiUrls[provider] ?? '';
@@ -238,23 +280,82 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   };
 
   /**
-   * 「验证」：**按密钥来源分别验证**（BYO Key，2026-09 用户决策变更）。
+   * 「保存」：把自己填的 Key 写进**账号**（服务端 `keySet`，user_id 取自 JWT）。
+   * 成功后立刻清空输入框 —— 页面上永远不出现明文，也不把明文留在组件状态里。
+   */
+  const handleSaveUserKey = async (provider: McpProviderEntry) => {
+    const value = (keyDrafts[provider.id] ?? '').trim();
+    if (!value) {
+      toast.error('请先填写 Key');
+      return;
+    }
+    setKeySavingId(provider.id);
+    setKeyError('');
+    try {
+      const res = await saveUserKey(provider.kind, value);
+      if (!res.ok) {
+        const note = res.error || '保存失败';
+        setKeyNeedsMigration(Boolean(res.needsMigration));
+        setKeyError(note);
+        toast.error(note);
+        return;
+      }
+      setKeyNeedsMigration(false);
+      setKeyStatuses((prev) => ({ ...prev, [provider.kind]: { configured: true, fingerprint: res.fingerprint ?? '' } }));
+      setKeyDrafts((prev) => {
+        const next = { ...prev };
+        delete next[provider.id];
+        return next;
+      });
+      setReplacingKeyId(null);
+      setMcpTestResults((prev) => {
+        const next = { ...prev };
+        delete next[provider.id];
+        return next;
+      });
+      toast.success(`「${provider.name}」的 Key 已保存到你的账号`);
+    } finally {
+      setKeySavingId(null);
+    }
+  };
+
+  /** 「清除」：删掉自己在服务端这一格 Key（只删自己那一行；本地只把状态改成未配置） */
+  const handleClearUserKey = async (provider: McpProviderEntry) => {
+    setKeyError('');
+    const res = await clearUserKey(provider.kind);
+    if (!res.ok) {
+      const note = res.error || '清除失败';
+      setKeyNeedsMigration(Boolean(res.needsMigration));
+      setKeyError(note);
+      toast.error(note);
+      return;
+    }
+    setKeyNeedsMigration(false);
+    setKeyStatuses((prev) => ({ ...prev, [provider.kind]: { configured: false, fingerprint: '' } }));
+    setKeyDrafts((prev) => {
+      const next = { ...prev };
+      delete next[provider.id];
+      return next;
+    });
+    setReplacingKeyId(null);
+    toast.success(`已清除「${provider.name}」的 Key`);
+  };
+
+  /**
+   * 「验证」：**按密钥来源分别验证**（§15.28：验证的是账号里存的那把 Key）。
    *
-   * 与旧实现的区别（旧实现是"假验证"）：以前这里调 `testMcpProvider` → `checkDataPoolReady`，
-   * 它只查"服务端数据池配没配卖家精灵"——既不看你在界面上填了什么，也不看是哪个数据源。
-   * 现在统一走 `verifyDataPoolProvider`（→ 网关 `/api/data/verify`）：
-   *   - 本机填了自己的 Key → 网关用**你的** Key 做一次 MCP 握手；
-   *   - 没填 → 不再回退平台 Key，提示先填写自己的 Key；
-   *   - 只握手，不调业务工具、不记用量、不占配额。
-   * 明文 Key 只在这一次同源请求的**请求体**里出现（绝不进 URL query、不进日志、不进返回体）。
+   * 客户端**不再把 Key 发给服务端**：只发 provider（+ 自定义 MCP 的地址），
+   * 网关按 JWT 里的 userId 自己取 Key。所以这里也只看"配没配"，读不到明文也不需要。
+   * 只握手，不调业务工具、不记用量、不占配额。
    */
   const handleTestMcpProvider = async (provider: McpProviderEntry) => {
     if (provider.kind === 'custom' && !provider.mcpUrl.trim()) {
       toast.error('自定义 MCP 需要填写地址');
       return;
     }
-    if (!provider.secretKey.trim()) {
-      const note = '请先填写你自己的 Key（只存本机浏览器）';
+    const status = keyStatuses[provider.kind] ?? getUserKeyStatus(provider.kind);
+    if (!status.configured && provider.kind !== 'custom') {
+      const note = '请先填写你自己的 Key（存在你的账号里）';
       setMcpTestResults((prev) => ({ ...prev, [provider.id]: { state: 'fail', note } }));
       toast.error(`「${provider.name}」${note}`);
       return;
@@ -277,10 +378,10 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
     }
   };
 
+  /** 保存 MCP 设置：只有**非密钥**字段（名称 / 地址 / 启用）；密钥一律走 saveUserKey */
   const persistMcp = () => {
     const ss = mcpProviders.find((p) => p.kind === 'sellersprite') || mcpProviders[0];
     saveMcpSettings({
-      secretKey: ss?.secretKey || '',
       mcpUrl: ss?.mcpUrl || '',
       providers: mcpProviders,
     });
@@ -814,23 +915,34 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
           {tab === 'mcp' && (
             <div className="space-y-4 overflow-y-auto">
               {/*
-                用户决策变更（2026-09 原话："需要其他用户也能填 key，后续我们再考虑做付费，
-                那时候再关闭 mcp 入口，换成计费模式。"）：
-                旧的「决策 A（浏览器不保存任何密钥、密钥只在服务端）」被推翻 —— 现在**每个数据源**
-                （卖家精灵 / 西柚洞察 / 领星 / Sorftime / 自定义）都有 名称 / 地址 / Key / 验证 四样。
-                Key 必须填写你自己的，**只存在本机浏览器**；不再使用服务端平台 Key 兜底。
+                §15.28（用户原话：「我的mcp没有跟着账号走吗，需要跟着账号」）：
+                用户自己的 Key 由服务端按账号存（表 public.user_provider_keys，user_id 取自 JWT），
+                所以换设备 / 换浏览器登录同一账号就能直接用；页面只显示"配没配 + 指纹"，永不显示明文。
+                每个数据源（卖家精灵 / 西柚洞察 / 领星 / Sorftime / 自定义）都有 名称 / 地址 / Key / 验证 四样。
+                政策 A 不变：没填自己的 Key 就是不可用，不走平台 Key 兜底。
               */}
               <p className="text-xs text-[#86868b] leading-relaxed">
-                你自己的 Key 只存在本机。<br />
-                未填写 Key 不会使用平台默认 Key。
+                密钥存在你的账号里，换设备登录自动带上；服务端不回传明文。
               </p>
+
+              {keyError ? (
+                <p className={`text-[11px] leading-relaxed ${keyNeedsMigration ? 'text-amber-700' : 'text-rose-600'}`}>
+                  {keyError}
+                </p>
+              ) : null}
 
               <div className="space-y-2">
                 {mcpProviders.map((p) => {
                   const testState = mcpTestResults[p.id];
                   const isTesting = testingProviderId === p.id;
-                  const hasOwnKey = Boolean(p.secretKey.trim());
                   const kindLabel = mcpKindLabel(p.kind);
+                  const keyStatus = keyStatuses[p.kind] ?? getUserKeyStatus(p.kind);
+                  const keyFingerprint = keyStatus.fingerprint;
+                  const keyDraft = keyDrafts[p.id] ?? '';
+                  const isReplacing = replacingKeyId === p.id;
+                  const isKeySaving = keySavingId === p.id;
+                  // 未配置 → 直接给输入框；已配置 → 只有点「替换」才出现输入框
+                  const showKeyInput = !keyStatus.configured || isReplacing;
                   return (
                     <div key={p.id} className="rounded-2xl border border-black/10 bg-white px-4 py-3 space-y-2">
                       <div className="flex items-center gap-2.5 flex-wrap">
@@ -906,34 +1018,69 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                         </div>
                         <div className="space-y-1">
                           <label className="text-[11px] text-[#86868b]">Key</label>
-                          <input
-                            type="password"
-                            value={p.secretKey}
-                            onChange={(e) => updateProvider(p.id, { secretKey: e.target.value })}
-                            name={`mcp-token-${p.id}`}
-                            autoComplete="new-password"
-                            autoCorrect="off"
-                            autoCapitalize="none"
-                            spellCheck={false}
-                            placeholder="填写你自己的 Key（只存在本机浏览器）"
-                            className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          />
+                          {/* 已配置 → 只显示服务端给的指纹 + 替换/清除；没配置 / 点替换 → 才出现输入框。
+                              输入框保存成功即清空：页面上永远不出现明文。 */}
+                          {showKeyInput ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="password"
+                                value={keyDraft}
+                                onChange={(e) => setKeyDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                                name={`mcp-token-${p.id}`}
+                                autoComplete="new-password"
+                                autoCorrect="off"
+                                autoCapitalize="none"
+                                spellCheck={false}
+                                placeholder="填写你自己的 Key（存到你的账号）"
+                                className="flex-1 min-w-0 px-3 py-2 bg-white border border-black/10 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveUserKey(p)}
+                                disabled={isKeySaving || !keyDraft.trim()}
+                                className="shrink-0 rounded-lg bg-indigo-600 px-2.5 py-2 text-[11px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                              >
+                                {isKeySaving ? '保存中…' : '保存'}
+                              </button>
+                              {isReplacing ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReplacingKeyId(null);
+                                    setKeyDrafts((prev) => {
+                                      const next = { ...prev };
+                                      delete next[p.id];
+                                      return next;
+                                    });
+                                  }}
+                                  className="shrink-0 rounded-lg border border-black/10 px-2 py-2 text-[11px] font-semibold text-[#424245] hover:border-indigo-300"
+                                >
+                                  取消
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* 只有"配没配 + 指纹"（服务端 maskKey 产出），明文一直在服务端 */}
+                              <span className="text-[11px] text-[#424245] font-mono">已配置（{keyFingerprint}）</span>
+                              <button
+                                type="button"
+                                onClick={() => setReplacingKeyId(p.id)}
+                                className="rounded-lg border border-black/10 bg-white px-2 py-0.5 text-[10px] font-semibold text-[#424245] hover:border-indigo-300 hover:text-indigo-700"
+                              >
+                                替换
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleClearUserKey(p)}
+                                className="rounded-lg border border-rose-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:border-rose-400"
+                              >
+                                清除
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
-
-                      {hasOwnKey ? (
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {/* 掩码显示：只给"前 3 末 4"的指纹，方便确认填的是哪一个 Key */}
-                          <span className="text-[11px] text-[#424245] font-mono">已填 · {maskKey(p.secretKey)}</span>
-                          <button
-                            type="button"
-                            onClick={() => updateProvider(p.id, { secretKey: '' })}
-                            className="rounded-lg border border-rose-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:border-rose-400"
-                          >
-                            清除本机密钥
-                          </button>
-                        </div>
-                      ) : null}
 
                       {testState?.note ? (
                         <p className={`text-[11px] ${testState.state === 'ok' ? 'text-emerald-700' : 'text-rose-600'}`}>

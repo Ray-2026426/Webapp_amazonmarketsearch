@@ -1,21 +1,25 @@
-// M5 · 平台数据池网关（PRD §11.2「商用核心」）。
+// M5 · 平台数据池网关（PRD §11.2「商用核心」/ §15.28 密钥跟着账号走）。
 //
 // 一次业务调用在这里完成四件事，顺序固定：
-//   1) 解析密钥（**必须用户自带 Key**，见 src/utils/mcpRequestKey.ts）
+//   1) 解析密钥（**必须用户自带 Key**，见下方"密钥口径"）
 //   2) 查缓存（按数据类型 TTL，命中直接返回并把 cacheHit 记进用量）
 //   3) 配额校验（超限直接拒绝，不浪费外部调用）
 //   4) 调外部 MCP → 写缓存 → 记一条用量事件（成功/失败都记，并带上 keySource 标签）
 //
-// 密钥口径（BYO Key，2026-09 用户决策变更："需要其他用户也能填 key"）：
-//   ① 本次请求携带的用户 Key（浏览器本机保存，随请求体带来）→ 只在**当次请求内**使用；
-//   ② 没有用户 Key → 明确报"请填写自己的 Key"，不再回退平台默认 Key。
+// 密钥口径（BYO Key + 政策 A，2026-09 用户拍板）：
+//   ① 用户自己的 Key 存在服务端 `user_provider_keys`（主键 user_id+provider），**跟着账号走**：
+//      换设备 / 换浏览器登录同一账号就能取到；user_id 一律取自 JWT（verifyToken），
+//      绝不接受客户端传来的 userId（跨账号隔离靠这一条）；
+//   ② 迁移期兼容：本次请求体里若还带着 `userKey`（旧客户端），作为兜底来源使用，用完即弃；
+//   ③ 都没有 → 如实报"请填写你自己的 Key"。**平台 Key 不再作为 MCP 数据的兜底**（政策 A）。
 //
 // 安全红线（破了就是事故，逐条都有测试守着）：
-//   · 任何返回值里都不含密钥（连平台 Key 的指纹也不给：那是可暴力核对的信息）；
-//   · 用户 Key **绝不写库**（不写 app_config、不写任何表）、**绝不写日志**（含 console）、
-//     **绝不出现在任何响应体里**；上游把 Key 回显在报错里时统一过 redactText 抹掉；
+//   · 任何返回值里都不含密钥明文（只给"配没配 + 指纹"，指纹走 maskKey）；
+//   · 密钥明文只允许落在 `user_provider_keys` 这一张表（键 set/clear 动作），
+//     绝不写 app_config、绝不写日志（含 console）、绝不出现在任何响应体里；
+//   · 上游把 Key 回显在报错里时统一过 redactText 抹掉；
 //   · 上游只把 Key 放**请求头**（secret-key），绝不拼进 URL query；
-//   · 非法用户 Key（空 / 超长 / 含控制字符）一律当作"没提供"，不报错泄露细节。
+//   · 非法密钥（空 / 超长 / 含控制字符）一律拒绝，错误信息本身也要脱敏。
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getServiceSupabase, verifyToken, isAdminEmail, json } from '../auth/_shared.js';
@@ -40,20 +44,24 @@ import {
   type UsageEvent,
   type UsageTool,
 } from '../../src/utils/usageAccounting.js';
-import { decideProviderKeySource, resolveProviderKey, type ProviderKeySource } from '../../src/utils/mcpRequestKey.js';
-import { redactText } from '../../src/utils/keyMasking.js';
+import { decideProviderKeySource, resolveProviderKey, sanitizeUserKey, type ProviderKeySource } from '../../src/utils/mcpRequestKey.js';
+import { redactText, maskKey, type KeyStatus } from '../../src/utils/keyMasking.js';
+import { classifyDbError, missingTableName, SOURCE_MIGRATION_FILE } from '../../src/utils/migrationSql.js';
 import { validateRelayTarget } from '../../src/utils/aiEndpoints.js';
 
 /* ───────────── 密钥（只在服务端） ───────────── */
 
 type ProviderName = 'sellersprite' | 'xydc' | 'lingxing' | 'sorftime';
+/** 密钥表里允许的 provider：四家内置 + 自定义 MCP（custom 只在「验证自定义端点」时用到） */
+type KeyProvider = ProviderName | 'custom';
 
-const PROVIDER_ENV_KEY: Record<ProviderName, string> = {
-  sellersprite: 'SELLERSPRITE_SECRET_KEY',
-  xydc: 'XYDC_SECRET_KEY',
-  lingxing: 'LINGXING_SECRET_KEY',
-  sorftime: 'SORFTIME_SECRET_KEY',
-};
+const PROVIDERS: ProviderName[] = ['sellersprite', 'xydc', 'lingxing', 'sorftime'];
+const KEY_PROVIDERS: KeyProvider[] = [...PROVIDERS, 'custom'];
+
+function keyProviderFor(raw: unknown): KeyProvider | null {
+  const v = String(raw ?? '').trim() as KeyProvider;
+  return KEY_PROVIDERS.includes(v) ? v : null;
+}
 
 const PROVIDER_ENV_URL: Record<ProviderName, string> = {
   sellersprite: 'SELLERSPRITE_MCP_URL',
@@ -74,37 +82,68 @@ function env(name: string): string {
   return (process.env[name] || '').trim();
 }
 
-/** 平台 Key（**只有平台来源**：app_config → 环境变量）。用户自带的 Key 走 resolveRequestSecret */
-async function resolvePlatformSecret(provider: ProviderName): Promise<string> {
-  // 1) 管理员在「配置中心」保存的（Supabase app_config: key:<provider>）
+/* ───────────── 用户密钥表（跨设备的唯一真相） ─────────────
+ *
+ * 政策 A + 跨设备（2026-09 用户原话：「我的mcp没有跟着账号走吗，需要跟着账号」）：
+ * 用户自己的 MCP Key 只有**一个**存放处 —— `public.user_provider_keys`，
+ * 主键 (user_id, provider)。它替代了上一轮"只存浏览器 localStorage"的做法。
+ *
+ * 三条不容许动摇的实现约束：
+ *   ① user_id 只能来自 JWT（verifyToken），本文件里**没有**任何一处读客户端传来的 userId；
+ *   ② 只有 service_role 能读写这张表（迁移里 RLS 策略全部拒绝），因此前端拿不到明文；
+ *   ③ 对外只回 maskKey 产出的指纹，明文只在本进程的局部变量里存在。
+ */
+
+/** 读某用户某数据源的 Key（明文，只在服务端内存里传递；拿不到就回空串） */
+async function readUserProviderKey(userId: string, provider: KeyProvider): Promise<string> {
   const s = getServiceSupabase();
-  if (s) {
-    try {
-      const { data } = await s.from('app_config').select('value').eq('key', `key:${provider}`).maybeSingle();
-      const fromDb = typeof data?.value === 'string' ? data.value.trim() : '';
-      if (fromDb) return fromDb;
-    } catch {
-      /* 表可能还没建：回退环境变量 */
-    }
+  if (!s || !userId) return '';
+  try {
+    const { data } = await s
+      .from('user_provider_keys')
+      .select('value')
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .maybeSingle();
+    return typeof data?.value === 'string' ? data.value.trim() : '';
+  } catch {
+    return '';
   }
-  // 2) 环境变量
-  return env(PROVIDER_ENV_KEY[provider]);
+}
+
+/** 该用户的密钥存储是否可用（缺表时给出"跑一次迁移"的可照做提示，而不是一句泛泛的失败） */
+function keyStoreIssue(error: unknown): { needsMigration: boolean; error: string } {
+  const kind = classifyDbError(error as { code?: string; message?: string } | null);
+  if (kind === 'missing-table') {
+    const table = missingTableName(String((error as { message?: string })?.message || '')) || 'user_provider_keys';
+    return {
+      needsMigration: true,
+      error: `数据库还没迁移（缺表 ${table}）：去 Supabase → SQL Editor 执行 ${SOURCE_MIGRATION_FILE}（可重复执行，不会破坏已有数据）。`,
+    };
+  }
+  const message = (error as { message?: string })?.message || '密钥存储不可用';
+  return { needsMigration: false, error: redactText(message) };
 }
 
 /**
- * 本次请求用谁的 Key —— **唯一的解析入口**，现在只接受用户自带 Key：
- *   ① `decideProviderKeySource`（纯函数）先看用户带来的 Key 是否可用；
- *   ② 没有用户 Key → source='none'，调用方如实报"请填写自己的 Key"。
+ * 本次请求用谁的 Key —— **唯一的解析入口**（政策 A：只认用户自己的 Key）：
+ *   ① 该用户在服务端的 Key（user_provider_keys：跨设备、跟着账号）；
+ *   ② 迁移期兼容：本次请求体里的 `userKey`（旧客户端还在传，用完即弃，不落库）；
+ *   ③ 都没有 → source='none'，调用方如实报"请填写你自己的 Key"。
  *
- * 返回的 key 只在本函数调用栈里往下传（→ 上游请求头），不落库、不落日志、不进响应体。
+ * 返回的 key 只在本函数调用栈里往下传（→ 上游请求头），不进响应体、不进日志。
  */
 async function resolveRequestSecret(
-  provider: ProviderName,
-  userKeyRaw: unknown
+  provider: KeyProvider,
+  userId: string,
+  legacyUserKeyRaw?: unknown
 ): Promise<{ key: string; source: ProviderKeySource }> {
-  const decision = decideProviderKeySource(userKeyRaw);
-  void provider;
-  return resolveProviderKey({ userKey: decision.userKey });
+  const stored = await readUserProviderKey(userId, provider);
+  if (stored) return { key: stored, source: 'user' };
+
+  // 兼容旧路径：旧版客户端把用户 Key 随请求体带上来。校验口径与存储路径共用 sanitizeUserKey，
+  // 非法（空 / 超长 / 控制字符）一律当作"没提供"。
+  return resolveProviderKey({ userKey: decideProviderKeySource(legacyUserKeyRaw).userKey });
 }
 
 function resolveProviderUrl(provider: ProviderName): string {
@@ -437,14 +476,15 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
   const workspaceId = String(body.workspaceId || auth.workspaceId || 'default');
   const usageTool = (String(body.usageTool || 'other') as UsageTool) ?? 'other';
   if (!tool) return json(res, 400, { ok: false, error: '缺少 tool' });
-  if (!Object.keys(PROVIDER_ENV_KEY).includes(provider)) return json(res, 400, { ok: false, error: `未知 provider：${provider}` });
+  if (!PROVIDERS.includes(provider)) return json(res, 400, { ok: false, error: `未知 provider：${provider}` });
 
   // ① 必须先确认用户自带 Key，再允许读缓存或打上游。
-  const { key: secret, source: keySource } = await resolveRequestSecret(provider, body.userKey);
+  //    来源优先级见 resolveRequestSecret：库里的（按 JWT 的 userId）→ 请求体里的（迁移期兼容）→ none。
+  const { key: secret, source: keySource } = await resolveRequestSecret(provider, auth.userId, body.userKey);
   if (!secret) {
     return json(res, 400, {
       ok: false,
-      error: `${provider} 需要填写你自己的 Key：请在「设置 → MCP 数据」里填写（只存本机浏览器，不上传服务器保存）`,
+      error: `${provider} 需要填写你自己的 Key：请在「设置 → MCP 数据」里填写（按账号保存，换设备登录自动带上）`,
       keySource,
     });
   }
@@ -527,15 +567,20 @@ async function handleMcp(req: VercelRequest, res: VercelResponse, auth: { userId
   });
 }
 
-/** 状态：哪些 provider 在服务端已配置（**只回布尔**）+ 缓存概览 */
-async function handleStatus(_req: VercelRequest, res: VercelResponse, _auth: unknown, body: Record<string, unknown>) {
-  const providers: Record<string, { configured: boolean; hasCustomUrl: boolean }> = {};
-  for (const p of Object.keys(PROVIDER_ENV_KEY) as ProviderName[]) {
-    const secret = await resolvePlatformSecret(p);
+/**
+ * 状态：**当前登录用户自己**在服务端配了哪些 provider（只回布尔 + 指纹）+ 缓存概览。
+ *
+ * §15.28 之后这里不再回答"服务端配没配平台 Key"：平台 Key 已不作为 MCP 数据的兜底（政策 A），
+ * 继续回报它只会让用户误以为"不填也能用"。现在只回报**他自己的**密钥状态，
+ * 指纹走 maskKey（前 3 末 4）—— 那是给他自己核对用的，不是别人的秘密。
+ */
+async function handleStatus(_req: VercelRequest, res: VercelResponse, auth: { userId: string }, body: Record<string, unknown>) {
+  const providers: Record<string, { configured: boolean; fingerprint: string; hasCustomUrl: boolean }> = {};
+  for (const p of PROVIDERS) {
+    const own = await readUserProviderKey(auth.userId, p);
     providers[p] = {
-      configured: secret.length > 0,
-      // 这里**不再回指纹**：数据池状态是给所有登录用户看的，而平台 Key 的"首 3 末 4"
-      // 也是可以拿来核对的秘密片段。管理员要看指纹请走管理员后台自带的环境自检。
+      configured: own.length > 0,
+      fingerprint: maskKey(own),
       hasCustomUrl: Boolean(env(PROVIDER_ENV_URL[p])),
     };
   }
@@ -559,8 +604,8 @@ async function handleStatus(_req: VercelRequest, res: VercelResponse, _auth: unk
     pruned: pruning,
     usage: describeUsage(summarizeUsage(USAGE, { limit: 20 })),
     note: usingDb
-      ? 'MCP 普通调用必须使用用户自带 Key；用户 Key 只在当次请求内使用（不落库、不落日志）；缓存持久化在 Supabase pool_cache'
-      : 'MCP 普通调用必须使用用户自带 Key；用户 Key 只在当次请求内使用（不落库、不落日志）；当前无 service_role，缓存退回进程内',
+      ? 'MCP 普通调用必须使用用户自带 Key；用户 Key 按账号存在服务端（换设备登录自动带上），明文不回传、不落日志；缓存持久化在 Supabase pool_cache'
+      : 'MCP 普通调用必须使用用户自带 Key；当前无 service_role，密钥无法随账号保存（只能在此设备临时填写）；缓存退回进程内',
   });
 }
 
@@ -572,19 +617,26 @@ async function handleStatus(_req: VercelRequest, res: VercelResponse, _auth: unk
  *   - **不写缓存、不记用量、不占配额** —— 点一下"验证"不该花掉一次额度，也不该污染账单；
  *   - 返回体只有 `keySource` 与一句话，**连指纹都不回**（指纹也是可核对的秘密片段）。
  *
+ * 校验的就是**该用户在服务端存的那把 Key**（custom 用 'custom' 这一格）；请求体里若是旧客户端
+ * 还带着 userKey，则按迁移期兼容路径使用。明文只在这一次握手请求里出现，用完即弃。
+ *
  * 自定义 MCP：地址由用户提供，所以必须过 `validateRelayTarget`（与 AI 转发同一套 SSRF 底线），
  * 且这里只转发 initialize，绝不转发 tools/call —— 网关不变成"任意 MCP 代理"。
  */
-async function handleVerify(_req: VercelRequest, res: VercelResponse, _auth: unknown, body: Record<string, unknown>) {
+async function handleVerify(
+  _req: VercelRequest,
+  res: VercelResponse,
+  auth: { userId: string },
+  body: Record<string, unknown>
+) {
   const providerRaw = String(body.provider || '');
   const isCustom = providerRaw === 'custom';
+  const keyProvider = keyProviderFor(providerRaw);
+  if (!keyProvider) return json(res, 400, { ok: false, error: `未知 provider：${providerRaw}` });
+  // 内置数据源用自己那格 Key；自定义 MCP 用 'custom' 那格（地址由用户填，Key 也必须是他自己填的）
   const provider = (isCustom ? 'sellersprite' : providerRaw) as ProviderName;
-  if (!isCustom && !Object.keys(PROVIDER_ENV_KEY).includes(providerRaw)) {
-    return json(res, 400, { ok: false, error: `未知 provider：${providerRaw}` });
-  }
-  // 来源标签先算好再返回：返回体里只出现 'user' / 'platform' 这两个字面量，
-  // 不出现任何与 Key 值相关的表达式（见 tests/securityKeys.test.ts 的"不得进响应体"守卫）。
-  const requestedSource = decideProviderKeySource(body.userKey).source;
+
+  const { key: secret, source: keySource } = await resolveRequestSecret(keyProvider, auth.userId, body.userKey);
 
   let endpointOverride = '';
   if (isCustom) {
@@ -592,19 +644,18 @@ async function handleVerify(_req: VercelRequest, res: VercelResponse, _auth: unk
     if (!check.ok) {
       return json(res, 400, {
         ok: false,
-        keySource: requestedSource,
+        keySource,
         error: `自定义 MCP 地址不可用：${check.reason}（平台网关要能连到它；本机地址请在本机自行确认）`,
       });
     }
     endpointOverride = check.url;
   }
 
-  const { key: secret, source: keySource } = await resolveRequestSecret(provider, body.userKey);
   if (!secret && !isCustom) {
     return json(res, 200, {
       ok: false,
       keySource,
-      message: `${provider} 没有可用的密钥：请填写你自己的 Key（只存本机浏览器）`,
+      message: `${provider} 没有可用的密钥：请填写你自己的 Key（存在你的账号里，换设备登录自动带上）`,
     });
   }
 
@@ -612,7 +663,7 @@ async function handleVerify(_req: VercelRequest, res: VercelResponse, _auth: unk
   const handshake = await mcpVerifyConnection(endpointOverride || resolveProviderUrl(provider), secret);
   if (!handshake.ok) {
     if (isCustom && !secret && /HTTP 40[13]/.test(handshake.error ?? '')) {
-      return json(res, 200, { ok: false, keySource, message: '端点要求鉴权：请填一个你自己的 Key（只存本机）再验证' });
+      return json(res, 200, { ok: false, keySource, message: '端点要求鉴权：请填一个你自己的 Key（存在你的账号里）再验证' });
     }
     return json(res, 200, { ok: false, keySource, message: handshake.error || '握手失败' });
   }
@@ -621,6 +672,95 @@ async function handleVerify(_req: VercelRequest, res: VercelResponse, _auth: unk
     keySource,
     message: keySource === 'user' ? '连接成功（用的是你自己的 Key）' : '连接成功（自定义 MCP，未带 Key）',
   });
+}
+
+/* ───────────── 密钥三个动作（keyList / keySet / keyClear） ─────────────
+ *
+ * 为什么要有它们：这是"密钥跟着账号走"的客户端入口。三个动作共享同一条铁律 ——
+ * **user_id 一律取自 JWT（handler 里 auth.userId 由 verifyToken 产出），不接受客户端传的 userId**。
+ * 因此 A 既读不到、也改不了、更清不掉 B 的密钥（配合迁移里"RLS 全部拒绝 + 只有 service_role"）。
+ */
+
+/** 列出当前用户在各 provider 上的密钥状态：只有 `configured` + 指纹（maskKey），**绝不含明文** */
+async function handleKeyList(_req: VercelRequest, res: VercelResponse, auth: { userId: string }) {
+  const keys: Record<string, KeyStatus> = {};
+  for (const p of KEY_PROVIDERS) keys[p] = { configured: false, fingerprint: '' };
+
+  const s = getServiceSupabase();
+  if (!s) {
+    return json(res, 200, {
+      ok: false,
+      keys,
+      error: '服务端未配置 SERVICE_ROLE_KEY：密钥无法随账号保存',
+    });
+  }
+  try {
+    const { data, error } = await s.from('user_provider_keys').select('provider, value').eq('user_id', auth.userId);
+    if (error) {
+      const issue = keyStoreIssue(error);
+      return json(res, 200, { ok: false, keys, needsMigration: issue.needsMigration, error: issue.error });
+    }
+    for (const row of Array.isArray(data) ? data : []) {
+      const p = String(row?.provider || '');
+      if (!KEY_PROVIDERS.includes(p as KeyProvider)) continue;
+      const value = typeof row?.value === 'string' ? row.value.trim() : '';
+      keys[p] = { configured: value.length > 0, fingerprint: maskKey(value) };
+    }
+    return json(res, 200, { ok: true, keys });
+  } catch (e) {
+    const issue = keyStoreIssue(e);
+    return json(res, 200, { ok: false, keys, needsMigration: issue.needsMigration, error: issue.error });
+  }
+}
+
+/** 保存/替换当前用户在某个 provider 上的密钥（写自己的那一行；校验不过一律拒绝，不回细节） */
+async function handleKeySet(_req: VercelRequest, res: VercelResponse, auth: { userId: string }, body: Record<string, unknown>) {
+  const provider = keyProviderFor(body.provider);
+  if (!provider) return json(res, 400, { ok: false, error: `未知 provider：${String(body.provider ?? '')}` });
+
+  // 与请求级解析共用同一份校验：去首尾空白 / 非空 / 长度 ≤512 / 拒绝控制字符。
+  const value = sanitizeUserKey(body.value);
+  if (!value) {
+    return json(res, 400, { ok: false, error: '密钥不合法：不能为空、长度不超过 512、且不能包含控制字符' });
+  }
+
+  const s = getServiceSupabase();
+  if (!s) return json(res, 200, { ok: false, error: '服务端未配置 SERVICE_ROLE_KEY：密钥无法随账号保存' });
+  try {
+    // upsert by (user_id, provider)：一个用户一个数据源只留一条，换 Key 是覆盖不是追加
+    const { error } = await s
+      .from('user_provider_keys')
+      .upsert({ user_id: auth.userId, provider, value, updated_at: new Date().toISOString() }, { onConflict: 'user_id,provider' });
+    if (error) {
+      const issue = keyStoreIssue(error);
+      return json(res, 200, { ok: false, needsMigration: issue.needsMigration, error: issue.error });
+    }
+    // 只回状态与指纹：明文到此为止，绝不回传
+    return json(res, 200, { ok: true, provider, configured: true, fingerprint: maskKey(value) });
+  } catch (e) {
+    const issue = keyStoreIssue(e);
+    return json(res, 200, { ok: false, needsMigration: issue.needsMigration, error: issue.error });
+  }
+}
+
+/** 清除当前用户在某个 provider 上的密钥（只删自己那一行） */
+async function handleKeyClear(_req: VercelRequest, res: VercelResponse, auth: { userId: string }, body: Record<string, unknown>) {
+  const provider = keyProviderFor(body.provider);
+  if (!provider) return json(res, 400, { ok: false, error: `未知 provider：${String(body.provider ?? '')}` });
+
+  const s = getServiceSupabase();
+  if (!s) return json(res, 200, { ok: false, error: '服务端未配置 SERVICE_ROLE_KEY：密钥无法随账号保存' });
+  try {
+    const { error } = await s.from('user_provider_keys').delete().eq('user_id', auth.userId).eq('provider', provider);
+    if (error) {
+      const issue = keyStoreIssue(error);
+      return json(res, 200, { ok: false, needsMigration: issue.needsMigration, error: issue.error });
+    }
+    return json(res, 200, { ok: true, provider, configured: false, fingerprint: '' });
+  } catch (e) {
+    const issue = keyStoreIssue(e);
+    return json(res, 200, { ok: false, needsMigration: issue.needsMigration, error: issue.error });
+  }
 }
 
 /** 用量（管理员看全量；普通用户只能看自己） */
@@ -634,11 +774,21 @@ async function handleUsage(req: VercelRequest, res: VercelResponse, auth: { user
   return json(res, 200, { ok: true, scope: admin ? 'all' : 'self', summary, describe: describeUsage(summary) });
 }
 
-const handlers: Record<string, (req: VercelRequest, res: VercelResponse, auth: { userId: string; email: string; workspaceId: string }, body: Record<string, unknown>) => Promise<unknown>> = {
+interface GatewayAuth {
+  userId: string;
+  email: string;
+  workspaceId: string;
+}
+
+const handlers: Record<string, (req: VercelRequest, res: VercelResponse, auth: GatewayAuth, body: Record<string, unknown>) => Promise<unknown>> = {
   mcp: handleMcp,
-  status: (req, res, _auth, body) => handleStatus(req, res, _auth, body),
+  status: (req, res, auth, body) => handleStatus(req, res, auth, body),
   usage: handleUsage,
-  verify: (req, res, _auth, body) => handleVerify(req, res, _auth, body),
+  verify: (req, res, auth, body) => handleVerify(req, res, auth, body),
+  // §15.28 密钥跟着账号走：这三个动作让客户端**不再接触明文**，只读写"自己的那一行"
+  keyList: (req, res, auth) => handleKeyList(req, res, auth),
+  keySet: (req, res, auth, body) => handleKeySet(req, res, auth, body),
+  keyClear: (req, res, auth, body) => handleKeyClear(req, res, auth, body),
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -648,6 +798,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const body = (typeof req.body === 'string' ? safeParse(req.body) : req.body) ?? {};
   const token = String((body as Record<string, unknown>).token || req.headers['x-auth-token'] || '');
+  // userId 的唯一来源：JWT。客户端传什么 userId 都不看（跨账号隔离的第一道保证）。
   const auth = await verifyToken(token);
   if (!auth) return json(res, 401, { ok: false, error: '未登录或 token 无效' });
   try {
@@ -655,14 +806,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (e) {
     if (action === 'verify') {
       const incoming = body as Record<string, unknown>;
-      const verifyKeySource = decideProviderKeySource(incoming.userKey).source;
+      const kp = keyProviderFor(incoming.provider);
+      const verifyKeySource = kp
+        ? (await resolveRequestSecret(kp, auth.userId, incoming.userKey)).source
+        : ('none' as ProviderKeySource);
       return json(res, 200, {
         ok: false,
         keySource: verifyKeySource,
         message: e instanceof Error ? redactText(e.message) : 'MCP 验证内部错误',
       });
     }
-    return json(res, 500, { ok: false, error: e instanceof Error ? e.message : '数据池内部错误' });
+    return json(res, 500, { ok: false, error: e instanceof Error ? redactText(e.message) : '数据池内部错误' });
   }
 }
 

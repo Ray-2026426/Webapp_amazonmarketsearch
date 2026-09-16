@@ -1,10 +1,14 @@
--- 全量迁移（合并 supabase/migrations/001-010）
+-- 全量迁移（合并 supabase/migrations/001-011）
 -- 在 Supabase 网页 SQL Editor 里「一次全选粘贴 → Run」即可。
 -- 所有语句都是幂等写法（if not exists / drop policy if exists / create or replace），重复执行也安全。
 --
 -- 2026-09 追加 010 · app_config：管理员后台「配置中心」与数据池密钥解析（api/data 的 resolveProviderSecret）
 -- 读写的就是这张表，但 001-009 里从来没有建过它 —— 于是"跑完迁移配置中心还是坏的"。
 -- 这不是新功能，是把已经写进代码的表补进迁移，缺表自愈才真的能自愈。
+--
+-- 2026-09 追加 011 · user_provider_keys：用户自带 Key（BYO Key）改成**跟着账号走**。
+-- 原先用户 Key 只存浏览器 localStorage，换设备登录同一账号就丢；现在密钥的唯一真相是这张表，
+-- 网关按 JWT 里的 userId 读写（keyList / keySet / keyClear），前端永远拿不到明文，只拿指纹。
 
 -- ========== 001_projects ==========
 create table if not exists public.projects (
@@ -565,4 +569,40 @@ create policy app_config_service_only on public.app_config
   with check (false);
 -- 说明：service_role 绕过 RLS，策略写成"全部拒绝"即可；普通 JWT 与 anon 一律读写不到，
 -- 因为这里存的是数据池与 AI 的密钥明文（M5 安全红线：密钥只在服务端）。
+
+
+-- ============================================================
+-- 011 · user_provider_keys（每个用户自己的 MCP 密钥，跟着账号走）
+-- ============================================================
+-- 为什么必须落库：用户自带 Key（BYO Key，见 §15.26）原先只存在他自己的浏览器 localStorage
+-- （amzdev_mcp_settings__<userId> 的 providers[].secretKey）。用户原话：
+-- 「我的mcp没有跟着账号走吗，需要跟着账号」——换设备、换浏览器、清一次缓存再登录同一账号，
+-- Key 就没了，他只能重新填一遍，还会以为"我填的东西被弄丢了"。
+-- 所以密钥的**唯一真相**必须落到这张表：主键 (user_id, provider)，登录后任意设备取到同一份。
+--
+-- 口径：
+-- - provider 取 sellersprite / xydc / lingxing / sorftime / custom（与设置页的数据源一一对应）；
+-- - value 是密钥明文，所以这张表**只有 service_role 能读写**：前端一律走 /api/data/*
+--   （keyList / keySet / keyClear），永不直连这张表；
+-- - user_id 一律取自 JWT（verifyToken 里的 sub），**绝不接受客户端传来的 userId** ——
+--   跨账号隔离靠的就是这一条 + 下面的"全部拒绝"策略：只认令牌，不认参数；
+-- - 对外只回"配没配 + 指纹"（maskKey：前 3 末 4），任何响应体 / 日志 / 审计详情里都不给明文。
+
+create table if not exists public.user_provider_keys (
+  user_id     text not null,                       -- JWT 的 sub（verifyToken 返回的 userId），不是客户端传的
+  provider    text not null,                       -- sellersprite / xydc / lingxing / sorftime / custom
+  value       text not null,                       -- 密钥明文（只允许服务端读写，永不进浏览器）
+  updated_at  timestamptz not null default now(),  -- 最后一次替换的时间（清除是删行，不留空串行）
+  primary key (user_id, provider)                   -- 一个用户一个数据源只留一条：换 Key 是 upsert，不是追加
+);
+
+alter table public.user_provider_keys enable row level security;
+
+drop policy if exists user_provider_keys_service_only on public.user_provider_keys;
+create policy user_provider_keys_service_only on public.user_provider_keys
+  for all
+  using (false)
+  with check (false);
+-- 说明：service_role 绕过 RLS，策略写成"全部拒绝"即可；普通 JWT 与 anon 一律读写不到。
+-- 跨账号隔离不能靠"前端自觉"：这里存的是别人的密钥，读到一个就等于拿到了别人的数据池额度。
 

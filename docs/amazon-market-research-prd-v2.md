@@ -2099,6 +2099,60 @@ A+ 开关同样不新增调用。**`usageAccounting` 与 `listingFetchPlan` 的�
 
 ---
 
+### 15.28 密钥跟着账号走 + 政策 A（平台 Key 不再兜底）（2026-09）
+
+**用户原话**：「我的mcp没有跟着账号走吗，需要跟着账号」。用户同时拍板**密钥政策 = A**：
+MCP 取数**要求用户填自己的 Key**，**取消平台 Key 兜底**（这条代码里原本已经是如此，本轮把它钉死）。
+
+**问题（真实死路）**：§15.26 的 BYO Key 把用户 Key 只存在**他自己的浏览器 localStorage**
+（`amzdev_mcp_settings__<userId>`）。于是换设备 / 换浏览器 / 清一次缓存再登录同一账号，Key 就没了 ——
+用户只能重填一遍，还会以为"我填的东西被弄丢了"。
+
+**做法（四件事）**：
+
+1. **按用户存密钥的表**：新增 `public.user_provider_keys`（`user_id` / `provider` / `value` / `updated_at`，
+   主键 `(user_id, provider)`），**RLS 全部拒绝**（`using (false) with check (false)`），只有 `service_role`
+   能读写。写进 `supabase/migrations/all_in_one.sql` 的 **011 区块**（全幂等），并重新生成
+   `src/utils/migrationSqlTables.ts`（`scripts/gen-migration-sql.mjs` 的 `TABLES` 清单同步加表）。
+2. **服务端三个动作**（`api/data/[action].ts`）：`keyList`（只回 `configured` + `maskKey` 指纹，**绝不含明文**）、
+   `keySet`（校验非空 / trim / 长度 ≤512 / 拒控制字符后 upsert）、`keyClear`（删该用户该 provider 一行）。
+   **`userId` 一律取自 JWT（`verifyToken`），绝不接受客户端传来的 `userId`** —— 跨账号隔离靠这一条 + RLS。
+3. **网关解析顺序**：① 库里该用户（按 JWT 的 userId）的 Key → ② 迁移期兼容：本次请求体里的 `userKey`
+   （旧客户端还在传，用完即弃）→ ③ 都没有 → `source:'none'` + 报"请填写你自己的 Key"。
+   **平台 Key 兜底整段删除**：`resolvePlatformSecret()` 与相关 import 一并删掉（不留死代码）；
+   `api/admin` 的「配置中心」与 `app_config` 表**没动**（那是另一条链路）。`keySource` 记账保持
+   （用了用户 Key 记 `'user'`，都没有记 `'none'`）。
+4. **客户端与界面**（跨设备的关键）：
+   - `src/utils/mcpConfig.ts` 本地只留**非密钥**配置（id / 名称 / 地址 / 启用 / kind）；
+     新增 `loadUserKeyStatuses()` / `saveUserKey()` / `clearUserKey()`；删掉"读本机明文 Key"的
+     `getUserKeyForProvider()`（不允许再有两处真相）；本机旧 `secretKey` 一次性 `keySet` 迁移到账号，
+     **成功后删除本机副本**（失败则保留副本并如实提示）；
+   - `src/utils/dataPoolClient.ts`：上一轮的 `withUserKey()` 通道**删除**（含 `listingFetchExecutor.ts`
+     里的用法）—— 服务端既已按 JWT 取 Key，客户端再传一份只是多一次明文在网络上流动的机会；
+     `ProviderVerifyResult.keySource` 保留（服务端会回报）；
+   - 设置页 MCP tab（`src/components/AiSettingsPanel.tsx`）：登录后从 `keyList` 读状态；**已配置**时显示
+     `已配置（sk-1…ab12）` + 「替换」/「清除」，**未配置**显示输入框；替换输入框写完即清空
+     （**页面上永远不出现明文**）；名称 / 地址 / Key / 验证 四样齐全；一行 ≤30 字提示
+     「密钥存在你的账号里，换设备登录自动带上；服务端不回传明文。」
+
+**红线（一条都没破）**：平台密钥仍不得在浏览器出现任何明文（政策 A 之后它连兜底都不是）；
+任何响应体 / 日志 / 审计详情里都不许出现明文密钥（**用户自己的也不行**，只给掩码指纹）；
+跨账号隔离（A 读不到 / 改不了 / 清不掉 B 的）；校验与长度上限；错误信息脱敏。
+
+**测试与验证**：`tests/securityKeys.test.ts` 15 → **17** 条（新增"密钥只许写 `user_provider_keys` 且只有
+service_role 能读""userId 只认 JWT：三个动作都不接受客户端 userId""返回体只允许 `maskKey` 指纹"等），
+`tests/dataPoolKeyFlow.test.ts` 9 → **13** 条（新增"客户端不再传 Key""keySet 不带 userId""迁移成功即删本机副本 /
+失败保留副本""服务端就算回了明文也不采纳"），`tests/migrationSql.test.ts` 保持 **14** 条（表名集合与新表逐字溯源）。
+`node tests/runAll.mjs` → **49 套件 / 535 断言 / 0 failed**；`tsc --noEmit`、`vite build` 均通过。
+
+**已知遗留（没有掩饰）**：① `api/admin/[action].ts` 的缺表自检清单未加这张表（该文件不在本轮授权范围），
+未跑 011 的库要靠 MCP 面板的琥珀色提示（`keyList` 返回 `needsMigration`）发现；
+② 多个「自定义 MCP」条目共用 `provider='custom'` 那一格 Key（要按条目分开得给表加 `entry_id` 维度）；
+③ 真·登录时刻的迁移触发点在 `src/App.tsx`，本轮不在授权范围，改由"打开 MCP 设置页 / 调数据池"两条等价时机触发。
+细节见 `docs/byo-key-model.md`。
+
+---
+
 ## 17. 国内底座迁移（后置，另行立项）
 
 > 用户已确认（§15.1-23）：现阶段沿用 Vercel + Supabase，先把 App 功能做好；国内迁移（免 VPN）在功能打磨完成后另行立项。
@@ -2126,5 +2180,5 @@ A+ 开关同样不新增调用。**`usageAccounting` 与 `listingFetchPlan` 的�
 
 ---
 
-*PRD V2.10 完。配套 UI 线框图：`docs/ui-wireframes.html`（主流程 8 屏）、`docs/ui-wireframes-l3.html`（二级页与明细层 23 屏）；一致性核对表：`docs/ui-conformance-audit.md`（含 ⚠️ 用户指示的偏离清单）；界面借鉴样张：`docs/ui-benchmark-mockups.html`。交付分支：只有 `main`（生产）；发布标签 `v2.9.0`。*
+*PRD V2.11 完。配套 UI 线框图：`docs/ui-wireframes.html`（主流程 8 屏）、`docs/ui-wireframes-l3.html`（二级页与明细层 23 屏）；一致性核对表：`docs/ui-conformance-audit.md`（含 ⚠️ 用户指示的偏离清单）；界面借鉴样张：`docs/ui-benchmark-mockups.html`。交付分支：只有 `main`（生产）；发布标签 `v2.9.0`。*
 

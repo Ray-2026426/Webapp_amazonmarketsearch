@@ -1,14 +1,15 @@
-// M5 · Listing 抓取执行器：按计划走**服务端数据池**抓取（PRD §11.2）。
+// M5 · Listing 抓取执行器：按计划走**服务端数据池**抓取（PRD §11.2 / §15.28）。
 //
 // 与 planListingFetch 的分工：计划器决定"抓什么、按什么顺序、花多少钱"（纯函数、可测），
-// 执行器只负责"按计划调用、隔离失败、汇总进度"。执行器**不解析平台密钥**：
-// 它把 tool/args + 本机为该 provider 填的用户 Key 发给 /api/data/mcp；服务端只接受用户 Key，
-// 没填就明确拒绝，不再走平台兜底（见 dataPoolClient.withUserKey / api/data/[action].ts）。
+// 执行器只负责"按计划调用、隔离失败、汇总进度"。执行器**不接触任何密钥**：
+// 它只把 tool/args 发给 /api/data/mcp，网关按 JWT 里的 userId 自己去 `user_provider_keys`
+// 取该用户该 provider 的 Key（政策 A：平台 Key 不作兜底），没配就明确拒绝。
+// （上一轮那条把本机 Key 塞进请求体的 `withUserKey` 通道已按 §15.28 删除。）
 //
 // 为什么要把并发限住：MCP 是外部服务，一次打十几个并发容易被限流或超时，
 // 反而让"抓取成功率"这项验收指标变差。默认并发 3，并按优先级顺序推进。
 
-import { withUserKey } from './dataPoolClient';
+import { migrateLegacyLocalKeys } from './mcpConfig';
 import { planListingFetch, assembleListingDetails, evaluateFetchPlan, type FetchDepth, type FetchPlanEvaluation, type FetchStep, type FetchStepResult } from './listingFetchPlan';
 import type { FieldGroup, ListingDetail, TrafficDetail } from './listingFields';
 
@@ -27,25 +28,23 @@ export interface ExecuteResult {
   note: string;
 }
 
-/** 单步调用：只发 tool/args（+ 本机用户 Key，若有），平台密钥由服务端解析 */
+/** 单步调用：只发 tool/args（**不带任何密钥**），该用户该 provider 的 Key 由服务端按 JWT 自己取 */
 async function callGateway(step: FetchStep, opts: ExecuteOptions): Promise<FetchStepResult> {
   const started = Date.now();
   try {
     const res = await fetch('/api/data/mcp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(
-        withUserKey(step.provider, {
-          token: opts.token,
-          provider: step.provider,
-          tool: step.tool,
-          args: step.args,
-          type: step.type,
-          usageTool: step.usageTool,
-          workspaceId: opts.workspaceId ?? 'default',
-          projectId: opts.projectId,
-        })
-      ),
+      body: JSON.stringify({
+        token: opts.token,
+        provider: step.provider,
+        tool: step.tool,
+        args: step.args,
+        type: step.type,
+        usageTool: step.usageTool,
+        workspaceId: opts.workspaceId ?? 'default',
+        projectId: opts.projectId,
+      }),
     });
     const body = (await res.json().catch(() => ({}))) as {
       ok?: boolean;
@@ -73,9 +72,12 @@ async function callGateway(step: FetchStep, opts: ExecuteOptions): Promise<Fetch
  */
 export async function executeListingFetchPlan(plan: FetchStep[], opts: ExecuteOptions): Promise<ExecuteResult> {
   if (!opts.token) {
-    return { results: [], usedGateway: false, note: '未登录：平台数据池需要登录后使用（前端不保存任何密钥）' };
+    return { results: [], usedGateway: false, note: '未登录：平台数据池需要登录后使用（密钥按账号存在服务端）' };
   }
   if (plan.length === 0) return { results: [], usedGateway: true, note: '没有需要抓取的步骤' };
+
+  // 老设备上残留的旧明文 Key 先迁到账号里（幂等、只跑一次），否则这里会因为"没配 Key"整批失败
+  await migrateLegacyLocalKeys();
 
   const concurrency = Math.max(1, Math.min(6, opts.concurrency ?? 3));
   const results: FetchStepResult[] = new Array(plan.length);

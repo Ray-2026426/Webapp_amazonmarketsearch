@@ -155,10 +155,12 @@ async function callSellerSpriteToolBrowser(
 export async function getSellerSpriteStatus(): Promise<{ configured: boolean; message: string }> {
   const cfg = loadMcpSettings();
   const ss = getActiveSellerSpriteProvider(cfg);
-  const key = (ss?.secretKey || cfg.secretKey || '').trim();
-  if (key) {
-    const viaProxy = getSellerSpriteEndpoint(ss?.mcpUrl ?? cfg.mcpUrl) === '/api-proxy/sellersprite-mcp'
-      || getSellerSpriteEndpoint(ss?.mcpUrl ?? cfg.mcpUrl).startsWith('/api-proxy/');
+  // §15.28：密钥按账号存在服务端，浏览器里**没有任何**密钥可读 —— "配没配"只能问服务端。
+  const status = await fetchDataPoolStatus();
+  const own = status.ok ? status.providers?.sellersprite : undefined;
+  if (own?.configured) {
+    const endpoint = getSellerSpriteEndpoint(ss?.mcpUrl ?? cfg.mcpUrl);
+    const viaProxy = endpoint === '/api-proxy/sellersprite-mcp' || endpoint.startsWith('/api-proxy/');
     return {
       configured: true,
       message: viaProxy
@@ -168,7 +170,7 @@ export async function getSellerSpriteStatus(): Promise<{ configured: boolean; me
   }
   return {
     configured: false,
-    message: '尚未配置卖家精灵。请打开「设置 → MCP 数据」，添加或填写卖家精灵密钥（地址栏请留空）。',
+    message: '尚未配置卖家精灵。请打开「设置 → MCP 数据」填写你自己的 Key（存在你的账号里，换设备自动带上）。',
   };
 }
 

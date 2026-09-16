@@ -32,7 +32,7 @@ import { parseProducts, parseHistory, detectMarketplaceFromFile, Product, Histor
 import { get, set, del } from 'idb-keyval';
 import { Toaster, toast } from 'sonner';
 import { getAuthToken, getCurrentUser, isAdminSession, logout, refreshAdminFlag, type SessionUser } from './utils/auth';
-import { ensureAdminMcpDefaults, loadFeatureFlags, type AppFeatureFlags } from './utils/mcpConfig';
+import { ensureAdminMcpDefaults, loadFeatureFlags, migrateLegacyLocalKeys, resetUserKeyState, type AppFeatureFlags } from './utils/mcpConfig';
 import { loadAiSettings, saveAiSettings, sanitizeAiSettings, AiSettings } from './utils/aiConfig';
 import { fetchServerKeyStatuses, migrateLegacyKeys } from './utils/serverKeys';
 import { consumeOAuthCallbackFromUrl } from './utils/feishuAuth';
@@ -199,11 +199,34 @@ export default function App() {
   const handleLoginSuccess = useCallback(() => {
     const isGuest = sessionStorage.getItem('guest_mode') === '1';
     if (!isGuest) {
+      /**
+       * 换账号时必须先清掉 MCP 密钥的进程内状态（PRD §15.28）：
+       * 里面有"密钥状态缓存（configured + 指纹）"和"一次性迁移已跑过"的闸门。
+       * 不清的后果是真实的跨账号错乱：A 登出、B 在同一页面登录 →
+       * ① B 会看到 A 的"已配置（指纹）"；② B 自己的旧本机密钥**不会被迁移**（闸门还关着）。
+       */
+      resetUserKeyState();
       const user = getCurrentUser();
       setCurrentUser(user);
       setAiSettings(loadAiSettings());
+      /**
+       * 登录时就把「旧的本机 MCP 密钥」迁进账号（PRD §15.28）。
+       * 为什么放在这里：密钥的唯一真相已改成服务端 `user_provider_keys`，而老设备上的明文
+       * 只存在 localStorage；在登录这一刻迁移，用户换设备/重装浏览器才不会丢 Key。
+       * 迁移是幂等的（跑过就不再跑），失败时不删本机副本、只提示一次。
+       */
+      void (async () => {
+        try {
+          const r = await migrateLegacyLocalKeys();
+          if (r.migrated.length > 0) toast.success(r.message);
+          else if (r.failed.length > 0) toast.warning(r.message);
+        } catch {
+          /* 迁移失败不影响登录本身，进设置页还会再试一次 */
+        }
+      })();
     } else {
       // Guest mode: set a dummy user
+      resetUserKeyState();
       setCurrentUser({ id: 'guest', username: '游客' });
     }
   }, []);
@@ -211,6 +234,8 @@ export default function App() {
   const handleLogout = useCallback(() => {
     sessionStorage.removeItem('guest_mode');
     logout();
+    // 登出即清 MCP 密钥的进程内状态（状态缓存 + 一次性迁移闸门）——见 handleLoginSuccess 里的同类说明
+    resetUserKeyState();
     setCurrentUser(null);
   }, []);
 
