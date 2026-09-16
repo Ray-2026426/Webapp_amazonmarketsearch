@@ -9,6 +9,14 @@ dist/
 .npm-cache/
 *.tsbuildinfo
 
+# 本机专用（这台开发机没有 npm，pnpm 是唯一可用的安装器）：
+#   pnpm-lock.yaml 由 package-lock.json 导入而来（版本完全对齐），
+#   pnpm-workspace.yaml 只记录本机的构建脚本许可。
+# 仓库的依赖真相源仍然是 package-lock.json（Vercel 用它构建），这两个文件不入库，
+# 避免出现两套锁文件互相漂移。
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
 # 环境变量与密钥（最重要）
 .env
 .env.local
