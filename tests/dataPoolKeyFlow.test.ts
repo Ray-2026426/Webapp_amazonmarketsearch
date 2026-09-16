@@ -3,10 +3,10 @@
 // 为什么要有这个文件：安全守卫（tests/securityKeys.test.ts）是**源码级**扫描，它能证明"没有坏写法"，
 // 但不能证明"功能真的是这样跑的"。这里把密钥流向当成可执行的事实来测：
 //   1) 本机填了 Key → 随**同源 POST 请求体**带给网关（URL 里绝没有 Key）；
-//   2) 没填 → 请求体里连 userKey 字段都不出现（网关走平台兜底）；
+//   2) 没填 → 请求体里连 userKey 字段都不出现，网关会拒绝并提示填写自己的 Key；
 //   3) 保存（saveMcpSettings）**一个网络请求都不发**：用户 Key 绝不写库；
 //   4) 「验证」按来源验证：明文只在请求体里出现一次，返回体只回 keySource 与一句话；
-//   5) 用量记账只记 keySource 标签（user / platform），并能在汇总里按来源分账。
+//   5) 用量记账只记 keySource 标签（user / none / 历史 platform），并能在汇总里按来源分账。
 import assert from 'node:assert/strict';
 
 // ── 浏览器环境替身：localStorage + fetch 记录器（在 import 业务模块之前装好） ──────────────
@@ -116,14 +116,16 @@ await test('填了自己的 Key → 随**同源 POST 请求体**带给网关，U
   assert.equal(res.keySource, 'user', '网关回报的来源标签要能透传给调用方');
 });
 
-await test('没填自己的 Key → 请求体里连 userKey 字段都不出现（网关走平台兜底）', async () => {
+await test('没填自己的 Key → 请求体里连 userKey 字段都不出现，网关按 none 拒绝', async () => {
   seed([{ kind: 'sellersprite', secretKey: '', mcpUrl: '' }]);
   assert.equal(getUserKeyForProvider('sellersprite'), '', '读不到 Key 应回空串');
-  reply = { status: 200, body: { ok: true, data: {}, keySource: 'platform' } };
+  reply = { status: 400, body: { ok: false, error: '请填写你自己的 Key', keySource: 'none' } };
   const res = await callDataPool({ provider: 'sellersprite', tool: 'review', args: {} });
   const body = JSON.parse(calls[0].init.body || '{}');
-  assert.ok(!('userKey' in body), '没填就不该发这个字段（服务端按"未提供"回退平台 Key）');
-  assert.equal(res.keySource, 'platform');
+  assert.ok(!('userKey' in body), '没填就不该发这个字段');
+  assert.equal(res.keySource, 'none');
+  assert.equal(res.ok, false);
+  assert.ok(res.error?.includes('Key'));
 });
 
 await test('多个数据源各用各的 Key，互不串（按 provider 精确取本机 Key）', async () => {
@@ -173,13 +175,14 @@ await test('「验证」按来源验证：明文只在请求体里，返回体�
   assert.ok(withKey.message.includes('你自己的 Key'), '要如实告诉用户这次用的是谁的 Key');
   assert.ok(!withKey.message.includes('xy-mine-key-9'), '返回文案里不得出现 Key 片段');
 
-  // 没填 → 验证平台的
+  // 没填 → 不再验证平台默认 Key
   seed([{ kind: 'xydc', secretKey: '', mcpUrl: '' }]);
-  reply = { status: 200, body: { ok: true, keySource: 'platform', message: '连接成功（用的是平台 Key）' } };
-  const onPlatform = await verifyDataPoolProvider({ provider: 'xydc' });
+  reply = { status: 200, body: { ok: false, keySource: 'none', message: '请填写你自己的 Key' } };
+  const withoutKey = await verifyDataPoolProvider({ provider: 'xydc' });
   assert.ok(!('userKey' in JSON.parse(calls[0].init.body || '{}')), '没填就不带 userKey');
-  assert.equal(onPlatform.keySource, 'platform');
-  assert.ok(onPlatform.message.includes('平台 Key'));
+  assert.equal(withoutKey.keySource, 'none');
+  assert.equal(withoutKey.ok, false);
+  assert.ok(withoutKey.message.includes('自己的 Key'));
 });
 
 await test('自定义 MCP：没填地址就先说清楚，不偷偷去连别人的服务', async () => {

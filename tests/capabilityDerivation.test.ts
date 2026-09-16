@@ -191,7 +191,14 @@ test('① 字段集必须覆盖"亚马逊特有"维度（用户点名的那些�
   );
   // 卖家类型的选项要覆盖 工厂型/贸易型/品牌型/服务商
   const seller = BACKGROUND_FIELDS.find((f) => f.key === 'sellerType')!;
-  assert.deepEqual((seller.options ?? []).map((o) => o.value), ['factory', 'trader', 'brand', 'service']);
+  const sellerValues = (seller.options ?? []).map((o) => o.value);
+  for (const v of ['factory', 'trader', 'brand', 'service']) {
+    assert.ok(sellerValues.includes(v), `卖家类型缺少核心选项 ${v}`);
+  }
+  assert.ok(
+    sellerValues.includes('individual') && sellerValues.includes('mixed'),
+    '卖家类型要允许个人/小团队与混合型，避免只能选成熟公司画像'
+  );
 });
 
 test('① 不接地气的大企业刻度与无依据字段已删除（不是改个名字藏起来）', () => {

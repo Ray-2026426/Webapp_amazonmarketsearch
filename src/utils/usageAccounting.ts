@@ -32,7 +32,7 @@ export const USAGE_TOOL_LABELS: Record<UsageTool, string> = {
 /**
  * 这次外部调用花的是**谁的** Key（成本归因用；**不是** Key 本身，也永远不是）。
  *   user     = 调用者自己在界面上填的 Key（只存他的本机浏览器）
- *   platform = 服务端 app_config / 环境变量里的平台 Key（团队共享）
+ *   platform = 历史/管理员口径保留；普通 MCP 调用不再走平台兜底
  *   none     = 两边都没有，本次调用必然失败（如实记账，便于区分"没配 Key"与"Key 不好用"）
  */
 export type UsageKeySource = 'user' | 'platform' | 'none';
@@ -64,7 +64,7 @@ export interface UsageEvent {
   durationMs?: number;
   /** 失败原因（ok=false 时） */
   error?: string;
-  /** 本次用的是谁的 Key（user=用户自带 / platform=平台兜底 / none=没配）——**只记标签，不记 Key** */
+  /** 本次用的是谁的 Key（user=用户自带 / platform=历史平台口径 / none=没配）——**只记标签，不记 Key** */
   keySource?: UsageKeySource;
   createdAt: string;
 }

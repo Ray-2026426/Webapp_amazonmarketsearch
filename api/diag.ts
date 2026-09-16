@@ -54,6 +54,22 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
     const m = (await import('../src/utils/aiEndpoints.js')) as Record<string, unknown>;
     return `OK，导出 ${Object.keys(m).length} 项`;
   });
+  await probe("import '../src/utils/poolCache.js'", async () => {
+    const m = (await import('../src/utils/poolCache.js')) as Record<string, unknown>;
+    return `OK，导出 ${Object.keys(m).length} 项`;
+  });
+  await probe("import '../src/utils/poolCacheStore.js'", async () => {
+    const m = (await import('../src/utils/poolCacheStore.js')) as Record<string, unknown>;
+    return `OK，导出 ${Object.keys(m).length} 项`;
+  });
+  await probe("import '../src/utils/mcpRequestKey.js'", async () => {
+    const m = (await import('../src/utils/mcpRequestKey.js')) as Record<string, unknown>;
+    return `OK，导出 ${Object.keys(m).length} 项`;
+  });
+  await probe("import './data/[action].js'（数据池函数本体）", async () => {
+    const m = (await import('./data/[action].js')) as Record<string, unknown>;
+    return `OK，导出 ${Object.keys(m).length} 项`;
+  });
 
   // ③ Supabase：能不能建客户端、能不能查表（只做 head 查询，不取数据）
   await probe('Supabase 客户端 + projects 表探测', async () => {

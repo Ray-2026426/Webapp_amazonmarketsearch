@@ -13,6 +13,7 @@ import { MarkdownReport } from './MarkdownReport';
 import { toast } from 'sonner';
 import { DateRangeSelector } from './DateRangeSelector';
 import { Select } from './ui/Select';
+import { ProductImageZoom } from './ProductImageZoom';
 
 type SortKey = 'price' | 'monthlySales' | 'monthlyRevenue' | 'launchDate' | 'fbaFee' | 'subBsr' | 'reviewGrowth' | 'salesGrowth3m' | 'salesGrowth1y';
 
@@ -429,9 +430,7 @@ export const TopProductsTable = React.memo(function TopProductsTable({
                     )}
                     <td className="px-4 py-3">
                       <div className="flex items-center space-x-3">
-                        {product.image
-                          ? <img src={product.image} alt={product.title} className="w-12 h-12 rounded-lg object-cover border border-black/5 shrink-0" referrerPolicy="no-referrer" />
-                          : <div className="w-12 h-12 rounded-lg bg-[#f5f5f7] border border-black/5 flex items-center justify-center text-xs text-[#86868b] shrink-0">无图</div>}
+                        <ProductImageZoom src={product.image} alt={product.title} />
                         <div className="min-w-0">
                           <div className="font-medium text-[#1d1d1f] truncate max-w-[240px]" title={product.title}>{product.title}</div>
                           <div className="text-xs text-[#86868b] flex items-center space-x-2 mt-1">

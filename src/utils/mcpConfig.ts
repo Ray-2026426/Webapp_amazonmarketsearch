@@ -3,7 +3,7 @@
 // BYO Key（2026-09 用户决策变更，原话："需要其他用户也能填 key，后续我们再考虑做付费，
 // 那时候再关闭 mcp 入口，换成计费模式。"）：
 //   这里保存的 `secretKey` 是**用户自己填的 Key**，只存在他自己的浏览器 localStorage；
-//   留空 = 走服务端平台 Key 兜底（团队共享，见 api/data/[action].ts 的解析顺序）。
+//   留空 = 未配置；普通 MCP 调用不会走服务端平台 Key 兜底。
 //
 // 因此本文件有两条硬约束（改了就是事故）：
 //   ① 平台 Key 绝不注入到浏览器：不再从 env / 服务端读取任何 Key 来预填输入框；
@@ -331,7 +331,7 @@ export function getActiveSorftimeProvider(settings?: McpSettings | null): McpPro
 export function isOfficialLingXingMcpUrl(url: string): boolean {
   const u = url.trim().toLowerCase().replace(/\/+$/, '');
   if (!u) return true;
-  return /openmcp\.lingxing\.com/i.test(u);
+  return /openmcp\.lingxing\.com/i.test(u) || /mcp\.lingxing\.com/i.test(u);
 }
 
 /** 领星实际请求 endpoint：官方地址一律走同源反代 */
@@ -434,7 +434,7 @@ function userKeyEntry(kind: McpProviderKind, settings?: McpSettings | null): Mcp
 }
 
 /**
- * 这个数据源在**本机浏览器**里填的 Key（空串 = 没填，要走平台 Key 兜底）。
+ * 这个数据源在**本机浏览器**里填的 Key（空串 = 没填，网关会要求用户填写）。
  *
  * 只读 localStorage，绝不来自服务端 —— 平台 Key 永远不会出现在这里。
  * 调用数据池时把它随请求体带给网关；网关只用当次，不落库不落日志。

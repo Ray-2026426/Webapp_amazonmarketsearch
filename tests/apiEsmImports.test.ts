@@ -9,7 +9,7 @@
  * 本地解析器（tsx/vite）能补扩展名，线上 Node 的 ESM 解析不会 —— 于是只在生产炸。
  *
  * 这条守卫把这个不一致钉死：**api/** 下任何相对 import 都必须显式带 .js/.json**。
- * （`src/**` 之间的无扩展名 import 不受影响：它们由 Vite 打包给浏览器，不存在这个问题。）
+ * 被 api 直接加载的 `src/utils/**` 服务端模块同样要显式带扩展名，否则会在线上二级依赖加载时崩。
  */
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -81,6 +81,7 @@ test('管理员/数据池/AI 三条链路引用的工具模块都带扩展名', 
     ['api/admin/[action].ts', "from '../../src/utils/keyMasking.js'"],
     ['api/data/[action].ts', "from '../../src/utils/poolCache.js'"],
     ['api/ai/[action].ts', "from '../../src/utils/aiEndpoints.js'"],
+    ['src/utils/poolCacheStore.ts', "from './poolCache.js'"],
   ];
   for (const [file, spec] of checks) {
     assert(readFileSync(file, 'utf8').includes(spec), `${file} 应包含 ${spec}`);
