@@ -19,12 +19,14 @@ function test(name: string, fn: () => void) {
   }
 }
 
-console.log('outbound routing (decision A)');
+console.log('outbound routing (decision A + BYO Key §15.26)');
 
-test('已登录 → 走服务端数据池（浏览器不接触密钥）', () => {
+test('已登录 → 走服务端数据池（平台密钥不外泄；自带密钥也经网关转发）', () => {
   const r = decideOutboundRoute({ hasToken: true });
   assert.equal(r.route, 'gateway');
-  assert.ok(r.reason.includes('不接触密钥'));
+  // 口径在 §15.26 之后精确化：平台密钥只在服务端；用户自带的密钥存在他本机、也只随请求体发给本站网关
+  assert.ok(r.reason.includes('平台密钥只在服务端'), r.reason);
+  assert.ok(r.reason.includes('网关'), '要说明用户自带的密钥也是经本站网关转发的');
   assert.equal(canFetchFromPool(true), true);
 });
 

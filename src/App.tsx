@@ -223,7 +223,12 @@ export default function App() {
   // ── Data ──────────────────────────────────────────────────────────────────
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isDemoData, setIsDemoData] = useState(false);
-  const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
+  /**
+   * 2026-09 按用户要求删掉了「当前为示例…上传你自己的数据即可切换」那条横幅（用户认为是无用提示）。
+   * 因此 `demoBannerDismissed` 这个状态也一并删除（不留死状态）。
+   * 副作用要知道：界面上不再有"你正在看示例数据"的显式提示 —— 若以后需要，
+   * 建议做一个极小的「示例」chip，而不是把整段说明加回来。
+   */
   const [isLoading, setIsLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
@@ -1278,7 +1283,6 @@ export default function App() {
       setCompetitorDemo(null);
       void set('isDemoData', false);
       void set('demoDataVersion', '');
-      setDemoBannerDismissed(false);
       
       toast.success("数据加载成功！");
     } catch (error) {
@@ -1698,26 +1702,6 @@ export default function App() {
           className="flex-1 overflow-y-auto p-8"
         >
           {activeView === 'market' && <PageQuickNav />}
-          {isDemoData && !demoBannerDismissed && (
-            <div className="max-w-7xl mx-auto mb-4">
-              <div className="rounded-2xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-200 px-5 py-3 flex items-center justify-between gap-3 animate-in fade-in">
-                <div className="flex items-center gap-2 text-sm text-indigo-800">
-                  <Sparkles className="w-4 h-4 shrink-0" />
-                  <span>
-                    当前为<strong>示例</strong>：含 ASIN 主图、销量趋势、评论、关键词洞察与竞品明细，可直接点左侧各板块预览。
-                    上传你自己的市场数据即可切换为工作台。
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setDemoBannerDismissed(true)}
-                  className="shrink-0 p-1.5 rounded-lg hover:bg-indigo-100 text-indigo-600 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
           {activeView === 'projects' && (activeProject ? (
             <ProjectWorkspace
               userId={currentUser?.id ?? ''}

@@ -7,7 +7,7 @@ function env(name: string): string {
 }
 
 /**
- * M5 安全加固（PRD §11.2「密钥只在服务端，前端永不接触」）：
+ * M5 安全加固（PRD §11.2「**平台**密钥只在服务端，前端永不接触」；§15.26 之后口径精确化）：
  * 这个接口**不再返回密钥明文**，只返回"配没配 + 指纹"（掩码口径见 src/utils/keyMasking.ts）。
  *
  * 为什么必须改：旧实现把 deepseek/sellersprite 的 Key 明文返回给浏览器，

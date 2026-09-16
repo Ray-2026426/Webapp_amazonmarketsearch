@@ -151,21 +151,6 @@ async function callSellerSpriteToolBrowser(
 }
 
 
-/**
- * 数据池可用性自检（决策 A：密钥只在服务端，浏览器不再自检密钥）。
- * 它检查的是"服务端是否已配置 + 当前是否登录"，而不是在浏览器里拿密钥去握手。
- */
-async function checkDataPoolReady(providerLabel: string): Promise<void> {
-  const route = decideOutboundRoute({ hasToken: canUseDataPool() });
-  if (route.route === 'blocked') throw new Error(route.reason);
-  const status = await fetchDataPoolStatus();
-  if (!status.ok) throw new Error(status.error || '无法读取数据池状态');
-  const seller = status.providers?.sellersprite;
-  if (!seller?.configured) {
-    throw new Error('服务端还没有配置卖家精灵密钥：请让管理员在「设置 → 管理员后台 → 配置中心」配置（浏览器不保存密钥）');
-  }
-  void providerLabel;
-}
 
 export async function getSellerSpriteStatus(): Promise<{ configured: boolean; message: string }> {
   const cfg = loadMcpSettings();
@@ -606,11 +591,6 @@ export function parseAsinList(raw: string): string[] {
     out.push(asin);
   }
   return out;
-}export async function testMcpProvider(provider: McpProviderEntry): Promise<void> {
-  const label = provider?.kind === 'sellersprite' ? '卖家精灵' : provider?.kind || 'MCP';
-  await checkDataPoolReady(label);
-}export async function testSellerSpriteMcp(_settings?: McpSettings | null): Promise<void> {
-  await checkDataPoolReady('卖家精灵');
 }
 
 function unwrapData(payload: unknown): Record<string, unknown> {
