@@ -2153,6 +2153,54 @@ service_role 能读""userId 只认 JWT：三个动作都不接受客户端 userI
 
 ---
 
+### 15.29 线上库迁移落地 + RLS 隔离实测 + 本地依赖树事故复盘（2026-09-16）
+
+本轮三件事都不是产品功能改动，但都决定"能不能放心上商用"。
+
+**① 线上库迁移执行完毕（用户选 PAT 路线，由我执行）**
+
+- 迁移前线上只有 `projects` / `project_members` 两张表；`usage_events`、`audit_events`、`pool_cache`、
+  `app_config`、`user_provider_keys` 与 `usage_events.key_source` 全缺 —— 这正是"跨设备密钥"用不了的原因
+  （界面走琥珀色"缺表"提示，不静默失败）。
+- 本轮 `SUPABASE_PAT=<pat> node scripts/run-migration.mjs` 执行 `all_in_one.sql`（23007 字符 / 609 行）：
+  **7/7 张表就绪 ｜ RLS 七张全开 ｜ `usage_events.key_source` 已存在**。
+- 用户 Key 的安全性口径不变：PAT 只从环境变量读，不写盘、不进 git、不回显；**用完由用户撤销该 token**。
+
+**② "RLS 写了策略"不等于"别人真的读不到"——做了真请求验证（新增上线清单 2.0c）**
+
+做法：用 PAT 插一条假密钥行（`user_id` 为随机 uuid）→ 用 anon key 走真实 PostgREST 请求读 / 插 / 改 / 删
+→ 再用 PAT 核对结果 → 删除假行。实测结果：
+
+| 攻击面 | 结果 |
+| --- | --- |
+| anon 读 7 张表 | 全部 HTTP 200 + **0 行**（那条真实存在的假行也看不到） |
+| anon 插入 | **401 / `42501`**：`new row violates row-level security policy` |
+| anon DELETE | HTTP 200 + 返回体 `[]`，**影响 0 行**（假行仍在） |
+| anon UPDATE（改成 `HACKED`） | HTTP 200 + 返回体 `[]`，**值未被篡改** |
+
+结论：**登录这个网页的其他账号既拿不到、也改不了、更删不掉你的 Key** —— 这是直接证据，不是"策略看起来很严"。
+（注意纯 `204/200` 不等于生效：第一次验证时我把 anon DELETE 的 `204` 误读成"可能删掉了"，补了一次结果核对才确认。）
+
+**③ 本地依赖树事故（不是源码问题，但要记住教训）**
+
+- 现象：`tsc` / `node tests/runAll.mjs` / `vite build` 三条命令**全部**报 `MODULE_NOT_FOUND`
+  （`tsx/dist/cli.mjs`、`typescript/bin/tsc`、`vite/bin/vite.js` 都不在）。
+- 根因：同一工作区里另有一次 `pnpm install` **中途被打断**，`node_modules` 里 47 个包的入口文件被删空，
+  根目录还残留 npm 时代的 410 个旧实体目录（与 pnpm 的符号链接混在一起）。
+- 修法：本机没有 npm，用 harness 自带的 pnpm，**先 `pnpm import` 把 `package-lock.json` 转成 `pnpm-lock.yaml`
+  （版本完全对齐），再 `install --frozen-lockfile`**；否则 pnpm 会按 `^`/`~` 重新解析，装出与 Vercel 不一致的树。
+- 口径已写进 `AGENTS.md`：本机唯一的安装器、正确安装姿势、验证三件套与基线（49 套件 / 538 断言 / 0 失败），
+  以及"**三件套报模块找不到时先怀疑依赖树，不要先怀疑源码**"。
+
+**新增工具**：`scripts/check-db-status.mjs` —— 只用 anon key、只发 GET 的迁移状态探针
+（用 `PGRST205` 区分"表不存在"，用"200 + 空数组"识别"表在但 RLS 全拒"即已就绪），
+不需要 PAT 就能随时回答"数据库迁没迁"。它和 `run-migration.mjs` 各加了两条安全守卫
+（只读、不落盘、不回显密钥值），`tests/securityHygiene.test.ts` 9 → **11** 条。
+
+**验证**：`tsc --noEmit` exit 0 ｜ `node tests/runAll.mjs` **49 套件 / 538 断言 / 0 失败** ｜ `vite build` exit 0。
+
+---
+
 ## 17. 国内底座迁移（后置，另行立项）
 
 > 用户已确认（§15.1-23）：现阶段沿用 Vercel + Supabase，先把 App 功能做好；国内迁移（免 VPN）在功能打磨完成后另行立项。
