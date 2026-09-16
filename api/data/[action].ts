@@ -260,9 +260,15 @@ async function recordUsage(event: UsageEvent): Promise<void> {
 
 interface McpRpc {
   jsonrpc: '2.0';
-  id: number;
+  id?: number;
   method: string;
   params?: Record<string, unknown>;
+}
+
+interface McpPostResult {
+  result?: unknown;
+  error?: { message?: string };
+  sessionId?: string;
 }
 
 const SS_TOOL_NAMES: Record<string, string> = {
@@ -272,6 +278,39 @@ const SS_TOOL_NAMES: Record<string, string> = {
   keyword_research: 'keyword_research',
   aba_research_weekly: 'aba_research_weekly',
 };
+
+function parseMcpHttpBody(text: string): Pick<McpPostResult, 'result' | 'error'> | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('{')) {
+    try {
+      return JSON.parse(trimmed) as Pick<McpPostResult, 'result' | 'error'>;
+    } catch {
+      /* fall through to SSE parsing */
+    }
+  }
+  const payloads = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trim())
+    .filter((line) => line && line !== '[DONE]');
+  for (let i = payloads.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(payloads[i]) as Pick<McpPostResult, 'result' | 'error'>;
+      if (parsed && (parsed.result !== undefined || parsed.error !== undefined)) return parsed;
+    } catch {
+      /* continue */
+    }
+  }
+  return null;
+}
+
+function compactMcpError(status: number, text: string): string {
+  const parsed = parseMcpHttpBody(text);
+  const message = parsed?.error?.message || text.replace(/\s+/g, ' ').trim().slice(0, 200);
+  return redactText(`MCP 请求失败（HTTP ${status}）：${message || '上游未返回错误详情'}`);
+}
 
 /**
  * 一次 JSON-RPC 请求。
@@ -284,9 +323,15 @@ async function mcpPost(
   secret: string,
   method: string,
   params?: Record<string, unknown>,
-  id = 1
-): Promise<{ result?: unknown; error?: { message?: string } } | null> {
-  const body: McpRpc = { jsonrpc: '2.0', id, method, ...(params ? { params } : {}) };
+  id = 1,
+  sessionId?: string
+): Promise<McpPostResult | null> {
+  const body: McpRpc = {
+    jsonrpc: '2.0',
+    ...(method.startsWith('notifications/') ? {} : { id }),
+    method,
+    ...(params ? { params } : {}),
+  };
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -294,16 +339,15 @@ async function mcpPost(
       Accept: 'application/json, text/event-stream',
       ...(secret ? { 'secret-key': secret } : {}),
       'MCP-Protocol-Version': '2025-03-26',
+      ...(method === 'tools/call' ? { 'Mcp-Method': 'tools/call', 'Mcp-Name': String(params?.name || '') } : {}),
+      ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
     },
     body: JSON.stringify(body),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(redactText(`MCP HTTP ${res.status}: ${text.slice(0, 200)}`));
-  // SSE 或 JSON 都兼容：取最后一个含 result/error 的 JSON 行
-  const lines = text.split('\n').filter((l) => l.trim().startsWith('{'));
-  return (lines.length > 0 ? JSON.parse(lines[lines.length - 1]) : null) as
-    | { result?: unknown; error?: { message?: string } }
-    | null;
+  if (!res.ok) throw new Error(compactMcpError(res.status, text));
+  const parsed = parseMcpHttpBody(text);
+  return parsed ? { ...parsed, sessionId: res.headers.get('mcp-session-id') || undefined } : null;
 }
 
 const MCP_INIT_PARAMS = { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'kairo', version: '1.0' } };
@@ -313,6 +357,9 @@ async function mcpHandshake(endpoint: string, secret: string): Promise<{ ok: boo
   try {
     const init = await mcpPost(endpoint, secret, 'initialize', MCP_INIT_PARAMS, 0);
     if (init?.error) return { ok: false, error: redactText(init.error.message || 'MCP initialize 失败') };
+    if (init?.sessionId) {
+      await mcpPost(endpoint, secret, 'notifications/initialized', undefined, 1, init.sessionId);
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? redactText(e.message) : 'MCP 握手失败' };
@@ -329,13 +376,25 @@ async function callMcp(
 ): Promise<{ ok: boolean; data?: unknown; error?: string; calls: number }> {
   const endpoint = (endpointOverride || resolveProviderUrl(provider)).trim();
   let calls = 0;
+  const toolName = provider === 'sellersprite' ? SS_TOOL_NAMES[tool] || tool : tool;
   try {
     calls += 1;
-    const init = await mcpPost(endpoint, secret, 'initialize', MCP_INIT_PARAMS, 0);
-    if (init?.error) throw new Error(redactText(init.error.message || 'MCP initialize 失败'));
+    const direct = await mcpPost(endpoint, secret, 'tools/call', { name: toolName, arguments: args }, 1);
+    if (direct?.error) throw new Error(redactText(direct.error.message || 'MCP 调用失败'));
+    if (direct?.result !== undefined) return { ok: true, data: (direct.result as Record<string, unknown>)?.content ?? direct.result, calls };
+  } catch {
+    // 部分 MCP 服务必须先建会话；直连失败后按标准会话流程重试。
+  }
+  try {
     calls += 1;
-    const toolName = provider === 'sellersprite' ? SS_TOOL_NAMES[tool] || tool : tool;
-    const r = await mcpPost(endpoint, secret, 'tools/call', { name: toolName, arguments: args }, 2);
+    const init = await mcpPost(endpoint, secret, 'initialize', MCP_INIT_PARAMS, 2);
+    if (init?.error) throw new Error(redactText(init.error.message || 'MCP initialize 失败'));
+    if (init?.sessionId) {
+      calls += 1;
+      await mcpPost(endpoint, secret, 'notifications/initialized', undefined, 3, init.sessionId);
+    }
+    calls += 1;
+    const r = await mcpPost(endpoint, secret, 'tools/call', { name: toolName, arguments: args }, 4, init?.sessionId);
     if (r?.error) throw new Error(redactText(r.error.message || 'MCP 调用失败'));
     return { ok: true, data: (r?.result as Record<string, unknown>)?.content ?? r?.result, calls };
   } catch (e) {
