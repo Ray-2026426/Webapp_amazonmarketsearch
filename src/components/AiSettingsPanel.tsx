@@ -79,18 +79,6 @@ function mcpKindLabel(kind: McpProviderEntry['kind']): string {
   return '自定义';
 }
 
-function sanitizeBuiltinMcpUrl(kind: McpProviderEntry['kind'], url: string): string {
-  const v = url.trim();
-  if (kind === 'custom') return v;
-  if (!v) return '';
-  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return '';
-  if (/mcp\.sellersprite\.com/i.test(v)) return '';
-  if (/mcp\.xydc\.com/i.test(v)) return '';
-  if (/openmcp\.lingxing\.com/i.test(v) || /mcp\.lingxing\.com/i.test(v)) return '';
-  if (/mcp\.sorftime\.com/i.test(v)) return '';
-  return v;
-}
-
 interface AiSettingsPanelProps {
   settings: AiSettings | null;
   onSave: (settings: AiSettings) => void;
@@ -129,10 +117,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
 
   const [mcpProviders, setMcpProviders] = useState<McpProviderEntry[]>(() => {
     const loaded = loadMcpSettings().providers;
-    return loaded.map((p) => ({
-      ...p,
-      mcpUrl: sanitizeBuiltinMcpUrl(p.kind, p.mcpUrl),
-    }));
+    return loaded;
   });
   const [testingProviderId, setTestingProviderId] = useState<string | null>(null);
   /** 每个数据源上一次「验证」的结果：状态 + 一句人话（含"用的谁的 Key"） */
@@ -244,11 +229,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   };
 
   const updateProvider = (id: string, patch: Partial<McpProviderEntry>) => {
-    setMcpProviders((prev) => prev.map((p) => {
-      if (p.id !== id) return p;
-      const next = { ...p, ...patch };
-      return patch.mcpUrl !== undefined ? { ...next, mcpUrl: sanitizeBuiltinMcpUrl(next.kind, next.mcpUrl) } : next;
-    }));
+    setMcpProviders((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
     setMcpTestResults((prev) => {
       const next = { ...prev };
       delete next[id];
@@ -291,16 +272,11 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   };
 
   const persistMcp = () => {
-    const providers = mcpProviders.reduce<McpProviderEntry[]>(
-      (acc, p) => [...acc, { ...p, mcpUrl: sanitizeBuiltinMcpUrl(p.kind, p.mcpUrl) }],
-      []
-    );
-    setMcpProviders(providers);
-    const ss = providers.find((p) => p.kind === 'sellersprite') || providers[0];
+    const ss = mcpProviders.find((p) => p.kind === 'sellersprite') || mcpProviders[0];
     saveMcpSettings({
       secretKey: ss?.secretKey || '',
       mcpUrl: ss?.mcpUrl || '',
-      providers,
+      providers: mcpProviders,
     });
   };
 
