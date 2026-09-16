@@ -16,7 +16,7 @@ import {
   isFresh,
   type PoolCacheEntry,
   type PoolDataType,
-} from './poolCache';
+} from './poolCache.js';
 
 /**
  * `pool_cache` 表的一行（数据库口径，snake_case）。
