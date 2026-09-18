@@ -4,6 +4,7 @@ import { decideOutboundRoute, poolTypeForTool, usageToolForTool } from './dataPo
 import {
   getActiveSellerSpriteProvider,
   getSellerSpriteEndpoint,
+  getActiveXydcProvider,
   getActiveLingXingProvider,
   getLingXingEndpoint,
   getXydcEndpoint,
@@ -204,7 +205,10 @@ function emptyPayloadError(scope: string, payload: unknown): Error {
  * 用户决策 A（数据池只对登录用户开放）：**只走服务端数据池**，浏览器里没有也不应该有密钥。
  * 未登录时明确拒绝（让用户去用示例数据或登录），绝不回退到"本地填密钥"的旧模式。
  */
-async function callSellerSpriteToolBrowser(
+type McpDataProvider = 'sellersprite' | 'xydc';
+
+async function callMcpToolBrowser(
+  provider: McpDataProvider,
   toolName: string,
   args: Record<string, unknown>,
   _settings?: McpSettings | null
@@ -214,7 +218,7 @@ async function callSellerSpriteToolBrowser(
     throw new Error(route.reason);
   }
   const gateway = await callDataPool({
-    provider: 'sellersprite',
+    provider,
     tool: toolName,
     args,
     type: poolTypeForTool(toolName),
@@ -227,27 +231,89 @@ async function callSellerSpriteToolBrowser(
   return extractToolPayload(gateway.data);
 }
 
+async function callSellerSpriteToolBrowser(
+  toolName: string,
+  args: Record<string, unknown>,
+  settings?: McpSettings | null
+): Promise<unknown> {
+  return callMcpToolBrowser('sellersprite', toolName, args, settings);
+}
+
+export function isQuotaError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error || '');
+  return /额度|余额|次数|配额|限额|已用完|用量|套餐|429|quota|credit|credits|limit|limited|exhaust|insufficient/i.test(msg);
+}
+
+function isSellerSpriteMissingError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error || '');
+  return /sellersprite.*需要填写|卖家精灵.*需要填写|sellersprite.*未配置|卖家精灵.*未配置/i.test(msg);
+}
+
+async function getKeywordProviderStatus(): Promise<{ sellersprite: boolean; xydc: boolean }> {
+  const status = await fetchDataPoolStatus();
+  return {
+    sellersprite: Boolean(status.ok && status.providers?.sellersprite?.configured),
+    xydc: Boolean(status.ok && status.providers?.xydc?.configured),
+  };
+}
+
+async function callKeywordTool(
+  tool: 'traffic_keyword' | 'keyword_miner' | 'keyword_research' | 'aba_research_weekly',
+  args: Record<string, unknown>,
+  onProgress?: (msg: string) => void
+): Promise<unknown> {
+  const providers = await getKeywordProviderStatus().catch(() => ({ sellersprite: true, xydc: false }));
+  if (!providers.sellersprite && providers.xydc) {
+    onProgress?.('卖家精灵未配置，已使用西柚洞察抓取关键词…');
+    return callMcpToolBrowser('xydc', tool, args);
+  }
+  try {
+    return await callMcpToolBrowser('sellersprite', tool, args);
+  } catch (e) {
+    if ((!isQuotaError(e) && !isSellerSpriteMissingError(e)) || !providers.xydc) throw e;
+    onProgress?.(
+      isQuotaError(e)
+        ? '卖家精灵额度不足，已自动切换到西柚洞察继续抓取…'
+        : '卖家精灵未配置，已自动切换到西柚洞察继续抓取…'
+    );
+    return callMcpToolBrowser('xydc', tool, args);
+  }
+}
+
 
 
 export async function getSellerSpriteStatus(): Promise<{ configured: boolean; message: string }> {
   const cfg = loadMcpSettings();
   const ss = getActiveSellerSpriteProvider(cfg);
+  const xy = getActiveXydcProvider(cfg);
   // §15.28：密钥按账号存在服务端，浏览器里**没有任何**密钥可读 —— "配没配"只能问服务端。
   const status = await fetchDataPoolStatus();
   const own = status.ok ? status.providers?.sellersprite : undefined;
+  const xydc = status.ok ? status.providers?.xydc : undefined;
   if (own?.configured) {
     const endpoint = getSellerSpriteEndpoint(ss?.mcpUrl ?? cfg.mcpUrl);
     const viaProxy = endpoint === '/api-proxy/sellersprite-mcp' || endpoint.startsWith('/api-proxy/');
+    const fallback = xydc?.configured ? `；${xy?.name || '西柚洞察'}已配置，可在卖家精灵额度不足时自动接力。` : '。';
     return {
       configured: true,
       message: viaProxy
-        ? `已配置「${ss?.name || '卖家精灵'}」，将通过应用安全代理连接。`
-        : `已配置「${ss?.name || '卖家精灵'}」（自定义地址）。可直接抓取。`,
+        ? `已配置「${ss?.name || '卖家精灵'}」，将通过应用安全代理连接${fallback}`
+        : `已配置「${ss?.name || '卖家精灵'}」（自定义地址），可直接抓取${fallback}`,
+    };
+  }
+  if (xydc?.configured) {
+    const endpoint = getXydcEndpoint(xy?.mcpUrl);
+    const viaProxy = endpoint === '/api-proxy/xydc-mcp' || endpoint.startsWith('/api-proxy/');
+    return {
+      configured: true,
+      message: viaProxy
+        ? `卖家精灵未配置；已配置「${xy?.name || '西柚洞察'}」，关键词抓取会通过西柚洞察连接。`
+        : `卖家精灵未配置；已配置「${xy?.name || '西柚洞察'}」（自定义地址），关键词抓取会用西柚洞察。`,
     };
   }
   return {
     configured: false,
-    message: '尚未配置卖家精灵。请打开「设置 → MCP 数据」填写你自己的 Key（存在你的账号里，换设备自动带上）。',
+    message: '尚未配置卖家精灵或西柚洞察。请打开「设置 → MCP 数据」至少填写一个关键词数据源 Key（存在你的账号里，换设备自动带上）。',
   };
 }
 
@@ -498,7 +564,7 @@ export async function fetchKeywordsFromMcp(opts: FetchKeywordsOptions): Promise<
     opts.onProgress?.(`正在抓取 ${asin} 流量词 第 ${page}/${maxPages} 页（已获 ${map.size} 个）…`);
     let payload: unknown;
     try {
-      payload = await callTool('traffic_keyword', {
+      payload = await callKeywordTool('traffic_keyword', {
         request: {
           asin,
           marketplace,
@@ -506,14 +572,14 @@ export async function fetchKeywordsFromMcp(opts: FetchKeywordsOptions): Promise<
           size: pageSize,
           order: { field: 'searches', desc: true },
         },
-      });
+      }, opts.onProgress);
     } catch (e) {
       // 兼容部分账号对 order 校验更严：去掉排序再试一次
       if (page === 1) {
         opts.onProgress?.(`${asin} 带排序抓取失败，改用不带排序重试…`);
-        payload = await callTool('traffic_keyword', {
+        payload = await callKeywordTool('traffic_keyword', {
           request: { asin, marketplace, page, size: pageSize },
-        });
+        }, opts.onProgress);
       } else {
         throw e;
       }
@@ -618,7 +684,7 @@ export async function fetchKeywordsByKeywordFromMcp(
     );
     let payload: unknown;
     try {
-      payload = await callTool('keyword_miner', {
+      payload = await callKeywordTool('keyword_miner', {
         request: {
           keyword: seed,
           marketplace,
@@ -627,13 +693,13 @@ export async function fetchKeywordsByKeywordFromMcp(
           filterRootWord: 1,       // 只保留包含种子词的词（排除毫不相关的）
           order: { field: 'searches', desc: true },
         },
-      });
+      }, opts.onProgress);
     } catch (e) {
       if (page === 1) {
         opts.onProgress?.(`「${seed}」带排序抓取失败，改用不带排序重试…`);
-        payload = await callTool('keyword_miner', {
+        payload = await callKeywordTool('keyword_miner', {
           request: { keyword: seed, marketplace, page, size: pageSize, filterRootWord: 1 },
-        });
+        }, opts.onProgress);
       } else {
         throw e;
       }

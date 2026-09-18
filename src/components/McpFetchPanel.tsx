@@ -79,11 +79,17 @@ export function McpFetchPanel({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    getSellerSpriteStatus().then((s) => {
-      if (cancelled) return;
-      setConfigured(s.configured);
-      setStatusMsg(s.message);
-    });
+    getSellerSpriteStatus()
+      .then((s) => {
+        if (cancelled) return;
+        setConfigured(s.configured);
+        setStatusMsg(s.message);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setConfigured(false);
+        setStatusMsg(e instanceof Error ? e.message : '检查 MCP 数据源失败，请稍后重试');
+      });
     return () => {
       cancelled = true;
     };

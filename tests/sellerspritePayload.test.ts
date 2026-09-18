@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { extractToolPayload, pickItems } from '../src/utils/sellerspriteApi';
+import { extractToolPayload, isQuotaError, pickItems } from '../src/utils/sellerspriteApi';
 
 let passed = 0;
 let failed = 0;
@@ -59,6 +59,13 @@ test('finds keyword rows across common upstream result shapes', () => {
 test('keeps normal item arrays intact', () => {
   const rows = [{ keyword: 'desk mat' }, { keyword: 'large desk mat' }];
   assert.deepEqual(pickItems(rows), rows);
+});
+
+test('detects quota and balance errors for xydc fallback', () => {
+  assert.equal(isQuotaError(new Error('卖家精灵额度不足，请升级套餐')), true);
+  assert.equal(isQuotaError(new Error('MCP 请求失败（HTTP 429）：quota exceeded')), true);
+  assert.equal(isQuotaError(new Error('insufficient credits')), true);
+  assert.equal(isQuotaError(new Error('Key 无效')), false);
 });
 
 console.log(`\nresult: ${passed} passed, ${failed} failed`);

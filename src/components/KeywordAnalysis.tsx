@@ -310,7 +310,7 @@ export function exportKeywordsToExcel(keywords: Keyword[]) {
     '价值密度(周转化流量)': Number(calcKwValueDensity(k).toFixed(2)),
     '竞争难度': k.difficulty,
     'Top3点击份额': k.top3ClickShare,
-    'AI标签': k.aiTags.join('、'),
+    'AI标签': (Array.isArray(k.aiTags) ? k.aiTags : []).join('、'),
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
@@ -348,6 +348,32 @@ export function exportKeywordsToExcel(keywords: Keyword[]) {
   }
 
   XLSX.writeFile(wb, `关键词用户洞察_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function normalizeFetchedKeyword(k: Keyword, rank: number): Keyword | null {
+  const keyword = String(k?.keyword || '').trim();
+  if (!keyword) return null;
+  return {
+    ...k,
+    id: k.id || `${Date.now()}_${rank}`,
+    keyword,
+    translation: String(k.translation || ''),
+    wordTag: String(k.wordTag || ''),
+    matchType: String(k.matchType || ''),
+    relevanceTier: String(k.relevanceTier || ''),
+    rank: Number(k.rank) || rank,
+    weeklySearchVolume: Number(k.weeklySearchVolume) || 0,
+    cpcBid: Number(k.cpcBid) || 0,
+    cpcBidRange: String(k.cpcBidRange || ''),
+    conversionRate: Number(k.conversionRate) || 0,
+    difficulty: Number(k.difficulty) || 0,
+    difficultyTier: k.difficultyTier || '低',
+    organicScrollRate: Number(k.organicScrollRate) || 0,
+    top3ClickShare: Number(k.top3ClickShare) || 0,
+    top3ConversionShare: Number(k.top3ConversionShare) || 0,
+    top3Asins: String(k.top3Asins || ''),
+    aiTags: Array.isArray(k.aiTags) ? k.aiTags : [],
+  };
 }
 
 const INTENT_VALUES: UserIntentStage[] = ['awareness', 'consideration', 'decision', 'loyalty'];
@@ -436,14 +462,17 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
   const tStat = useMemo(() => {
     const c: Record<string, number> = {}, v: Record<string, number> = {};
     TAGS.forEach(t => { c[t] = 0; v[t] = 0; });
-    keywords.forEach(k => k.aiTags.forEach(t => {
+    keywords.forEach(k => (Array.isArray(k.aiTags) ? k.aiTags : []).forEach(t => {
       if (c[t] !== undefined) { c[t]++; v[t] += k.weeklySearchVolume; }
     }));
     return TAGS.map(n => ({ name: n, count: c[n], vol: v[n] })).filter(s => s.count > 0).sort((a, b) => b.count - a.count);
   }, [keywords]);
   const filt = useMemo(() => keywords.filter(k => {
-    const ms = k.keyword.toLowerCase().includes(q.toLowerCase()) || k.translation.toLowerCase().includes(q.toLowerCase());
-    return ms && (cat === 'all' || k.aiTags.includes(cat)) && (!seg || k.jobToBeDone === seg || k.useScenario === seg || k.userIntentStage === seg);
+    const word = String(k.keyword || '');
+    const translation = String(k.translation || '');
+    const tags = Array.isArray(k.aiTags) ? k.aiTags : [];
+    const ms = word.toLowerCase().includes(q.toLowerCase()) || translation.toLowerCase().includes(q.toLowerCase());
+    return ms && (cat === 'all' || tags.includes(cat)) && (!seg || k.jobToBeDone === seg || k.useScenario === seg || k.userIntentStage === seg);
   }), [keywords, q, cat, seg]);
 
   const upload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -489,7 +518,9 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
         toast.error(msg);
         throw e;
       }
-      for (const k of chunk) {
+      for (const raw of chunk) {
+        const k = normalizeFetchedKeyword(raw, all.length + 1);
+        if (!k) continue;
         const key = k.keyword.toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
@@ -502,7 +533,7 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
       }
       setKeywords(prev => {
         if (params.replace) return all;
-        const exist = new Set(prev.map(k => k.keyword.toLowerCase()));
+        const exist = new Set(prev.map(k => String(k.keyword || '').toLowerCase()));
         return [...prev, ...all.filter(k => !exist.has(k.keyword.toLowerCase()))];
       });
       setSeg(null);
@@ -528,7 +559,9 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
         toast.error(msg);
         throw e;
       }
-      for (const k of chunk) {
+      for (const raw of chunk) {
+        const k = normalizeFetchedKeyword(raw, all.length + 1);
+        if (!k) continue;
         const key = k.keyword.toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
@@ -541,7 +574,7 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
     }
     setKeywords(prev => {
       if (params.replace) return all;
-      const exist = new Set(prev.map(k => k.keyword.toLowerCase()));
+      const exist = new Set(prev.map(k => String(k.keyword || '').toLowerCase()));
       return [...prev, ...all.filter(k => !exist.has(k.keyword.toLowerCase()))];
     });
     setSeg(null);
