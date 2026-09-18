@@ -23,7 +23,7 @@ import {
   MIGRATION_SHARED_RPC_SQL,
   SOURCE_MIGRATION_FILE,
   type MigrationTableName,
-} from './migrationSqlTables';
+} from './migrationSqlTables.js';
 
 export {
   MIGRATION_TABLE_NAMES,

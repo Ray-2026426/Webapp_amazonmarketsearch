@@ -82,6 +82,7 @@ test('管理员/数据池/AI 三条链路引用的工具模块都带扩展名', 
     ['api/data/[action].ts', "from '../../src/utils/poolCache.js'"],
     ['api/ai/[action].ts', "from '../../src/utils/aiEndpoints.js'"],
     ['src/utils/poolCacheStore.ts', "from './poolCache.js'"],
+    ['src/utils/migrationSql.ts', "from './migrationSqlTables.js'"],
   ];
   for (const [file, spec] of checks) {
     assert(readFileSync(file, 'utf8').includes(spec), `${file} 应包含 ${spec}`);
