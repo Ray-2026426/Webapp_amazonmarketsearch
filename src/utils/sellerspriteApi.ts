@@ -50,21 +50,6 @@ function asArray<T>(x: unknown): T[] {
   return [];
 }
 
-function pickItems(payload: unknown): unknown[] {
-  if (!payload) return [];
-  if (Array.isArray(payload)) return payload;
-  if (typeof payload !== 'object') return [];
-  const o = payload as Record<string, unknown>;
-  if (o.data && typeof o.data === 'object') {
-    const d = o.data as Record<string, unknown>;
-    if (Array.isArray(d.items)) return d.items;
-    if (Array.isArray(d.list)) return d.list;
-  }
-  if (Array.isArray(o.items)) return o.items;
-  if (Array.isArray(o.list)) return o.list;
-  return [];
-}
-
 function pickMeta(payload: unknown): {
   total?: number;
   pages?: number;
@@ -95,31 +80,123 @@ type JsonRpc = {
   error?: { message?: string };
 };
 
-function extractToolPayload(result: unknown): unknown {
+function parseJsonishText(text: string): unknown {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const body = (fenced?.[1] ?? trimmed).trim();
+  try {
+    return JSON.parse(body);
+  } catch {
+    return body;
+  }
+}
+
+function extractContentTextArray(result: unknown[]): unknown | undefined {
+  if (!result.length) return undefined;
+  const looksLikeContent = result.every((item) => {
+    if (!item || typeof item !== 'object') return false;
+    const row = item as Record<string, unknown>;
+    return ('text' in row || 'type' in row) && !('keyword' in row) && !('asin' in row);
+  });
+  if (!looksLikeContent) return undefined;
+  const joined = result.map((item) => String((item as Record<string, unknown>).text ?? '')).join('\n').trim();
+  return joined ? parseJsonishText(joined) : undefined;
+}
+
+export function extractToolPayload(result: unknown): unknown {
   if (result == null) return null;
   if (typeof result === 'string') {
-    try {
-      return JSON.parse(result);
-    } catch {
-      return result;
-    }
+    return parseJsonishText(result);
+  }
+  if (Array.isArray(result)) {
+    const contentPayload = extractContentTextArray(result);
+    return contentPayload === undefined ? result : extractToolPayload(contentPayload);
   }
   if (typeof result !== 'object') return result;
   const r = result as {
     content?: Array<{ type?: string; text?: string }>;
     structuredContent?: unknown;
   };
-  if (r.structuredContent !== undefined) return r.structuredContent;
+  if (r.structuredContent !== undefined) return extractToolPayload(r.structuredContent);
   if (Array.isArray(r.content)) {
-    const joined = r.content.map((c) => String(c.text ?? '')).join('\n').trim();
-    if (!joined) return result;
-    try {
-      return JSON.parse(joined);
-    } catch {
-      return joined;
-    }
+    const contentPayload = extractContentTextArray(r.content);
+    return contentPayload === undefined ? result : extractToolPayload(contentPayload);
   }
   return result;
+}
+
+function likelyItemArray(value: unknown): value is unknown[] {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  return value.some((item) => {
+    if (!item || typeof item !== 'object') return false;
+    const row = item as Record<string, unknown>;
+    return ['keyword', 'keywords', 'word', 'phrase', 'searchTerm', 'asin', 'title', 'content', 'star', 'reviewId'].some((key) => key in row);
+  });
+}
+
+function findItemArray(value: unknown, depth = 0): unknown[] {
+  if (depth > 4 || value == null) return [];
+  const payload = extractToolPayload(value);
+  if (Array.isArray(payload)) return likelyItemArray(payload) ? payload : [];
+  if (typeof payload !== 'object') return [];
+  const o = payload as Record<string, unknown>;
+  const priority = [
+    'items',
+    'list',
+    'records',
+    'rows',
+    'results',
+    'keywords',
+    'keywordList',
+    'dataList',
+    'pageList',
+    'data',
+    'result',
+    'payload',
+  ];
+  for (const key of priority) {
+    const found = findItemArray(o[key], depth + 1);
+    if (found.length) return found;
+  }
+  for (const value of Object.values(o)) {
+    const found = findItemArray(value, depth + 1);
+    if (found.length) return found;
+  }
+  return [];
+}
+
+export function pickItems(payload: unknown): unknown[] {
+  return findItemArray(payload);
+}
+
+function findTextField(value: unknown, depth = 0): string {
+  if (depth > 4 || value == null) return '';
+  const payload = extractToolPayload(value);
+  if (typeof payload === 'string') return payload.slice(0, 180);
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const found = findTextField(item, depth + 1);
+      if (found) return found;
+    }
+    return '';
+  }
+  if (typeof payload !== 'object') return '';
+  const o = payload as Record<string, unknown>;
+  for (const key of ['error', 'message', 'msg', 'reason', 'detail', 'description']) {
+    const raw = o[key];
+    if (typeof raw === 'string' && raw.trim()) return raw.trim().slice(0, 180);
+  }
+  for (const value of Object.values(o)) {
+    const found = findTextField(value, depth + 1);
+    if (found) return found;
+  }
+  return '';
+}
+
+function emptyPayloadError(scope: string, payload: unknown): Error {
+  const detail = findTextField(payload);
+  return new Error(detail ? `${scope}没有返回可识别的数据：${detail}` : `${scope}没有返回可识别的数据`);
 }
 
 /**
@@ -378,8 +455,8 @@ function mapKeywordItem(item: Record<string, unknown>, rank: number): Keyword {
 
   return {
     id: uid(),
-    keyword: String(item.keyword || ''),
-    translation: String(item.keywordCn || ''),
+    keyword: String(item.keyword || item.keywords || item.word || item.phrase || item.searchTerm || ''),
+    translation: String(item.keywordCn || item.translation || item.keywordZh || ''),
     wordTag: '',
     matchType: '',
     relevanceTier: '',
@@ -445,13 +522,16 @@ export async function fetchKeywordsFromMcp(opts: FetchKeywordsOptions): Promise<
     for (const it of items) {
       if (!it || typeof it !== 'object') continue;
       const row = it as Record<string, unknown>;
-      const kw = String(row.keyword || '').trim();
+      const kw = String(row.keyword || row.keywords || row.word || row.phrase || row.searchTerm || '').trim();
       if (!kw) continue;
       if (!map.has(kw.toLowerCase())) {
         map.set(kw.toLowerCase(), mapKeywordItem(row, map.size + 1));
       }
     }
-    if (items.length === 0) break;
+    if (items.length === 0) {
+      if (page === 1) throw emptyPayloadError(`${asin} 流量词`, payload);
+      break;
+    }
     const meta = pickMeta(payload);
     if (meta.total != null && map.size >= meta.total) break;
     if (meta.hasNext === false) break;
@@ -495,7 +575,7 @@ function mapMinerKeywordItem(item: Record<string, unknown>, rank: number): Keywo
 
   return {
     id: uid(),
-    keyword: String(item.keyword || item.keywords || '').trim(),
+    keyword: String(item.keyword || item.keywords || item.word || item.phrase || item.searchTerm || '').trim(),
     translation: String(item.keywordCn || item.translation || item.keywordZh || ''),
     wordTag: '',
     matchType: '',
@@ -562,13 +642,16 @@ export async function fetchKeywordsByKeywordFromMcp(
     for (const it of items) {
       if (!it || typeof it !== 'object') continue;
       const row = it as Record<string, unknown>;
-      const kw = String(row.keyword || row.keywords || '').trim();
+      const kw = String(row.keyword || row.keywords || row.word || row.phrase || row.searchTerm || '').trim();
       if (!kw) continue;
       if (!map.has(kw.toLowerCase())) {
         map.set(kw.toLowerCase(), mapMinerKeywordItem(row, map.size + 1));
       }
     }
-    if (items.length === 0) break;
+    if (items.length === 0) {
+      if (page === 1) throw emptyPayloadError(`「${seed}」ABA 关联词`, payload);
+      break;
+    }
     const meta = pickMeta(payload);
     if (meta.total != null && map.size >= meta.total) break;
     if (meta.hasNext === false) break;

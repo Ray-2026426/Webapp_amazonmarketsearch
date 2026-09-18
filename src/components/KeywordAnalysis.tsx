@@ -476,12 +476,19 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
     if (params.keywordSource === 'seed' && params.seedKeyword?.trim()) {
       const seed = params.seedKeyword.trim();
       params.onProgress(`抓取「${seed}」ABA 关联词…`);
-      const chunk = await fetchKeywordsByKeywordFromMcp({
-        keyword: seed,
-        marketplace: params.marketplace,
-        maxPages: params.maxPages,
-        onProgress: params.onProgress,
-      });
+      let chunk: Keyword[] = [];
+      try {
+        chunk = await fetchKeywordsByKeywordFromMcp({
+          keyword: seed,
+          marketplace: params.marketplace,
+          maxPages: params.maxPages,
+          onProgress: params.onProgress,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '抓取失败';
+        toast.error(msg);
+        throw e;
+      }
       for (const k of chunk) {
         const key = k.keyword.toLowerCase();
         if (seen.has(key)) continue;
@@ -508,12 +515,19 @@ export const KeywordAnalysis = React.memo(function KeywordAnalysis({
     for (let i = 0; i < params.asins.length; i++) {
       const asin = params.asins[i];
       params.onProgress(`(${i + 1}/${params.asins.length}) 抓取 ${asin} 流量词…`);
-      const chunk = await fetchKeywordsFromMcp({
-        asin,
-        marketplace: params.marketplace,
-        maxPages: params.maxPages,
-        onProgress: params.onProgress,
-      });
+      let chunk: Keyword[] = [];
+      try {
+        chunk = await fetchKeywordsFromMcp({
+          asin,
+          marketplace: params.marketplace,
+          maxPages: params.maxPages,
+          onProgress: params.onProgress,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '抓取失败';
+        toast.error(msg);
+        throw e;
+      }
       for (const k of chunk) {
         const key = k.keyword.toLowerCase();
         if (seen.has(key)) continue;
