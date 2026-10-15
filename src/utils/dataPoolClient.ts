@@ -17,6 +17,7 @@
 
 import { getAuthToken } from './auth';
 import { migrateLegacyLocalKeys, getUserKeyStatus, type McpProviderKind } from './mcpConfig';
+import { keySlotFor } from './mcpKeySlot';
 import type { PoolDataType } from './poolCache';
 import type { UsageTool } from './usageAccounting';
 
@@ -193,9 +194,11 @@ export async function verifyDataPoolProvider(input: {
   const token = getAuthToken();
   if (!token) return { ok: false, keySource: 'none', message: '未登录：数据池需要登录后使用' };
   await migrateLegacyLocalKeys();
-  const configured = getUserKeyStatus(input.provider).configured;
-  const fallbackSource: ProviderVerifyResult['keySource'] = configured ? 'user' : 'none';
   const endpoint = input.provider === 'custom' ? (input.endpoint ?? '').trim() : '';
+  // 密钥槽位：内置四家就是 kind；自定义 MCP 按**端点**各占一格（§15.32）
+  const slot = keySlotFor(input.provider, endpoint);
+  const configured = slot ? getUserKeyStatus(slot).configured : false;
+  const fallbackSource: ProviderVerifyResult['keySource'] = configured ? 'user' : 'none';
   if (input.provider === 'custom' && !endpoint) {
     return { ok: false, keySource: fallbackSource, message: '自定义 MCP 需要先填地址' };
   }

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Kairo 亚马逊市场机会洞察 App 开发交接说明与可点击 UI 原型">
+  <title>Kairo · 产品需求与 UI 交接站</title>
+  <link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="site-brand" href="#overview" aria-label="Kairo 产品交接站首页">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M5 6.5h14M5 12h9M5 17.5h6"></path><circle cx="18" cy="12" r="2.5"></circle><circle cx="15" cy="17.5" r="2.5"></circle></svg>
+      </span>
+      <span><strong>Kairo</strong><small>产品需求与 UI 交接站</small></span>
+    </a>
+    <nav class="site-nav" aria-label="需求文档导航">
+      <a class="active" href="#overview">核心定义</a>
+      <a href="#method">机会模型</a>
+      <a href="#flow">使用方法</a>
+      <a href="#prototype">交互原型</a>
+      <a href="#scope">开发范围</a>
+    </nav>
+    <a class="header-link" href="PRD.md" target="_blank" rel="noreferrer">打开完整 PRD</a>
+  </header>
+
+  <main>
+    <section id="overview" class="hero section-block">
+      <div class="hero-copy">
+        <span class="eyebrow">V3.0 开发交接版 · 2026-09-18</span>
+        <h1>不是再做一个数据看板，<br>而是把市场数据变成可复核的机会判断。</h1>
+        <p class="hero-lead">Kairo 面向亚马逊产品经理和 GM。它用卖家精灵 MCP 提供数据，用 AI 完成分类与总结，再用“五看”串起一条从用户需求到机会卡的证据链。</p>
+        <div class="hero-actions">
+          <a class="primary-action" href="#prototype">进入可点击原型</a>
+          <a class="secondary-action" href="PRD.md" target="_blank" rel="noreferrer">阅读完整需求文档</a>
+        </div>
+        <div class="audience-row" aria-label="主要用户">
+          <span>核心用户</span>
+          <strong>亚马逊产品经理</strong>
+          <strong>GM / 项目负责人</strong>
+          <small>运营、供应链和审核者作为协作角色</small>
+        </div>
+      </div>
+      <div class="hero-visual" aria-label="从数据到机会的证据线">
+        <div class="evidence-rail">
+          <div class="rail-node on"><span>01</span><div><strong>用户需求</strong><small>关键词 + 评论</small></div></div>
+          <div class="rail-node on"><span>02</span><div><strong>细分市场</strong><small>需求 + 标题 + 销量</small></div></div>
+          <div class="rail-node on"><span>03</span><div><strong>竞对缝隙</strong><small>2–6 个 ASIN 横向对比</small></div></div>
+          <div class="rail-node on"><span>04</span><div><strong>我方可行性</strong><small>背景 + 3–5 个动态问题</small></div></div>
+          <div class="rail-node result"><span>05</span><div><strong>机会卡</strong><small>0–N 张，有理由也有反证</small></div></div>
+        </div>
+        <div class="opportunity-mini">
+          <div class="mini-head"><span>机会 O-01</span><b>82</b></div>
+          <h3>侧睡人群的可调高凉感枕</h3>
+          <p>高度可调需求强，目标细分增长稳定，5 个样本中无一完整覆盖。</p>
+          <div class="mini-tags"><span>人无我有</span><span>值得验证</span><span>18 条证据</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-block value-strip" aria-label="产品原则">
+      <article><span>01</span><h2>先结论</h2><p>每一看先给人话结论，再展开证据和原始数据。</p></article>
+      <article><span>02</span><h2>人做确认</h2><p>AI 负责起草、聚类与解释，人负责修改、确认和否决。</p></article>
+      <article><span>03</span><h2>证据可追</h2><p>所有机会结论都能回到关键词、评论、ASIN 和市场数据。</p></article>
+      <article><span>04</span><h2>允许为零</h2><p>无机会是有价值的结论；证据不足时更不能编造机会。</p></article>
+    </section>
+
+    <section id="method" class="section-block method-section">
+      <div class="section-heading">
+        <span class="eyebrow">产品的机会定义</span>
+        <h2>所有机会只能来自两大类，不用模糊的“有潜力”。</h2>
+      </div>
+      <div class="method-grid">
+        <article class="method-card rising">
+          <div class="method-index">A</div>
+          <div>
+            <span class="method-kicker">供小于求</span>
+            <h3>水涨船高的市场</h3>
+            <p>市场需求增长快于供给，新进入者可以较轻松地分到增量。核心不是做一个孤立单品，而是判断如何用产品矩阵放大规模并分散衰落冲击。</p>
+            <ul><li>需求增长是否持续</li><li>新增供给是否仍然不足</li><li>我方是否适合做产品矩阵</li></ul>
+          </div>
+        </article>
+        <article class="method-card gap">
+          <div class="method-index">B</div>
+          <div>
+            <span class="method-kicker">需求已存在</span>
+            <h3>竞对没有满足的需求缝隙</h3>
+            <p>市场上的产品并没有完整满足用户，我方需要说清靠什么切入并抢夺份额。</p>
+            <div class="win-paths"><span><b>人无我有</b>我们有对手没有的方案</span><span><b>人有我优</b>产品、Listing 或运营更好</span><span><b>人优我廉</b>守住利润的更低总成本</span></div>
+          </div>
+        </article>
+      </div>
+      <p class="method-note">竞争实际比的是 <strong>产品方案 + Listing 打造 + 运营推广 + 总成本</strong>。四个方面没有一组能形成赢面时，系统应输出“暂无赢面”。</p>
+    </section>
+
+    <section id="flow" class="section-block flow-section">
+      <div class="section-heading compact">
+        <span class="eyebrow">用户如何使用</span>
+        <h2>五看不是五个孤立模块，而是一条逐步收敛的推理链。</h2>
+      </div>
+      <div class="flow-line" role="list">
+        <article role="listitem"><span>1</span><h3>输入起点</h3><p>1–N 个关键词、1–N 个 ASIN，或 1 个品类名称。</p></article>
+        <article role="listitem"><span>2</span><h3>看用户</h3><p>建立人群、场景、需求、痛点、偏好和决策路径。</p></article>
+        <article role="listitem"><span>3</span><h3>看市场</h3><p>用需求和标题词组建标签，给全量 ASIN 打标并选赛道。</p></article>
+        <article role="listitem"><span>4</span><h3>看竞对</h3><p>横向对比 2–6 个不同角色的 ASIN，确认缝隙和赢法。</p></article>
+        <article role="listitem"><span>5</span><h3>看自己</h3><p>结合背景信息，只问 3–5 个与该机会相关的问题。</p></article>
+        <article role="listitem"><span>6</span><h3>看机会</h3><p>输出 0–N 张机会卡，附分数、理由、反证和证据。</p></article>
+      </div>
+    </section>
+
+    <section id="prototype" class="prototype-section section-block">
+      <div class="section-heading prototype-heading">
+        <div><span class="eyebrow">可点击 UI 原型</span><h2>用同一个项目走完五看主流程。</h2></div>
+        <p>这不是真实数据，而是为了说清信息层级、页面结构和关键交互的业务示例。</p>
+      </div>
+
+      <div class="prototype-frame" data-screen-label="Kairo 交互原型">
+        <aside class="app-sidebar">
+          <div class="app-brand"><span class="brand-mark small" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 6.5h14M5 12h9M5 17.5h6"></path><circle cx="18" cy="12" r="2.5"></circle><circle cx="15" cy="17.5" r="2.5"></circle></svg></span><strong>Kairo</strong></div>
+          <nav aria-label="原型主导航">
+            <span class="side-nav-label">项目工作区</span>
+            <button type="button" class="side-link active" data-page="projects"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 9h16"></path></svg></span>项目中心</button>
+            <button type="button" class="side-link" data-page="market"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M5 18V9M12 18V5M19 18v-7"></path></svg></span>市场大盘</button>
+            <button type="button" class="side-link" data-page="self"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M6 20v-2a6 6 0 0112 0v2M12 11a4 4 0 100-8 4 4 0 000 8z"></path></svg></span>背景信息</button>
+            <span class="side-nav-label detail-label">明细工具</span>
+            <button type="button" class="side-link" data-detail-key="keywordWorkbench"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="5"></circle><path d="m14 14 5 5"></path></svg></span>关键词明细</button>
+            <button type="button" class="side-link" data-detail-key="vocWorkbench"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"></path><path d="M8 9h8M8 13h5"></path></svg></span>评论 VOC</button>
+            <button type="button" class="side-link" data-detail-key="competitorWorkspace"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 6h6v12H4zM14 3h6v15h-6zM3 21h18"></path></svg></span>竞品明细</button>
+          </nav>
+          <div class="sidebar-meta"><span class="status-light"></span><div><strong>MCP 已连接</strong><small>最后检查 10:24</small></div></div>
+        </aside>
+
+        <div class="app-main">
+          <header class="app-topbar">
+            <div><span class="crumb">项目中心 / 侧睡枕 US</span><strong id="app-page-title">项目中心</strong></div>
+            <div class="top-actions"><span class="save-state">已保存 10:24</span><button type="button" class="icon-action" data-action="quality">数据质量</button><button type="button" class="primary-small" data-page="report">预览报告</button></div>
+          </header>
+
+          <div class="project-stepper" aria-label="五看步骤">
+            <button type="button" data-page="user"><i class="done"></i><span>看用户<small>已确认</small></span></button>
+            <button type="button" data-page="market"><i class="done"></i><span>看市场<small>已确认</small></span></button>
+            <button type="button" data-page="competitor"><i class="current"></i><span>看竞对<small>待确认</small></span></button>
+            <button type="button" data-page="self"><i></i><span>看自己<small>未开始</small></span></button>
+            <button type="button" data-page="opportunity"><i></i><span>看机会<small>未开始</small></span></button>
+          </div>
+
+          <div class="prototype-coverage" aria-label="原型页面覆盖说明">
+            <div><span class="coverage-count">7</span><small>个主屏</small></div>
+            <div><span class="coverage-count">13</span><small>个二级证据页</small></div>
+            <div><span class="coverage-count">3</span><small>个明细工作台</small></div>
+            <p>参考旧版“主流程 + L3 明细”的完整结构，所有页面都可从对应入口打开。</p>
+            <button type="button" class="secondary-small" data-action="screen-map">查看完整页面目录</button>
+          </div>
+
+          <div class="app-content">
+            <section class="proto-page active" data-proto-page="projects" data-screen-label="项目中心">
+              <div class="page-intro"><div><span class="overline">少量深度项目</span><h3>项目中心</h3><p>每个项目只展示当前最强结论和下一步。</p></div><button type="button" class="primary-small" data-action="new-project">新建调研项目</button></div>
+              <div class="project-cards">
+                <article class="project-card featured"><div class="project-top"><div><span class="project-site">US · Pillow</span><h4>侧睡枕市场机会</h4></div><span class="state-pill review">看竞对待确认</span></div><p>当前结论：侧睡人群对“高度可调 + 凉感”的需求较强，目标细分市场月销售额约 $1.2M。</p><div class="project-progress"><span class="done"></span><span class="done"></span><span class="current"></span><span></span><span></span><small>2 / 5 已确认</small></div><button type="button" class="card-action" data-page="competitor">继续看竞对</button></article>
+                <article class="project-card"><div class="project-top"><div><span class="project-site">US · Pet</span><h4>宠物饮水机</h4></div><span class="state-pill stale">需复核</span></div><p>需求分类已修改，原有细分市场评分不再代表最新结果。</p><div class="project-progress"><span class="done"></span><span class="current"></span><span></span><span></span><span></span><small>1 步需复核</small></div><button type="button" class="card-action ghost" data-page="market">复核细分方案</button></article>
+              </div>
+            </section>
+
+            <section class="proto-page" data-proto-page="user" data-screen-label="看用户">
+              <div class="conclusion-banner"><span>看用户结论</span><h3>侧睡人群先按“睡姿”选品，再按“高度可调、颈部支撑、凉感”完成决策。</h3><p>其中“高度不合适”在评论中出现 42 次，且直接影响退货和星级。</p></div>
+              <div class="analysis-scope-bar">
+                <div><span>输入起点</span><b>side sleeper pillow / cooling pillow / B0A-91K</b></div>
+                <div><span>AI 识别品类</span><b>Bed Pillows · 置信度 92%</b></div>
+                <div><span>代表样本</span><b>头部 / 腰部 / 尾部 / 新品共 5 个 ASIN</b></div>
+              </div>
+              <div class="user-insight-grid">
+                <article class="content-card"><div class="card-heading"><span>01</span><h4>搜索路径</h4><button type="button" data-detail-key="searchPath">查看详情</button></div><ol class="decision-path"><li><b>认知：泛词进入</b><small>bed pillow · 12k</small></li><li><b>考虑：按睡姿缩小</b><small>side sleeper · 4.8k</small></li><li><b>决策：按功能比较</b><small>adjustable / neck support</small></li><li><b>场景：附加诉求</b><small>cooling / washable</small></li></ol></article>
+                <article class="content-card"><div class="card-heading"><span>02</span><h4>搜索偏好</h4><button type="button" data-detail-key="preference">证据与词表</button></div><div class="preference-list"><div><b>功能词</b><span>38%</span><small>adjustable、support、cooling</small></div><div><b>人群 / 场景词</b><span>29%</span><small>side sleeper、neck pain、hot sleeper</small></div><div><b>价格敏感词</b><span>14%</span><small>under 50、value、2 pack</small></div><div><b>对比焦点</b><span>高度、凉感、清洗、塌陷</span></div></div></article>
+                <article class="content-card"><div class="card-heading"><span>03</span><h4>人群、场景与痛点</h4><button type="button" data-action="evidence" data-evidence="persona">查看证据</button></div><div class="persona-list"><div><strong>侧睡者</strong><span>56%</span><small>关注高度、肩颈空隙和支撑稳定</small></div><div><strong>怕热人群</strong><span>28%</span><small>寻找后半夜仍有效的凉感</small></div><div><strong>颈部不适人群</strong><span>21%</span><small>对高度不合适和塌陷极其敏感</small></div></div></article>
+                <article class="content-card demand-card"><div class="card-heading"><span>04</span><h4>需求分类树</h4><button type="button" data-action="evidence" data-evidence="demand">编辑 / 证据</button></div><div class="demand-tree"><div class="tree-root"><b>支撑需求</b><span>U-01</span></div><div class="tree-child hot"><b>高度可调</b><small>部分满足 · 12 条证据</small></div><div class="tree-child"><b>颈部贴合</b><small>已满足 · 9 条证据</small></div><div class="tree-root"><b>体感需求</b><span>U-02</span></div><div class="tree-child warm"><b>凉感持久</b><small>部分满足 · 7 条证据</small></div><div class="tree-child"><b>透气不闷</b><small>部分满足 · 5 条证据</small></div></div></article>
+              </div>
+              <div class="segmentation-criteria-card"><div><span>05 · 为看市场准备细分标准</span><h4>优先按“睡姿 × 核心功能”切市场，价格带作为二级筛选。</h4><p>需求分类负责说明为什么这样切，标题 N-grams 负责识别商品属性，市场数据负责验证每一块是否有足够样本和规模。</p></div><div class="criteria-tags"><span>睡姿：侧睡 / 仰睡 / 俯睡</span><span>功能：可调高 / 颈部贴合 / 凉感</span><span>价格：$30–40 / $40–50 / $50+</span><button type="button" data-detail-key="segmentationCriteria">设置细分标准</button></div></div>
+              <div class="page-footer-action"><span><b>186</b> 个关键词 · <b>200</b> 条评论 · <b>5</b> 个代表 ASIN</span><button type="button" class="primary-small" data-action="confirm-user">确认需求地图</button></div>
+            </section>
+
+            <section class="proto-page" data-proto-page="market" data-screen-label="看市场">
+              <div class="page-intro"><div><span class="overline">看市场</span><h3>用用户需求重新切市场</h3><p>需求分类 + 标题 N-grams + 市场数据，共同决定细分标签。</p></div><button type="button" class="secondary-small" data-action="upload">上传产品表 / 历史表</button></div>
+              <div class="market-input-grid">
+                <article><span>数据方式 A · 当前使用</span><h4>卖家精灵 MCP 自动取数</h4><p>根据看用户识别的品类和代表 ASIN，抓取 68 个商品的当月销量、销售额、价格、评分和 24 个月历史销量。</p><button type="button" data-action="quality">查看字段与抓取状态</button></article>
+                <article><span>数据方式 B · 兜底</span><h4>手动上传两张表</h4><p>“导出”对应产品表；“导出明细”对应历史表。导入后必须先完成字段映射、异常检查和 ASIN 对齐。</p><button type="button" data-action="upload">查看上传说明</button></article>
+              </div>
+              <div class="data-quality"><div><span class="quality-dot good"></span><div><strong>数据可用</strong><small>68 个 ASIN · 历史覆盖 24 个月 · 3 个异常值已排除</small></div></div><button type="button" data-action="quality">查看质量说明</button></div>
+              <div class="label-pipeline"><div><span>需求地图</span><b>侧睡 / 高度可调 / 持久凉感</b></div><i></i><div><span>标题 N-grams</span><b>side sleeper / adjustable / cooling</b></div><i></i><div><span>候选标签</span><b>睡姿 × 功能 × 价格带</b></div><i></i><div class="pipeline-result"><span>全量打标</span><b>61 自动 · 7 待复核</b></div></div>
+              <div class="ngram-strip"><span>高频核心属性</span><button type="button">side sleeper <b>31</b></button><button type="button">adjustable <b>24</b></button><button type="button">cooling <b>21</b></button><button type="button">memory foam <b>19</b></button><button type="button">cervical <b>14</b></button><small>只保留能代表产品核心属性、且可用于消费者决策切分的词组。</small></div>
+              <div class="segment-strategy"><span>已选细分方案</span><strong>按睡姿为主标签，以高度调节和体感为次标签</strong><button type="button" data-action="strategy">对比其他方案</button></div>
+              <div class="segment-grid">
+                <article class="segment-card selected" data-segment="side"><div class="score-orbit"><strong>82</strong><small>机会分</small></div><span class="state-pill recommended">建议目标细分</span><h4>侧睡 · 高度可调</h4><p>23 ASIN · 月销额 $1.20M · 近 12 月 +18%</p><div class="metric-bars"><label>规模 <i><b style="width:88%"></b></i><span>88</span></label><label>趋势 <i><b style="width:78%"></b></i><span>78</span></label><label>供需 <i><b style="width:84%"></b></i><span>84</span></label><label>竞争 <i><b style="width:76%"></b></i><span>76</span></label></div><button type="button" data-action="segment-detail">查看细分市场大盘</button></article>
+                <article class="segment-card" data-segment="back"><div class="score-orbit mid"><strong>64</strong><small>机会分</small></div><span class="state-pill neutral">可观察</span><h4>仰睡 · 颈部贴合</h4><p>18 ASIN · 月销额 $0.61M · 近 12 月 +6%</p><div class="metric-bars"><label>规模 <i><b style="width:65%"></b></i><span>65</span></label><label>趋势 <i><b style="width:58%"></b></i><span>58</span></label><label>供需 <i><b style="width:60%"></b></i><span>60</span></label><label>竞争 <i><b style="width:71%"></b></i><span>71</span></label></div><button type="button" data-action="segment-detail">查看细分市场大盘</button></article>
+                <article class="segment-card" data-segment="stomach"><div class="score-orbit low"><strong>39</strong><small>机会分</small></div><span class="state-pill muted">不建议</span><h4>俯睡 · 低枕</h4><p>9 ASIN · 月销额 $0.19M · 近 12 月 -4%</p><div class="metric-bars"><label>规模 <i><b style="width:34%"></b></i><span>34</span></label><label>趋势 <i><b style="width:29%"></b></i><span>29</span></label><label>供需 <i><b style="width:41%"></b></i><span>41</span></label><label>竞争 <i><b style="width:53%"></b></i><span>53</span></label></div><button type="button" data-action="segment-detail">查看细分市场大盘</button></article>
+              </div>
+              <div class="page-footer-action"><span>已选：<b id="selected-segment-name">侧睡 · 高度可调</b></span><button type="button" class="primary-small" data-action="confirm-segment">确认目标细分市场</button></div>
+            </section>
+
+            <section class="proto-page" data-proto-page="competitor" data-screen-label="看竞对">
+              <div class="conclusion-banner competitor-conclusion"><span>待确认的竞对结论</span><h3>5 个样本都没有同时做好“高度可调 + 持久凉感”，该组合缝隙可能属于“人无我有”。</h3><p>但是头部产品的评论壁垒和广告强度较高，需要在看自己中确认材料、成本和流量能力。</p></div>
+              <div class="competitor-toolbar"><div><strong>对比样本</strong><small id="selected-count">5 / 6 已选，最少 2 个</small></div><div><button type="button" class="secondary-small" data-action="manage-asins">更换 / 添加 ASIN</button><button type="button" class="primary-small" data-action="confirm-gap">确认需求缝隙</button></div></div>
+              <div class="competitor-detail-dock" aria-label="竞品二级页入口"><span>继续看完整证据</span><button type="button" data-detail-key="listingDetail">单个竞品全字段</button><button type="button" data-detail-key="imageCompare">主附图逐张对比</button><button type="button" data-detail-key="trafficDetail">流量词与广告结构</button><button type="button" data-detail-key="reviewEvidence">评论与用户画像</button><button type="button" data-detail-key="competitorWorkspace">多 ASIN 明细工作台</button></div>
+              <div class="compare-wrap">
+                <table class="compare-table">
+                  <thead><tr><th>对比项</th><th><span>绝对头部</span><b>B0A-91K</b><small>8.2k / 月 · 老品标杆</small></th><th><span>紧密跟随者</span><b>B0B-34M</b><small>4.6k / 月 · 凉感强</small></th><th><span>腰部</span><b>B0C-77P</b><small>1.4k / 月 · 精准词稳</small></th><th><span>尾部</span><b>B0T-18R</b><small>320 / 月 · 低价样本</small></th><th><span>新进入者</span><b>B0N-26D</b><small>1.9k / 月 · 上架 7 月</small></th></tr></thead>
+                  <tbody>
+                    <tr><th>主图 / 附图</th><td><div class="pillow-thumb cool"><span>7 张</span></div></td><td><div class="pillow-thumb blue"><span>7 张</span></div></td><td><div class="pillow-thumb sand"><span>6 张</span></div></td><td><div class="pillow-thumb gray"><span>5 张</span></div></td><td><div class="pillow-thumb mint"><span>7 张</span></div></td></tr>
+                    <tr><th>标题定位</th><td><b>Premium adjustable</b><small>睡姿 + 支撑</small></td><td><b>Cooling pillow</b><small>材质 + 凉感</small></td><td><b>Cervical contour</b><small>颈部贴合</small></td><td><b>Memory foam</b><small>基础品类词</small></td><td><b>Modular cooling</b><small>结构 + 新品</small></td></tr>
+                    <tr><th>价格 / 评分</th><td><b>$45.90</b><small>4.5 · 12.4k 评</small></td><td><b>$39.90</b><small>4.3 · 6.1k 评</small></td><td><b>$36.90</b><small>4.4 · 2.3k 评</small></td><td><b>$29.90</b><small>4.0 · 418 评</small></td><td><b>$42.90</b><small>4.1 · 780 评</small></td></tr>
+                    <tr><th>变体 / A+ / 视频</th><td><b>4 变体</b><small>A+ 完整 · 2 视频</small></td><td><b>3 变体</b><small>A+ 完整 · 1 视频</small></td><td><b>2 变体</b><small>A+ 基础 · 无视频</small></td><td><b>1 变体</b><small>无 A+ · 无视频</small></td><td><b>3 变体</b><small>A+ 完整 · 1 视频</small></td></tr>
+                    <tr><th>高度可调 U-01</th><td><span class="need-state partial">部分</span><small>可拆填充，调整麻烦</small></td><td><span class="need-state no">未满足</span><small>固定高度</small></td><td><span class="need-state partial">部分</span><small>两层可拆</small></td><td><span class="need-state no">未满足</span><small>固定高度</small></td><td><span class="need-state partial">部分</span><small>附加垫层</small></td></tr>
+                    <tr><th>凉感持久 U-02</th><td><span class="need-state partial">部分</span><small>首触凉，后半夜变热</small></td><td><span class="need-state yes">已满足</span><small>凉感面料</small></td><td><span class="need-state no">未满足</span><small>无凉感卖点</small></td><td><span class="need-state no">未满足</span><small>聚酯套</small></td><td><span class="need-state partial">部分</span><small>打孔泡棉</small></td></tr>
+                    <tr><th>Listing 表达</th><td><b>信任强</b><small>视频 + A+ 完整</small></td><td><b>功能强</b><small>凉感对比明确</small></td><td><b>弱</b><small>图片信息重复</small></td><td><b>弱</b><small>缺少结构说明</small></td><td><b>较强</b><small>结构图清晰</small></td></tr>
+                    <tr><th>流量结构</th><td><b>广告 60%</b><small>大词强占位</small></td><td><b>广告 42%</b><small>功能词表现好</small></td><td><b>广告 33%</b><small>精准词稳定</small></td><td><b>未知</b><small>数据不足</small></td><td><b>广告 25%</b><small>长尾自然起量</small></td></tr>
+                    <tr><th>主要用户</th><td>肩宽较大的侧睡者</td><td>怕热、在意首触凉感</td><td>颈部不适、偏好轮廓枕</td><td>价格敏感的首次购买者</td><td>愿意尝试模块结构的人群</td></tr>
+                    <tr><th>共性痛点</th><td colspan="5"><button type="button" class="evidence-row" data-action="evidence" data-evidence="reviews"><b>高度不合适 42 次</b><span>熟睡后塌陷 27 次</span><span>凉感不持久 19 次</span><small>打开评论原文</small></button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="win-path-select"><span>候选赢法</span><label class="selected"><input type="radio" name="win-path" value="人无我有" checked><b>人无我有</b><small>可调高 + 持久凉感的组合缝隙</small></label><label><input type="radio" name="win-path" value="人有我优"><b>人有我优</b><small>用更好的调节体验和 Listing 表达取胜</small></label><label><input type="radio" name="win-path" value="人优我廉"><b>人优我廉</b><small>需要看自己确认利润底线</small></label><label><input type="radio" name="win-path" value="暂无赢面"><b>暂无赢面</b><small>当前无法建立总差异化</small></label></div>
+            </section>
+
+            <section class="proto-page" data-proto-page="self" data-screen-label="看自己">
+              <div class="page-intro"><div><span class="overline">看自己</span><h3>这不是能力大问卷，只检查这个机会我们是否抓得住。</h3><p>系统已从账号背景中自动读取 12 项信息，还需要你回答 4 个品类问题。</p></div><span class="profile-readiness">12 / 16 项已知</span></div>
+              <div class="profile-dimensions"><button type="button" data-action="profile"><span>品牌与店铺</span><b>已完成</b></button><button type="button" data-action="profile"><span>资金与财务</span><b>3 / 4</b></button><button type="button" data-action="profile"><span>供应链</span><b>3 / 3</b></button><button type="button" data-action="profile"><span>类目与团队</span><b>2 / 3</b></button><button type="button" data-action="profile"><span>运营能力</span><b>2 / 2</b></button><button type="button" data-action="profile"><span>合规与风险</span><b>1 / 2</b></button></div>
+              <div class="self-layout">
+                <aside class="profile-summary"><h4>背景摘要</h4><div><span>供应链</span><b>有枕芯和面料供应商</b></div><div><span>类目经验</span><b>家居纺织 3 年</b></div><div><span>目标净利率</span><b>不低于 13%</b></div><div><span>首批预算</span><b>$20k–$50k</b></div><div><span>运营能力</span><b>具备精细化广告团队</b></div><button type="button" class="text-action" data-action="profile">查看完整背景信息</button></aside>
+                <form id="self-form" class="question-form">
+                  <fieldset><legend><span>01</span>供应链能否在 60 天内打样并证明“可调高 + 凉感”的组合效果？</legend><p>为什么问：这是“人无我有”路径的核心产品假设。<button type="button" data-detail-key="questionRationale">查看本题依据</button></p><div class="option-grid"><label><input type="radio" name="q1" value="3" required><span>能，已有方案</span></label><label><input type="radio" name="q1" value="2"><span>能，但需找新材料</span></label><label><input type="radio" name="q1" value="1"><span>暂不确定</span></label><label><input type="radio" name="q1" value="0"><span>不能</span></label></div></fieldset>
+                  <fieldset><legend><span>02</span>如果目标售价是 $45–$50，单件到岸成本能否控制在 $13 以内？</legend><p>为什么问：超过该成本后，当前广告假设下难以达到 13% 净利率。<button type="button" data-detail-key="questionRationale">查看本题依据</button></p><div class="option-grid"><label><input type="radio" name="q2" value="3" required><span>能，且有报价</span></label><label><input type="radio" name="q2" value="2"><span>可能，需优化包装</span></label><label><input type="radio" name="q2" value="1"><span>暂不确定</span></label><label><input type="radio" name="q2" value="0"><span>不能</span></label></div></fieldset>
+                  <fieldset><legend><span>03</span>是否能承受首批 500 件、并预留 90 天补货资金？</legend><p>为什么问：头部评论壁垒高，断货会使验证结果失真。<button type="button" data-detail-key="questionRationale">查看本题依据</button></p><div class="option-grid"><label><input type="radio" name="q3" value="3" required><span>能</span></label><label><input type="radio" name="q3" value="2"><span>只能 300 件</span></label><label><input type="radio" name="q3" value="1"><span>需要与财务确认</span></label><label><input type="radio" name="q3" value="0"><span>不能</span></label></div></fieldset>
+                  <fieldset><legend><span>04</span>还有什么可能帮助或阻碍我们抓住这个机会？</legend><p>自由回答：请补充现有字段没有覆盖的关键信息。</p><textarea name="q4" rows="3" placeholder="例如：我们已与某凉感面料供应商合作，但目前没有可拆填充结构的专利检索结果。"></textarea></fieldset>
+                  <div class="form-footer"><span id="self-score-preview">完成必答题后生成适配判断</span><button type="submit" class="primary-small">生成我方适配判断</button></div>
+                </form>
+              </div>
+            </section>
+
+            <section class="proto-page" data-proto-page="opportunity" data-screen-label="看机会">
+              <div class="opportunity-header"><div><span class="overline">看机会</span><h3>当前发现 1 个值得验证的机会，1 个继续观察的方向。</h3><p>这里只回答“机会是什么、为什么是、我们能不能抓”。目标、策略和控制点属于后续三定。</p></div><div class="view-switch"><button type="button" class="active" data-op-view="cards">机会卡</button><button type="button" data-op-view="zero">0 机会状态</button></div></div>
+              <div class="op-view active" data-op-panel="cards">
+                <article class="opportunity-card primary-op"><div class="op-score"><strong>82</strong><span>/ 100</span><small>证据覆盖 86%</small></div><div class="op-main"><div class="op-tags"><span>竞对需求缝隙</span><span>人无我有</span><span class="positive">值得验证</span><span>O-01</span></div><h4>侧睡人群的可调高持久凉感枕</h4><div class="op-definition-grid"><div><span>目标细分</span><b>侧睡 · 高度可调</b></div><div><span>目标用户</span><b>肩宽较大、怕热的侧睡者</b></div><div><span>核心需求</span><b>U-01 高度可调 + U-02 凉感持久</b></div><div><span>关联竞品</span><b>5 个角色样本 · 23 ASIN 池</b></div></div><p class="op-reason">用户对高度不合适和后半夜变热的抱怨强；目标细分月销额 $1.2M 且近 12 月增长 18%；5 个不同角色竞品均未完整覆盖该组合。</p><div class="score-breakdown"><label>需求强度 <b>23/25</b><i><span style="width:92%"></span></i></label><label>市场吸引力 <b>21/25</b><i><span style="width:84%"></span></i></label><label>竞品缝隙 <b>18/20</b><i><span style="width:90%"></span></i></label><label>我方可行性 <b>13/20</b><i><span style="width:65%"></span></i></label><label>证据可信度 <b>7/10</b><i><span style="width:70%"></span></i></label></div></div><aside class="op-side"><div><span>我们怎么赢</span><p><b>产品：</b>可拆填充结构 + 持久凉感接触面。</p><p><b>Listing：</b>用结构图说清不同肩宽如何调高。</p><p><b>运营：</b>从 adjustable side sleeper 精准词簇进入。</p></div><div class="risk-box"><span>可能推翻结论的事</span><p>目标成本 $13 仍未拿到有效报价；凉感持久性只来自评论推测，缺少实物对比。</p></div><button type="button" class="secondary-small full" data-action="evidence" data-evidence="opportunity">18 条支持证据 · 4 条反证</button><button type="button" class="text-action full" data-detail-key="opportunityDetail">打开机会证据全页</button></aside></article>
+                <article class="opportunity-card secondary-op"><div class="op-score"><strong>61</strong><span>/ 100</span><small>证据覆盖 68%</small></div><div class="op-main"><div class="op-tags"><span>人有我优</span><span class="watch">继续观察</span><span>O-02</span></div><h4>更易清洗且不变形的可调高枕</h4><p class="op-reason">洗后变形是稳定痛点，但搜索需求较小，且供应链对整枕可机洗的成本影响仍未确认。</p></div><aside class="op-side"><div class="risk-box neutral-risk"><span>为什么不是当前首选</span><p>需求强度和市场覆盖都低于 O-01，同时存在成本与耐久性的双重不确定。</p></div></aside></article>
+                <div class="op-actions"><button type="button" class="secondary-small" data-action="edit-op">修改机会判断</button><button type="button" class="primary-small" data-page="report">确认并预览报告</button></div>
+              </div>
+              <div class="op-view" data-op-panel="zero"><div class="zero-state"><div class="zero-symbol"><span>0</span></div><h4>本项目可以有两种“没有机会”</h4><div class="zero-options"><article><span>已判断</span><h5>当前无可进入机会</h5><p>数据足够，但需求不强、竞对已满足、市场不吸引或我方无法承接。页面应展示被排除的候选和原因。</p></article><article><span>暂时无法判断</span><h5>关键证据不足</h5><p>缺少评论、历史销量、竞品字段或我方回答。页面只列出需要补的证据，不得生成假机会。</p></article></div><button type="button" class="secondary-small" data-op-view="cards">返回机会卡示例</button></div></div>
+            </section>
+
+            <section class="proto-page" data-proto-page="report" data-screen-label="报告预览">
+              <div class="report-toolbar"><div><span class="overline">可独立阅读的 HTML</span><h3>侧睡枕市场机会调研报告</h3><p>US 站 · 数据快照 2026-09-18 · 186 个关键词 / 200 条评论 / 68 个 ASIN</p></div><div><button type="button" class="secondary-small" data-page="opportunity">返回机会卡</button><button type="button" class="primary-small" data-action="export">导出 / 打印</button></div></div>
+              <div class="report-cover"><span>最终结论</span><h4>值得验证“侧睡人群的可调高持久凉感枕”。</h4><p>该机会属于“人无我有”，机会分 82；但目标成本和凉感持久性仍是必须先补的证据。</p><div><b>1</b><span>值得验证</span><b>1</b><span>继续观察</span><b>22</b><span>支持 / 反证</span></div></div>
+              <div class="report-outline"><article><span>01</span><h5>调研口径</h5><p>输入、站点、数据时间、样本和缺失项。</p></article><article><span>02</span><h5>用户与需求</h5><p>人群、场景、需求树、痛点和决策路径。</p></article><article><span>03</span><h5>市场细分</h5><p>标签逻辑、全量打标、市场得分和目标赛道。</p></article><article><span>04</span><h5>竞对缝隙</h5><p>2–6 个 ASIN 横向对比、需求满足矩阵和赢法。</p></article><article><span>05</span><h5>我方可行性</h5><p>背景摘要、动态问题、硬约束和未知项。</p></article><article><span>06</span><h5>机会卡</h5><p>总分、理由、赢法、风险、反证和证据缺口。</p></article><article><span>07</span><h5>证据索引</h5><p>所有结论回溯到关键词、评论、数据行和 ASIN。</p></article></div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="scope" class="section-block scope-section">
+      <div class="section-heading compact"><span class="eyebrow">开发范围</span><h2>本期把五看闭环做好，不把三定和项目管理提前塞进来。</h2></div>
+      <div class="scope-grid"><article class="in-scope"><span>本期 P0</span><h3>必须交付</h3><ul><li>关键词 / ASIN / 品类三种项目输入</li><li>MCP 取数与产品表 / 历史表上传</li><li>需求分类、细分打标、竞品对比、我方问题</li><li>0–N 机会卡、反证、证据链和 HTML 导出</li></ul></article><article class="out-scope"><span>本期不做</span><h3>留给后续迭代</h3><ul><li>定目标、定策略、定控制点</li><li>0–30 / 30–90 天路线图与执行排期</li><li>任务、截止时间、提醒、审批和组合管理</li><li>AI 代替人做最终立项或投资决策</li></ul></article></div>
+      <div class="handoff-callout"><div><span class="eyebrow">交接建议</span><h3>开发可先做主流程和数据合同，MCP 具体工具名与评分极值在技术设计时再核实。</h3></div><a href="PRD.md" target="_blank" rel="noreferrer">查看完整功能、数据对象、异常状态和验收标准</a></div>
+    </section>
+  </main>
+
+  <div class="drawer" id="detail-drawer" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <button type="button" class="drawer-backdrop" data-action="close-drawer" aria-label="关闭详情"></button>
+    <div class="drawer-panel"><div class="drawer-head"><div><span class="overline" id="drawer-kicker">证据详情</span><h3 id="drawer-title">证据</h3></div><button type="button" class="close-button" data-action="close-drawer" aria-label="关闭">&times;</button></div><div id="drawer-content" class="drawer-content"></div></div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

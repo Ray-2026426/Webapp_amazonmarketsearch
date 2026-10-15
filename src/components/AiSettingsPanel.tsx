@@ -50,6 +50,7 @@ import {
   type UserBackgroundProfile,
 } from '../utils/userBackground';
 import { verifyDataPoolProvider } from '../utils/dataPoolClient';
+import { keySlotFor } from '../utils/mcpKeySlot';
 import { toast } from 'sonner';
 import { AiPromptManager } from './AiPromptManager';
 import { SystemDiagnosticsPanel } from './SystemDiagnosticsPanel';
@@ -289,10 +290,16 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
       toast.error('请先填写 Key');
       return;
     }
+    // 自定义 MCP 的 Key 按**端点**分开存：还没填地址就不知道存哪一格（§15.32）
+    const slot = keySlotFor(provider.kind, provider.mcpUrl);
+    if (!slot) {
+      toast.error('自定义 MCP 需要先填地址：每个端点的 Key 分开存');
+      return;
+    }
     setKeySavingId(provider.id);
     setKeyError('');
     try {
-      const res = await saveUserKey(provider.kind, value);
+      const res = await saveUserKey(slot, value);
       if (!res.ok) {
         const note = res.error || '保存失败';
         setKeyNeedsMigration(Boolean(res.needsMigration));
@@ -301,7 +308,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
         return;
       }
       setKeyNeedsMigration(false);
-      setKeyStatuses((prev) => ({ ...prev, [provider.kind]: { configured: true, fingerprint: res.fingerprint ?? '' } }));
+      setKeyStatuses((prev) => ({ ...prev, [slot]: { configured: true, fingerprint: res.fingerprint ?? '' } }));
       setKeyDrafts((prev) => {
         const next = { ...prev };
         delete next[provider.id];
@@ -322,7 +329,12 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
   /** 「清除」：删掉自己在服务端这一格 Key（只删自己那一行；本地只把状态改成未配置） */
   const handleClearUserKey = async (provider: McpProviderEntry) => {
     setKeyError('');
-    const res = await clearUserKey(provider.kind);
+    const slot = keySlotFor(provider.kind, provider.mcpUrl);
+    if (!slot) {
+      setKeyError('自定义 MCP 需要先填地址');
+      return;
+    }
+    const res = await clearUserKey(slot);
     if (!res.ok) {
       const note = res.error || '清除失败';
       setKeyNeedsMigration(Boolean(res.needsMigration));
@@ -331,7 +343,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
       return;
     }
     setKeyNeedsMigration(false);
-    setKeyStatuses((prev) => ({ ...prev, [provider.kind]: { configured: false, fingerprint: '' } }));
+    setKeyStatuses((prev) => ({ ...prev, [slot]: { configured: false, fingerprint: '' } }));
     setKeyDrafts((prev) => {
       const next = { ...prev };
       delete next[provider.id];
@@ -353,7 +365,8 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
       toast.error('自定义 MCP 需要填写地址');
       return;
     }
-    const status = keyStatuses[provider.kind] ?? getUserKeyStatus(provider.kind);
+    const slot = keySlotFor(provider.kind, provider.mcpUrl);
+    const status = slot ? (keyStatuses[slot] ?? getUserKeyStatus(slot)) : { configured: false, fingerprint: '' };
     if (!status.configured && provider.kind !== 'custom') {
       const note = '请先填写你自己的 Key（存在你的账号里）';
       setMcpTestResults((prev) => ({ ...prev, [provider.id]: { state: 'fail', note } }));
@@ -936,13 +949,18 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                   const testState = mcpTestResults[p.id];
                   const isTesting = testingProviderId === p.id;
                   const kindLabel = mcpKindLabel(p.kind);
-                  const keyStatus = keyStatuses[p.kind] ?? getUserKeyStatus(p.kind);
+                  // 密钥槽位：内置四家就是 kind；自定义 MCP 按端点各占一格（§15.32）
+                  const keySlot = keySlotFor(p.kind, p.mcpUrl);
+                  const keyStatus = keySlot
+                    ? (keyStatuses[keySlot] ?? getUserKeyStatus(keySlot))
+                    : { configured: false, fingerprint: '' };
                   const keyFingerprint = keyStatus.fingerprint;
                   const keyDraft = keyDrafts[p.id] ?? '';
                   const isReplacing = replacingKeyId === p.id;
                   const isKeySaving = keySavingId === p.id;
                   // 未配置 → 直接给输入框；已配置 → 只有点「替换」才出现输入框
-                  const showKeyInput = !keyStatus.configured || isReplacing;
+                  // 还没填地址的自定义 MCP：先要地址，再谈 Key（否则不知道存哪一格）
+                  const showKeyInput = Boolean(keySlot) && (!keyStatus.configured || isReplacing);
                   return (
                     <div key={p.id} className="rounded-2xl border border-black/10 bg-white px-4 py-3 space-y-2">
                       <div className="flex items-center gap-2.5 flex-wrap">
@@ -1020,7 +1038,11 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                           <label className="text-[11px] text-[#86868b]">Key</label>
                           {/* 已配置 → 只显示服务端给的指纹 + 替换/清除；没配置 / 点替换 → 才出现输入框。
                               输入框保存成功即清空：页面上永远不出现明文。 */}
-                          {showKeyInput ? (
+                          {!keySlot ? (
+                            <p className="text-[11px] text-[#86868b] leading-relaxed">
+                              先填上面的地址，再填 Key —— 每个自定义端点的 Key 分开存。
+                            </p>
+                          ) : showKeyInput ? (
                             <div className="flex items-center gap-1.5">
                               <input
                                 type="password"

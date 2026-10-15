@@ -11,6 +11,7 @@
 import { getAuthToken, getCurrentUser, isAdminSession } from './auth';
 import { maskKey } from './keyMasking';
 import { sanitizeUserKey } from './mcpRequestKey';
+import { BUILTIN_KEY_SLOTS, customKeySlot, isKeySlot, normalizeMcpEndpoint } from './mcpKeySlot';
 
 const MCP_KEY = 'amzdev_mcp_settings';
 const FEATURES_KEY = 'amzdev_feature_flags';
@@ -30,8 +31,12 @@ export const SORFTIME_MCP_PROXY_PATH = '/api-proxy/sorftime-mcp';
 
 export type McpProviderKind = 'sellersprite' | 'lingxing' | 'xydc' | 'sorftime' | 'custom';
 
-/** 服务端密钥表里的 provider 取值：与本文件的 kind 一一对应（custom = 自定义 MCP 的那一格） */
-export const MCP_KEY_PROVIDERS: McpProviderKind[] = ['sellersprite', 'xydc', 'lingxing', 'sorftime', 'custom'];
+/**
+ * 五种数据源**类型**（界面上的「四家内置 + 自定义」）。
+ * 注意它**不再是**密钥槽位清单 —— 槽位口径由 `src/utils/mcpKeySlot.ts` 说了算：
+ * 内置四家 = kind；自定义 MCP = `custom:<端点地址>`，**每个端点各一格**（§15.32）。
+ */
+export const MCP_KEY_PROVIDERS: McpProviderKind[] = [...BUILTIN_KEY_SLOTS, 'custom'];
 
 function getMcpSettingsKey(): string {
   const user = getCurrentUser();
@@ -337,7 +342,8 @@ export interface UserKeyStatus {
   fingerprint: string;
 }
 
-export type UserKeyStatuses = Partial<Record<McpProviderKind, UserKeyStatus>>;
+/** 以**槽位**为键（内置四家是 kind；自定义 MCP 是 `custom:<地址>`，每个端点一条） */
+export type UserKeyStatuses = Record<string, UserKeyStatus>;
 
 /** 进程内状态缓存（**不是密钥**：只有 configured + 指纹，刷新页面重新拉） */
 let keyStatusCache: UserKeyStatuses = {};
@@ -355,9 +361,12 @@ function safeStatus(raw: unknown): UserKeyStatus {
   return { configured, fingerprint: configured && fingerprint.includes('…') ? fingerprint : '' };
 }
 
-/** 同步读缓存（给首屏渲染用；真状态要等 loadUserKeyStatuses 拉回来） */
-export function getUserKeyStatus(kind: McpProviderKind): UserKeyStatus {
-  return keyStatusCache[kind] ?? UNKNOWN_STATUS;
+/**
+ * 同步读缓存（给首屏渲染用；真状态要等 loadUserKeyStatuses 拉回来）。
+ * @param slot 密钥槽位：内置四家是 kind；自定义 MCP 用 `keySlotFor('custom', 地址)`
+ */
+export function getUserKeyStatus(slot: string): UserKeyStatus {
+  return keyStatusCache[slot] ?? UNKNOWN_STATUS;
 }
 
 export function cachedUserKeyStatuses(): UserKeyStatuses {
@@ -413,7 +422,12 @@ export async function loadUserKeyStatuses(): Promise<{ ok: boolean; keys: UserKe
   }
   const raw = (res.body.keys ?? {}) as Record<string, unknown>;
   const keys: UserKeyStatuses = {};
-  for (const kind of MCP_KEY_PROVIDERS) keys[kind] = safeStatus(raw[kind]);
+  // 内置四家固定出现（未配置也回 false，界面才知道该显示空输入框）
+  for (const kind of BUILTIN_KEY_SLOTS) keys[kind] = safeStatus(raw[kind]);
+  // 自定义 MCP：服务端按槽位返回，客户端按自己那份端点清单去查（每个端点各一格，§15.32）
+  for (const [slot, status] of Object.entries(raw)) {
+    if (isKeySlot(slot)) keys[slot] = safeStatus(status);
+  }
   keyStatusCache = keys;
   return { ok: res.ok, keys, error: res.error, needsMigration: res.needsMigration };
 }
@@ -423,33 +437,38 @@ export async function loadUserKeyStatuses(): Promise<{ ok: boolean; keys: UserKe
  * 校验用**与服务端同一份** `sanitizeUserKey`：空 / 超长（>512）/ 含控制字符一律不合法。
  */
 export async function saveUserKey(
-  kind: McpProviderKind,
+  slot: string,
   value: string
 ): Promise<{ ok: boolean; error?: string; needsMigration?: boolean; fingerprint?: string }> {
+  if (!isKeySlot(slot)) {
+    return { ok: false, error: '未知数据源：密钥要按数据源分开存（自定义 MCP 需要先填地址）' };
+  }
   const plain = sanitizeUserKey(value);
   if (!plain) {
     return { ok: false, error: '密钥不合法：不能为空、长度不超过 512、且不能包含控制字符' };
   }
-  const res = await postKeyAction('keySet', { provider: kind, value: plain });
+  const res = await postKeyAction('keySet', { provider: slot, value: plain });
   if (!res.ok) return { ok: false, error: res.error, needsMigration: res.needsMigration };
   const fingerprint = safeStatus({ configured: true, fingerprint: res.body.fingerprint }).fingerprint || maskKey(plain);
-  keyStatusCache = { ...keyStatusCache, [kind]: { configured: true, fingerprint } };
+  keyStatusCache = { ...keyStatusCache, [slot]: { configured: true, fingerprint } };
   return { ok: true, fingerprint };
 }
 
-/** 清除某个数据源的 Key（只删自己那一行） */
-export async function clearUserKey(kind: McpProviderKind): Promise<{ ok: boolean; error?: string; needsMigration?: boolean }> {
-  const res = await postKeyAction('keyClear', { provider: kind });
+/** 清除某个数据源的 Key（只删自己那一行；自定义 MCP 只删它自己端点那一格） */
+export async function clearUserKey(slot: string): Promise<{ ok: boolean; error?: string; needsMigration?: boolean }> {
+  if (!isKeySlot(slot)) return { ok: false, error: '未知数据源：密钥要按数据源分开存' };
+  const res = await postKeyAction('keyClear', { provider: slot });
   if (!res.ok) return { ok: false, error: res.error, needsMigration: res.needsMigration };
-  keyStatusCache = { ...keyStatusCache, [kind]: { configured: false, fingerprint: '' } };
+  keyStatusCache = { ...keyStatusCache, [slot]: { configured: false, fingerprint: '' } };
   return { ok: true };
 }
 
 /* ───────────── 旧本机密钥：一次性迁移到账号里（写完即删） ───────────── */
 
 export interface McpKeyMigrationResult {
-  migrated: McpProviderKind[];
-  failed: McpProviderKind[];
+  /** 已迁走的槽位（内置四家是 kind；自定义 MCP 是 `custom:<地址>`） */
+  migrated: string[];
+  failed: string[];
   message: string;
 }
 
@@ -484,8 +503,32 @@ export function readLegacyLocalKeys(): Partial<Record<McpProviderKind, string>> 
   return out;
 }
 
+/**
+ * 本机残留的自定义 MCP 明文密钥 —— **必须连端点一起读**：
+ * 自定义 MCP 的密钥槽位是按端点派生的，只知道 kind='custom' 根本不知道它该进哪一格（§15.32）。
+ */
+export function readLegacyCustomKeysByEndpoint(): { id: string; endpoint: string; value: string }[] {
+  const out: { id: string; endpoint: string; value: string }[] = [];
+  for (const storageKey of legacyStorageKeys()) {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as { providers?: { id?: unknown; kind?: unknown; secretKey?: unknown; mcpUrl?: unknown }[] };
+      for (const p of Array.isArray(parsed.providers) ? parsed.providers : []) {
+        if (parseProviderKind(p.kind) !== 'custom') continue;
+        const value = String(p.secretKey ?? '').trim();
+        const endpoint = String(p.mcpUrl ?? '').trim();
+        if (value && endpoint) out.push({ id: String(p.id ?? ''), endpoint, value });
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return out;
+}
+
 /** 迁移成功后，从本机配置里**删掉**这些明文（不保留两处真相） */
-function dropLegacyLocalKeys(kinds: McpProviderKind[]): void {
+function dropLegacyLocalKeys(kinds: McpProviderKind[], ids: string[] = [], endpoints: string[] = []): void {
   for (const storageKey of legacyStorageKeys()) {
     try {
       const raw = localStorage.getItem(storageKey);
@@ -495,7 +538,14 @@ function dropLegacyLocalKeys(kinds: McpProviderKind[]): void {
       let changed = false;
       const next = providers.map((p) => {
         const kind = parseProviderKind(p.kind);
-        if (!kinds.includes(kind) || !String(p.secretKey ?? '').trim()) return p;
+        const id = String(p.id ?? '');
+        // 内置四家按 kind 匹配；自定义 MCP 按条目 id / 归一化端点匹配（同一个端点 = 同一格 §15.32）
+        const endpoint = normalizeMcpEndpoint(String(p.mcpUrl ?? ''));
+        const matched =
+          kinds.includes(kind) ||
+          (id !== '' && ids.includes(id)) ||
+          (endpoint !== '' && endpoints.includes(endpoint));
+        if (!matched || !String(p.secretKey ?? '').trim()) return p;
         changed = true;
         const { secretKey: _dropped, ...rest } = p;
         return rest;
@@ -528,23 +578,46 @@ export async function migrateLegacyLocalKeys(): Promise<McpKeyMigrationResult> {
   if (migrationInFlight) return migrationInFlight;
   migrationInFlight = (async (): Promise<McpKeyMigrationResult> => {
     const legacy = readLegacyLocalKeys();
-    const kinds = Object.keys(legacy) as McpProviderKind[];
-    if (kinds.length === 0) {
+    // 内置四家按键迁移；自定义 MCP **必须带着端点**迁，否则不知道进哪一格（§15.32）
+    const builtinKinds = (Object.keys(legacy) as McpProviderKind[]).filter((k) => k !== 'custom');
+    const legacyCustoms = readLegacyCustomKeysByEndpoint();
+    const total = builtinKinds.length + legacyCustoms.length;
+    if (total === 0) {
       migrationSettled = true;
       return { migrated: [], failed: [], message: '本机没有待迁移的旧密钥' };
     }
     if (!getAuthToken()) {
-      return { migrated: [], failed: kinds, message: `本机还有 ${kinds.length} 个旧密钥，登录后会自动迁到你的账号` };
+      const pending = [...builtinKinds, ...legacyCustoms.map((c) => customKeySlot(c.endpoint))];
+      return { migrated: [], failed: pending, message: `本机还有 ${total} 个旧密钥，登录后会自动迁到你的账号` };
     }
-    const migrated: McpProviderKind[] = [];
-    const failed: McpProviderKind[] = [];
-    for (const kind of kinds) {
+    const migrated: string[] = [];
+    const failed: string[] = [];
+    for (const kind of builtinKinds) {
       const res = await postKeyAction('keySet', { provider: kind, value: legacy[kind] });
       if (res.ok) migrated.push(kind);
       else failed.push(kind);
     }
+    const migratedCustomIds: string[] = [];
+    for (const c of legacyCustoms) {
+      const slot = customKeySlot(c.endpoint);
+      const res = await postKeyAction('keySet', { provider: slot, value: c.value });
+      if (res.ok) {
+        migrated.push(slot);
+        if (c.id) migratedCustomIds.push(c.id);
+      } else {
+        failed.push(slot);
+      }
+    }
     // 写完即删：本机不再保留明文副本（否则又是两处真相）
-    if (migrated.length > 0) dropLegacyLocalKeys(migrated);
+    if (migrated.length > 0) {
+      dropLegacyLocalKeys(
+        builtinKinds.filter((k) => migrated.includes(k)),
+        migratedCustomIds,
+        legacyCustoms
+          .filter((c) => migrated.includes(customKeySlot(c.endpoint)))
+          .map((c) => normalizeMcpEndpoint(c.endpoint)),
+      );
+    }
     if (failed.length > 0) {
       return {
         migrated,

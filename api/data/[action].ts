@@ -45,6 +45,7 @@ import {
   type UsageTool,
 } from '../../src/utils/usageAccounting.js';
 import { decideProviderKeySource, resolveProviderKey, sanitizeUserKey, type ProviderKeySource } from '../../src/utils/mcpRequestKey.js';
+import { BUILTIN_KEY_SLOTS, CUSTOM_SLOT_PREFIX, customKeySlot, customSlotEndpoint, isKeySlot } from '../../src/utils/mcpKeySlot.js';
 import { redactText, maskKey, type KeyStatus } from '../../src/utils/keyMasking.js';
 import { classifyDbError, missingTableName, SOURCE_MIGRATION_FILE } from '../../src/utils/migrationSql.js';
 import { validateRelayTarget } from '../../src/utils/aiEndpoints.js';
@@ -52,15 +53,24 @@ import { validateRelayTarget } from '../../src/utils/aiEndpoints.js';
 /* ───────────── 密钥（只在服务端） ───────────── */
 
 type ProviderName = 'sellersprite' | 'xydc' | 'lingxing' | 'sorftime';
-/** 密钥表里允许的 provider：四家内置 + 自定义 MCP（custom 只在「验证自定义端点」时用到） */
-type KeyProvider = ProviderName | 'custom';
 
 const PROVIDERS: ProviderName[] = ['sellersprite', 'xydc', 'lingxing', 'sorftime'];
-const KEY_PROVIDERS: KeyProvider[] = [...PROVIDERS, 'custom'];
 
-function keyProviderFor(raw: unknown): KeyProvider | null {
-  const v = String(raw ?? '').trim() as KeyProvider;
-  return KEY_PROVIDERS.includes(v) ? v : null;
+/**
+ * 密钥槽位 = `user_provider_keys.provider` 的取值口径（唯一实现见 src/utils/mcpKeySlot.ts）：
+ *   · 内置四家 → 就是它的 kind（与历史数据完全兼容）；
+ *   · 自定义 MCP → `custom:<归一化端点地址>`，**每个端点各占一格**（§15.32）。
+ * 这里不再有「所有自定义共用一格 custom」的历史写法 —— 那会让第二个自定义数据源覆盖掉第一个的 Key。
+ */
+function keySlotOf(raw: unknown): string | null {
+  const v = String(raw ?? '').trim();
+  return isKeySlot(v) ? v : null;
+}
+
+/** 自定义条目的槽位：从端点地址派生（地址不合法/为空 → null，调用方按「还没填地址」处理） */
+function customSlotOf(endpoint: unknown): string | null {
+  const slot = customKeySlot(endpoint);
+  return slot && isKeySlot(slot) ? slot : null;
 }
 
 const PROVIDER_ENV_URL: Record<ProviderName, string> = {
@@ -95,7 +105,7 @@ function env(name: string): string {
  */
 
 /** 读某用户某数据源的 Key（明文，只在服务端内存里传递；拿不到就回空串） */
-async function readUserProviderKey(userId: string, provider: KeyProvider): Promise<string> {
+async function readUserProviderKey(userId: string, provider: string): Promise<string> {
   const s = getServiceSupabase();
   if (!s || !userId) return '';
   try {
@@ -134,7 +144,7 @@ function keyStoreIssue(error: unknown): { needsMigration: boolean; error: string
  * 返回的 key 只在本函数调用栈里往下传（→ 上游请求头），不进响应体、不进日志。
  */
 async function resolveRequestSecret(
-  provider: KeyProvider,
+  provider: string,
   userId: string,
   legacyUserKeyRaw?: unknown
 ): Promise<{ key: string; source: ProviderKeySource }> {
@@ -617,7 +627,7 @@ async function handleStatus(_req: VercelRequest, res: VercelResponse, auth: { us
  *   - **不写缓存、不记用量、不占配额** —— 点一下"验证"不该花掉一次额度，也不该污染账单；
  *   - 返回体只有 `keySource` 与一句话，**连指纹都不回**（指纹也是可核对的秘密片段）。
  *
- * 校验的就是**该用户在服务端存的那把 Key**（custom 用 'custom' 这一格）；请求体里若是旧客户端
+ * 校验的就是**该用户在服务端存的那把 Key**（自定义 MCP 用它自己端点那一格，§15.32）；请求体里若是旧客户端
  * 还带着 userKey，则按迁移期兼容路径使用。明文只在这一次握手请求里出现，用完即弃。
  *
  * 自定义 MCP：地址由用户提供，所以必须过 `validateRelayTarget`（与 AI 转发同一套 SSRF 底线），
@@ -630,25 +640,40 @@ async function handleVerify(
   body: Record<string, unknown>
 ) {
   const providerRaw = String(body.provider || '');
-  const isCustom = providerRaw === 'custom';
-  const keyProvider = keyProviderFor(providerRaw);
-  if (!keyProvider) return json(res, 400, { ok: false, error: `未知 provider：${providerRaw}` });
-  // 内置数据源用自己那格 Key；自定义 MCP 用 'custom' 那格（地址由用户填，Key 也必须是他自己填的）
+  // 自定义 MCP：客户端可以传 'custom'，也可以直接传它自己的槽位（custom:<地址>），两者等价
+  const isCustom = providerRaw === 'custom' || providerRaw.startsWith(CUSTOM_SLOT_PREFIX);
+
+  // 端点在取 Key 之前就要定下来：自定义 MCP 的槽位是从地址派生的（§15.32）
+  let endpointOverride = '';
+  let endpointError = '';
+  if (isCustom) {
+    const check = validateRelayTarget(String(body.endpoint || '') || customSlotEndpoint(providerRaw));
+    if (!check.ok) {
+      endpointError = `自定义 MCP 地址不可用：${check.reason}（平台网关要能连到它；本机地址请在本机自行确认）`;
+    } else {
+      endpointOverride = check.url;
+    }
+  }
+
+  // 内置数据源用自己那格 Key；自定义 MCP 用**它自己端点那一格**（不再共用一个 custom 格）
+  const keyProvider = isCustom ? customSlotOf(endpointOverride) : keySlotOf(providerRaw);
+  if (!isCustom && !keyProvider) return json(res, 400, { ok: false, error: `未知 provider：${providerRaw}` });
   const provider = (isCustom ? 'sellersprite' : providerRaw) as ProviderName;
 
-  const { key: secret, source: keySource } = await resolveRequestSecret(keyProvider, auth.userId, body.userKey);
+  const { key: secret, source: keySource } = keyProvider
+    ? await resolveRequestSecret(keyProvider, auth.userId, body.userKey)
+    : { key: '', source: 'none' as ProviderKeySource };
 
-  let endpointOverride = '';
-  if (isCustom) {
-    const check = validateRelayTarget(String(body.endpoint || ''));
-    if (!check.ok) {
-      return json(res, 400, {
-        ok: false,
-        keySource,
-        error: `自定义 MCP 地址不可用：${check.reason}（平台网关要能连到它；本机地址请在本机自行确认）`,
-      });
-    }
-    endpointOverride = check.url;
+  if (endpointError) {
+    return json(res, 400, { ok: false, keySource, error: endpointError });
+  }
+
+  if (isCustom && !keyProvider) {
+    return json(res, 400, {
+      ok: false,
+      keySource,
+      error: '自定义 MCP 需要先填一个完整地址（http(s)://…），Key 要按端点分开存',
+    });
   }
 
   if (!secret && !isCustom) {
@@ -681,10 +706,14 @@ async function handleVerify(
  * 因此 A 既读不到、也改不了、更清不掉 B 的密钥（配合迁移里"RLS 全部拒绝 + 只有 service_role"）。
  */
 
-/** 列出当前用户在各 provider 上的密钥状态：只有 `configured` + 指纹（maskKey），**绝不含明文** */
+/**
+ * 列出当前用户在各数据源上的密钥状态：只有 `configured` + 指纹（maskKey），**绝不含明文**。
+ * 内置四家固定出现（未配置 → false）；自定义 MCP **每个端点一条**（键是 `custom:<地址>`），
+ * 由客户端按自己那份端点清单去查（§15.32）。
+ */
 async function handleKeyList(_req: VercelRequest, res: VercelResponse, auth: { userId: string }) {
   const keys: Record<string, KeyStatus> = {};
-  for (const p of KEY_PROVIDERS) keys[p] = { configured: false, fingerprint: '' };
+  for (const p of BUILTIN_KEY_SLOTS) keys[p] = { configured: false, fingerprint: '' };
 
   const s = getServiceSupabase();
   if (!s) {
@@ -702,7 +731,8 @@ async function handleKeyList(_req: VercelRequest, res: VercelResponse, auth: { u
     }
     for (const row of Array.isArray(data) ? data : []) {
       const p = String(row?.provider || '');
-      if (!KEY_PROVIDERS.includes(p as KeyProvider)) continue;
+      // 只认合法槽位：内置四家 + 每个自定义端点自己的那一格（§15.32）
+      if (!isKeySlot(p)) continue;
       const value = typeof row?.value === 'string' ? row.value.trim() : '';
       keys[p] = { configured: value.length > 0, fingerprint: maskKey(value) };
     }
@@ -715,7 +745,7 @@ async function handleKeyList(_req: VercelRequest, res: VercelResponse, auth: { u
 
 /** 保存/替换当前用户在某个 provider 上的密钥（写自己的那一行；校验不过一律拒绝，不回细节） */
 async function handleKeySet(_req: VercelRequest, res: VercelResponse, auth: { userId: string }, body: Record<string, unknown>) {
-  const provider = keyProviderFor(body.provider);
+  const provider = keySlotOf(body.provider);
   if (!provider) return json(res, 400, { ok: false, error: `未知 provider：${String(body.provider ?? '')}` });
 
   // 与请求级解析共用同一份校验：去首尾空白 / 非空 / 长度 ≤512 / 拒绝控制字符。
@@ -745,7 +775,7 @@ async function handleKeySet(_req: VercelRequest, res: VercelResponse, auth: { us
 
 /** 清除当前用户在某个 provider 上的密钥（只删自己那一行） */
 async function handleKeyClear(_req: VercelRequest, res: VercelResponse, auth: { userId: string }, body: Record<string, unknown>) {
-  const provider = keyProviderFor(body.provider);
+  const provider = keySlotOf(body.provider);
   if (!provider) return json(res, 400, { ok: false, error: `未知 provider：${String(body.provider ?? '')}` });
 
   const s = getServiceSupabase();
@@ -806,7 +836,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (e) {
     if (action === 'verify') {
       const incoming = body as Record<string, unknown>;
-      const kp = keyProviderFor(incoming.provider);
+      const rawProvider = String(incoming.provider ?? '');
+      const isCustom = rawProvider === 'custom' || rawProvider.startsWith(CUSTOM_SLOT_PREFIX);
+      const kp = isCustom
+        ? customSlotOf(customSlotEndpoint(rawProvider) || incoming.endpoint)
+        : keySlotOf(rawProvider);
       const verifyKeySource = kp
         ? (await resolveRequestSecret(kp, auth.userId, incoming.userKey)).source
         : ('none' as ProviderKeySource);

@@ -343,7 +343,14 @@ test('解析顺序：库里该用户的 Key → 请求体 → none（源码级�
 test('本机旧明文迁移：成功后删除本机副本，失败则保留并如实提示', () => {
   const mcp = read('src/utils/mcpConfig.ts');
   assert.ok(/export async function migrateLegacyLocalKeys/.test(mcp), '必须提供一次性迁移入口');
-  assert.ok(/dropLegacyLocalKeys\(migrated\)/.test(mcp), '迁移成功（migrated 非空）时必须删掉本机副本');
+  assert.ok(
+    /if \(migrated\.length > 0\)\s*\{[\s\S]{0,700}?dropLegacyLocalKeys\([\s\S]{0,700}?migrated\.includes/.test(mcp),
+    '迁移成功（migrated 非空）时必须按内置类型 / 自定义端点删掉本机副本'
+  );
+  assert.ok(
+    /migratedCustomIds[\s\S]{0,900}?normalizeMcpEndpoint/.test(mcp),
+    '自定义 MCP 迁移后必须按条目 ID / 归一化端点精确删除，不得误删其他端点'
+  );
   assert.ok(/if \(failed\.length > 0\)[\s\S]{0,400}?本机副本已保留/.test(mcp), '失败必须如实告知且保留副本（不静默丢密钥）');
   assert.ok(!/export function getUserKeyForProvider/.test(mcp), '旧的"读本机 Key"入口必须消失（否则又是两处真相）');
   // 数据池链路会自动补跑一次迁移（老设备不打开设置也能用）
